@@ -17,6 +17,7 @@ use arc_swap::{ArcSwap, ArcSwapOption};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_util::sync::CancellationToken;
 
+use crate::discord::auth::remote::{self, Authenticated};
 use crate::discord::auth::{Token, TokenStore};
 use crate::discord::gateway::{self, Bridge, Control, GatewayConfig};
 use crate::discord::handle::{
@@ -24,7 +25,7 @@ use crate::discord::handle::{
 };
 use crate::discord::http::{Http, HttpError};
 use crate::discord::media::{self, cache::Cache};
-use crate::discord::model::PresenceStatus;
+use crate::discord::model::{PresenceStatus, User};
 use crate::discord::ops::{self, Ops};
 use crate::discord::props::{self, ClientProps};
 use crate::discord::state::State;
@@ -75,6 +76,13 @@ pub fn run(
     })
 }
 
+/// An answer a spawned task hands back to the command loop, because acting on
+/// it needs `&mut Core` and a task does not have one.
+#[derive(Debug)]
+enum Internal {
+    RemoteAuth(Result<Box<Authenticated>, String>),
+}
+
 /// A running gateway connection, and the means to stop it.
 struct GatewayTask {
     control: mpsc::Sender<Control>,
@@ -96,6 +104,15 @@ struct Core {
     /// The media task's end of its own queue. Built lazily, because it spawns a
     /// task and `Core::new` is not inside the runtime.
     media: Option<media::fetch::Media>,
+    /// Live only while a QR code is on screen. Cancelling it closes the socket
+    /// and drops the key.
+    remote: Option<CancellationToken>,
+    /// How a spawned task hands an answer back to the command loop.
+    ///
+    /// The QR login runs for minutes and must not hold up the keystroke behind
+    /// it, so it is a task; but what it produces -- a token to store, a
+    /// connection to open -- is `&mut self` work that only this loop may do.
+    internal: Option<mpsc::Sender<Internal>>,
     session: Arc<std::sync::Mutex<SessionStore>>,
     token: Option<Token>,
     presence: PresenceStatus,
@@ -142,6 +159,8 @@ impl Core {
             control,
             ops,
             media: None,
+            remote: None,
+            internal: None,
             session: Arc::new(std::sync::Mutex::new(SessionStore::load(paths))),
             gateway: None,
             token: None,
@@ -152,6 +171,9 @@ impl Core {
     }
 
     async fn run(&mut self, mut commands: mpsc::Receiver<Command>) {
+        let (internal_tx, mut internal_rx) = mpsc::channel(8);
+        self.internal = Some(internal_tx);
+
         if self.config.discover_build {
             self.start_build_discovery();
         }
@@ -181,13 +203,24 @@ impl Core {
             }
         }
 
-        while let Some(command) = commands.recv().await {
-            if matches!(command, Command::Shutdown) {
-                break;
+        loop {
+            tokio::select! {
+                command = commands.recv() => match command {
+                    Some(Command::Shutdown) | None => break,
+                    Some(command) => self.handle(command).await,
+                },
+                answer = internal_rx.recv() => match answer {
+                    Some(answer) => self.finish(answer).await,
+                    // Only possible once every sender is gone, and this struct
+                    // holds one.
+                    None => break,
+                },
             }
-            self.handle(command).await;
         }
 
+        if let Some(cancel) = self.remote.take() {
+            cancel.cancel();
+        }
         housekeeping.abort();
         self.session
             .lock()
@@ -324,6 +357,13 @@ impl Core {
     async fn handle(&mut self, command: Command) {
         match command {
             Command::LoginWithToken(token) => self.login(token).await,
+            Command::StartRemoteAuth => self.start_remote_auth(),
+            Command::CancelRemoteAuth => {
+                if let Some(cancel) = self.remote.take() {
+                    tracing::info!("the scanned login was cancelled");
+                    cancel.cancel();
+                }
+            }
             Command::Logout => self.logout().await,
             Command::Connect => self.connect().await,
             Command::Disconnect => {
@@ -469,27 +509,7 @@ impl Core {
         };
 
         match user {
-            Ok(user) => {
-                let stored_in = match self.store.save(&token) {
-                    Ok(kind) => kind,
-                    Err(e) => {
-                        // Failing to store is not failing to log in. The
-                        // session works; it just will not survive a restart.
-                        tracing::warn!("could not store the token: {e}");
-                        self.bridge.note(Note::warning(
-                            "token-store",
-                            format!("signed in, but the token could not be stored: {e}"),
-                        ));
-                        crate::discord::auth::TokenStoreKind::Memory
-                    }
-                };
-                self.token = Some(token);
-                let user = Arc::new(user);
-                self.bridge
-                    .events
-                    .send(Event::Auth(AuthEvent::LoggedIn { user, stored_in }));
-                self.connect().await;
-            }
+            Ok(user) => self.finish_login(token, user).await,
             Err(e) => {
                 self.http.set_token(None);
                 let message = match &e {
@@ -501,6 +521,96 @@ impl Core {
                     .events
                     .send(Event::Auth(AuthEvent::Failed(message.clone())));
                 self.bridge.set_status(Connection::AuthFailed(message));
+            }
+        }
+    }
+
+    /// Store a token that has already been checked, and connect with it.
+    ///
+    /// Shared by both ways in. A pasted token reaches it after `GET /users/@me`
+    /// here; a scanned one after the same request inside the remote-auth
+    /// exchange, which needs the account anyway to say who just signed in.
+    async fn finish_login(&mut self, token: Token, user: User) {
+        self.http.set_token(Some(token.clone()));
+
+        let stored_in = match self.store.save(&token) {
+            Ok(kind) => kind,
+            Err(e) => {
+                // Failing to store is not failing to log in. The session works;
+                // it just will not survive a restart.
+                tracing::warn!("could not store the token: {e}");
+                self.bridge.note(Note::warning(
+                    "token-store",
+                    format!("signed in, but the token could not be stored: {e}"),
+                ));
+                crate::discord::auth::TokenStoreKind::Memory
+            }
+        };
+        self.token = Some(token);
+        let user = Arc::new(user);
+        self.bridge
+            .events
+            .send(Event::Auth(AuthEvent::LoggedIn { user, stored_in }));
+        self.connect().await;
+    }
+
+    /// Open the remote-auth socket and put a QR code on screen.
+    ///
+    /// The whole flow runs on its own task: it lasts for as long as somebody
+    /// takes to find their phone, and the command loop has to stay answerable
+    /// the entire time -- not least because the thing it most likely has to
+    /// answer is `CancelRemoteAuth`.
+    fn start_remote_auth(&mut self) {
+        if self.remote.is_some() {
+            tracing::debug!("a scanned login is already in progress");
+            return;
+        }
+
+        // Signing in means not being signed in. A stale token left on the
+        // client would be sent with the ticket exchange, which is a request
+        // from one account to start a session for another.
+        self.http.set_token(None);
+
+        let cancel = CancellationToken::new();
+        self.remote = Some(cancel.clone());
+
+        let http = Arc::clone(&self.http);
+        let props = self.http.props();
+        let events = self.bridge.events.clone();
+        let back = self.internal.clone();
+
+        tokio::spawn(async move {
+            let result = remote::run(http, props, cancel, &mut |event| {
+                events.send(Event::Auth(event))
+            })
+            .await;
+
+            // The error is a sentence, not a type: nothing downstream branches
+            // on which part of the handshake failed, and the string is what the
+            // status line shows.
+            let result = result.map(Box::new).map_err(|e| e.to_string());
+            if let Some(back) = back {
+                let _ = back.send(Internal::RemoteAuth(result)).await;
+            }
+        });
+    }
+
+    /// Act on something a task finished.
+    async fn finish(&mut self, answer: Internal) {
+        match answer {
+            Internal::RemoteAuth(Ok(authenticated)) => {
+                self.remote = None;
+                let Authenticated { token, user } = *authenticated;
+                tracing::info!("signed in by a scanned code");
+                self.finish_login(token, user).await;
+            }
+            Internal::RemoteAuth(Err(reason)) => {
+                self.remote = None;
+                self.http.set_token(None);
+                tracing::info!("the scanned login ended: {reason}");
+                self.bridge
+                    .events
+                    .send(Event::Auth(AuthEvent::Failed(reason)));
             }
         }
     }

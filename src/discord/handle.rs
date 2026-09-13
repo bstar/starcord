@@ -297,6 +297,10 @@ pub enum AuthEvent {
         url: String,
         fingerprint: String,
         expires_in: Duration,
+        /// The code itself, one `bool` per module, `true` for dark. The core
+        /// does not draw, so it hands over the squares and the UI decides what
+        /// a dark module looks like in a terminal.
+        matrix: Vec<Vec<bool>>,
     },
     /// The phone scanned it and Discord said whose phone it was.
     QrScanned {
