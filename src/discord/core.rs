@@ -69,6 +69,7 @@ pub fn run(
             state,
             events,
             status,
+            notify: crate::discord::notify::Notifier::new(config.notify.clone()),
         };
         let mut core = Core::new(config, paths, bridge)?;
         core.run(commands).await;
@@ -389,6 +390,7 @@ impl Core {
                 terminal_focused,
             } => {
                 self.ops.set_focus(channel, terminal_focused);
+                self.bridge.notify.set_focus(channel, terminal_focused);
                 if let Some(channel) = channel {
                     let guild = self.ops.state().channel(channel).and_then(|c| c.guild_id);
                     self.with_session(|session| {

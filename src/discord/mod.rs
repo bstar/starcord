@@ -30,6 +30,7 @@ pub mod http;
 pub mod markdown;
 pub mod media;
 pub mod model;
+pub mod notify;
 pub mod ops;
 pub mod props;
 pub mod snowflake;

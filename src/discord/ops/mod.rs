@@ -206,6 +206,7 @@ pub(crate) mod testing {
             state: Arc::new(RwLock::new(State::new())),
             events: sink,
             status: Arc::new(arc_swap::ArcSwap::from_pointee(Connection::LoggedOut)),
+            notify: crate::discord::notify::Notifier::new(Default::default()),
         };
         let http = Arc::new(
             Http::with_base(Arc::new(ClientProps::new("en-US", 1)), base.to_string())

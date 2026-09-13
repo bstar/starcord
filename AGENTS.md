@@ -88,6 +88,10 @@ because argv is world-readable in `/proc`.
 transitively holds one is safe. Keep it that way; a derived `Debug` on a new
 type that holds a token is a leak.
 
+An upload goes to a host Discord does not control -- the slot endpoint hands
+back a signed URL on Google's storage -- so `Http::put_bytes` goes out on the
+same tokenless client as `download()`, for the same reason.
+
 `download()` in `http/mod.rs` sends only a `User-Agent`. Attachment and avatar
 URLs point at `cdn.discordapp.com` and at media proxies, and an
 `Authorization` header on a request to a host Discord does not control is how a
@@ -120,6 +124,16 @@ can express rather than by intention:
   the highest id per channel per second and never sent for a channel the user
   is not looking at, member ranges are requested only for the open guild, and
   history is one request per channel.
+- The GIF picker and the message search are a text box somebody types into, so
+  the core -- not whatever is calling it -- keeps their requests three hundred
+  milliseconds apart and drops one that is overtaken while it waits. A caller
+  may search on every keystroke; what leaves the machine is one request per
+  pause. `gifs::Spacer` is the gate, and both use it.
+- `OpenDm` is refused unless the other account is already a friend, and a DM
+  that already exists is opened rather than asked for again. A stranger reaches
+  this client through a conversation they already have, or not at all.
+- Reactions are this account's own, both ways. There is no route for removing
+  somebody else's; that is a moderation action.
 
 A pull request that adds an automated action needs an argument that starts with
 why a human would have pressed a key for it.

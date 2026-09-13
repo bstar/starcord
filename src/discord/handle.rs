@@ -534,6 +534,8 @@ pub struct DiscordConfig {
     pub media: crate::discord::media::MediaConfig,
     /// `[gifs]`: which service the picker asks, and in what format.
     pub gifs: crate::discord::gifs::GifProvider,
+    /// `[notify]`: whether a mention reaches the desktop, and when.
+    pub notify: crate::discord::notify::NotifyConfig,
 }
 
 impl Default for DiscordConfig {
@@ -547,6 +549,7 @@ impl Default for DiscordConfig {
             record_gateway: None,
             media: crate::discord::media::MediaConfig::default(),
             gifs: crate::discord::gifs::GifProvider::default(),
+            notify: crate::discord::notify::NotifyConfig::default(),
         }
     }
 }

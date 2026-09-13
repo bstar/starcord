@@ -32,7 +32,7 @@ pub mod inline;
 // `markdown::Block`. Most of them have no consumer until the chat panel
 // exists.
 #[allow(unused_imports)]
-pub use ast::{Block, Document, Emoji, Inline, ListItem, Mention};
+pub use ast::{Block, Document, Emoji, Inline, ListItem, Mention, Spoilers};
 
 /// The longest message this parser will look at.
 ///
@@ -61,6 +61,16 @@ pub fn parse(text: &str) -> Document {
 /// one-line preview, or `starcord probe`.
 pub fn plain_text(text: &str) -> String {
     parse(text).plain_text()
+}
+
+/// The same, with `||spoilers||` replaced by `[spoiler]`.
+///
+/// For desktop notifications, which are the one place the plain text is shown
+/// to somebody who has not asked to see it: a spoiler is the one piece of a
+/// message its author deliberately hid, and a popup that reveals it has
+/// defeated the point of writing it that way.
+pub fn plain_text_hiding_spoilers(text: &str) -> String {
+    parse(text).plain_text_with(ast::Spoilers::Hide)
 }
 
 #[cfg(test)]

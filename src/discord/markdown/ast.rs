@@ -27,15 +27,35 @@ pub struct Document {
     pub truncated: bool,
 }
 
+/// What to do with `||spoilers||` when flattening to plain text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spoilers {
+    /// Write what is inside them, which is what keeps every alphanumeric
+    /// character of the source in the output.
+    Reveal,
+    /// Write `[spoiler]` instead. The one caller that wants this is the desktop
+    /// notification: a spoiler is the one piece of text somebody deliberately
+    /// hid, and a popup that shows it anyway has defeated the point of it.
+    Hide,
+}
+
+/// What [`Spoilers::Hide`] writes.
+pub const HIDDEN: &str = "[spoiler]";
+
 impl Document {
     /// The message with every marker removed.
     pub fn plain_text(&self) -> String {
+        self.plain_text_with(Spoilers::Reveal)
+    }
+
+    /// The same, saying what to do about spoilers.
+    pub fn plain_text_with(&self, spoilers: Spoilers) -> String {
         let mut out = String::new();
         for (n, block) in self.blocks.iter().enumerate() {
             if n > 0 {
                 out.push('\n');
             }
-            block.write_plain(&mut out);
+            block.write_plain(&mut out, spoilers);
         }
         out
     }
@@ -87,17 +107,17 @@ pub struct ListItem {
 }
 
 impl Block {
-    fn write_plain(&self, out: &mut String) {
+    fn write_plain(&self, out: &mut String, spoilers: Spoilers) {
         match self {
-            Block::Paragraph(inlines) => write_inlines(inlines, out),
-            Block::Heading { content, .. } => write_inlines(content, out),
-            Block::Subtext(content) => write_inlines(content, out),
+            Block::Paragraph(inlines) => write_inlines(inlines, out, spoilers),
+            Block::Heading { content, .. } => write_inlines(content, out, spoilers),
+            Block::Subtext(content) => write_inlines(content, out, spoilers),
             Block::Quote(blocks) => {
                 for (n, block) in blocks.iter().enumerate() {
                     if n > 0 {
                         out.push('\n');
                     }
-                    block.write_plain(out);
+                    block.write_plain(out, spoilers);
                 }
             }
             Block::CodeBlock { lang, text } => {
@@ -121,7 +141,7 @@ impl Block {
                         if m > 0 {
                             out.push('\n');
                         }
-                        block.write_plain(out);
+                        block.write_plain(out, spoilers);
                     }
                 }
             }
@@ -183,28 +203,31 @@ pub enum Emoji {
     },
 }
 
-fn write_inlines(inlines: &[Inline], out: &mut String) {
+fn write_inlines(inlines: &[Inline], out: &mut String, spoilers: Spoilers) {
     for inline in inlines {
-        inline.write_plain(out);
+        inline.write_plain(out, spoilers);
     }
 }
 
 impl Inline {
-    fn write_plain(&self, out: &mut String) {
+    fn write_plain(&self, out: &mut String, spoilers: Spoilers) {
         match self {
             Inline::Text(text) => out.push_str(text),
             Inline::LineBreak => out.push('\n'),
             Inline::Bold(inner)
             | Inline::Italic(inner)
             | Inline::Underline(inner)
-            | Inline::Strike(inner)
-            | Inline::Spoiler(inner) => write_inlines(inner, out),
+            | Inline::Strike(inner) => write_inlines(inner, out, spoilers),
+            Inline::Spoiler(inner) => match spoilers {
+                Spoilers::Reveal => write_inlines(inner, out, spoilers),
+                Spoilers::Hide => out.push_str(HIDDEN),
+            },
             Inline::Code(text) => out.push_str(text),
             Inline::Link { text, url, .. } => {
                 if text.is_empty() {
                     out.push_str(url);
                 } else {
-                    write_inlines(text, out);
+                    write_inlines(text, out, spoilers);
                     let _ = write!(out, " ({url})");
                 }
             }
