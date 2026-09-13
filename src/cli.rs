@@ -59,6 +59,36 @@ pub struct Probe {
     /// Use the pinned build number instead of looking up the current one.
     #[arg(long)]
     pub offline: bool,
+
+    /// Open this channel after READY and print its history.
+    ///
+    /// With `--follow` it then prints messages, edits, deletions and typing as
+    /// they arrive. A channel id is not a secret; a message is, which is why
+    /// nothing below DEBUG in the log ever carries one and why this prints to
+    /// stdout instead.
+    #[arg(long, value_name = "ID")]
+    pub channel: Option<u64>,
+
+    /// Send one message to `--channel` and wait for the gateway to echo it.
+    #[arg(long, value_name = "TEXT", requires = "channel")]
+    pub send: Option<String>,
+
+    /// Make `--send` a reply to this message.
+    #[arg(long, value_name = "ID", requires = "send")]
+    pub reply_to: Option<u64>,
+
+    /// Ping the person being replied to. Off by default, as the composer's
+    /// own default is.
+    #[arg(long, requires = "reply_to")]
+    pub ping: bool,
+
+    /// Subscribe to member lists with op 14 rather than op 37.
+    ///
+    /// Which opcode a user-account session is expected to send is one of the
+    /// things only a live connection can settle, so both are reachable and the
+    /// one that went out is printed.
+    #[arg(long)]
+    pub legacy_lazy_request: bool,
 }
 
 #[cfg(test)]
@@ -100,6 +130,64 @@ mod tests {
             "a --token argument would put a session token in /proc and in shell history"
         );
         assert!(Cli::try_parse_from(["starcord", "probe", "--token", "x"]).is_err());
+    }
+
+    #[test]
+    fn tailing_a_channel_needs_an_id_and_sending_needs_a_channel() {
+        let cli = Cli::parse_from(["starcord", "probe", "--channel", "123", "--follow"]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(probe.channel, Some(123));
+                assert!(probe.follow);
+                assert!(probe.send.is_none());
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--send", "hello"]).is_err(),
+            "there is nowhere to send that"
+        );
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--reply-to", "1"]).is_err(),
+            "there is nothing to reply with"
+        );
+    }
+
+    #[test]
+    fn the_member_list_opcode_can_be_switched_from_the_command_line() {
+        let cli = Cli::parse_from(["starcord", "probe", "--legacy-lazy-request"]);
+        match cli.command {
+            Some(Command::Probe(probe)) => assert!(probe.legacy_lazy_request),
+            other => panic!("{other:?}"),
+        }
+        let default = Cli::parse_from(["starcord", "probe"]);
+        match default.command {
+            Some(Command::Probe(probe)) => assert!(!probe.legacy_lazy_request),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_reply_says_whether_it_pings() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--send",
+            "hi",
+            "--reply-to",
+            "2",
+            "--ping",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(probe.reply_to, Some(2));
+                assert!(probe.ping);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

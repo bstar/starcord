@@ -2,7 +2,10 @@
 
 ```
 starcord [--verbose]
-starcord probe [--token-from-stdin] [--no-store] [--follow] [--offline] [--timeout SECONDS]
+starcord probe [--token-from-stdin] [--no-store] [--offline] [--timeout SECONDS]
+               [--legacy-lazy-request]
+               [--channel ID] [--follow]
+               [--send TEXT [--reply-to ID [--ping]]]
 ```
 
 `--verbose` raises the log level to debug. It goes to the log file at
@@ -66,8 +69,71 @@ want when checking somebody else's report against your own account.
 | | |
 |---|---|
 | `--timeout SECONDS` | How long to wait for READY. Default 45. |
-| `--follow` | Stay connected after READY and keep printing connection changes until the timeout. Use it to watch a reconnect: pull the network cable and see the backoff. |
+| `--follow` | Stay connected after READY and keep printing until the timeout. Use it to watch a reconnect: pull the network cable and see the backoff. With `--channel` it tails that channel. |
 | `--offline` | Do not look up the current web-client build number; use the pinned one. Also what the tests use, because a test suite has no business making a request to a CDN. |
+| `--legacy-lazy-request` | Send op 14 rather than op 37 for member-list subscriptions. Same body either way. |
+
+## Tailing a channel
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 --follow < token.txt
+```
+
+Opens a channel, prints the last fifty messages, and then prints what happens
+to it — new messages, edits, deletions, reactions and who is typing — until the
+timeout.
+
+```
+[  2.10s] opening 1234567890
+[  2.11s] Info: subscribed to 9876543210 with op 37 (update guild subscriptions)
+[  2.44s] loaded
+
+12 messages, oldest first:
+09:41  Alex: morning
+09:44  Jordan: ↩ Alex | did you see the thing
+09:44  Jordan: yes [screenshot.png]
+
+following 1234567890; press ctrl-c to stop
+[  9.02s] typing: Alex
+[ 11.40s] new:
+  09:51  Alex: here it is <link>
+[ 23.88s] reactions on 5000000000000000123: 👍 2*
+```
+
+The message body is `markdown::plain_text` — the parse with every marker taken
+out — which is the only rendering the core can do, and exercising it is half of
+what this mode is for. A `*` on a reaction count means this account is one of
+the people who reacted. The `op 37` line is the other half: whether Discord
+accepts the newer member-list opcode or the older `op 14` is something only a
+live session can settle, so which one went out is printed rather than logged.
+`--legacy-lazy-request` switches it to op 14 with the same body, for a session
+where the newer one turns out not to be accepted.
+
+**Tailing never marks anything read.** `probe` sends `SetFocus` and
+`OpenChannel`, as the client does when somebody clicks a channel, and never
+sends `MarkRead`. A debugging tool that changed what an account had seen would
+be worse than no debugging tool.
+
+## Sending a message
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 --send "hello" < token.txt
+```
+
+Sends one message and waits for the gateway to echo it back, which is the thing
+worth watching: the nonce that goes out with the POST has to come back on the
+message, or the optimistic row on screen becomes a second copy of it.
+
+```
+[  2.51s] sending 5 characters to 1234567890
+[  2.52s] pending as nonce 5722948177327149
+[  2.79s] accepted as 5000000000000000456
+[  2.83s] echoed back by the gateway
+  09:58  Sam: hello
+```
+
+`--reply-to ID` makes it a reply; `--ping` makes that reply notify the person
+being answered, which it does not do by default.
 
 ### Exit status
 

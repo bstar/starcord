@@ -1,5 +1,17 @@
 # Gateway fixtures
 
+## `message.json`
+
+One message, hand-written from the documented field list, carrying every part
+the chat panel draws: a reply with its `referenced_message`, an image
+attachment with declared dimensions, a link unfurl, a `gifv` embed, two
+reactions with `me` set on one, a sticker, a nickname on the author's `member`,
+a role mention and a nonce. It is what the message model's mutation property
+test chews on — keys deleted, types swapped — and what the store's table tests
+build from.
+
+Synthetic, like the READY beside it, and made up in the same id ranges.
+
 ## `ready.json` is synthetic
 
 It was written by hand from the field lists in the userdoccers reference
