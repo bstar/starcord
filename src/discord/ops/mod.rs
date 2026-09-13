@@ -20,6 +20,7 @@
 
 pub mod ack;
 pub mod open;
+pub mod reactions;
 pub mod send;
 pub mod typing;
 pub mod upload;

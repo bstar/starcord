@@ -16,6 +16,7 @@
 
 use std::borrow::Cow;
 
+use crate::discord::handle::EmojiRef;
 use crate::discord::snowflake::{ChannelId, MessageId};
 
 /// The characters that may appear in a path segment or a query value as they
@@ -105,6 +106,16 @@ pub enum Route {
     Typing(ChannelId),
     /// Mark a message, and everything before it, read.
     Ack(ChannelId, MessageId),
+    /// Add this account's reaction to a message.
+    ///
+    /// The emoji is part of the path and is the one place in this API where a
+    /// path segment is neither a snowflake nor a fixed word: it is four bytes
+    /// of UTF-8 for a unicode emoji and `name:id` for a custom one. Both are
+    /// percent-encoded with the unreserved set, so neither a `/` in a
+    /// mis-configured custom emoji name nor a `?` can rewrite the request.
+    AddReaction(ChannelId, MessageId, EmojiRef),
+    /// Take it off again.
+    RemoveReaction(ChannelId, MessageId, EmojiRef),
     /// The GIF picker's three requests.
     ///
     /// One bucket for all of them, because that is how Discord counts them:
@@ -184,7 +195,10 @@ impl Route {
             | Route::Ack(_, _)
             | Route::RefreshAttachmentUrls => reqwest::Method::POST,
             Route::EditMessage(_, _) => reqwest::Method::PATCH,
-            Route::DeleteMessage(_, _) => reqwest::Method::DELETE,
+            // A reaction is a PUT rather than a POST because adding one twice
+            // has to be the same as adding it once.
+            Route::AddReaction(_, _, _) => reqwest::Method::PUT,
+            Route::DeleteMessage(_, _) | Route::RemoveReaction(_, _, _) => reqwest::Method::DELETE,
         }
     }
 
@@ -217,6 +231,11 @@ impl Route {
             Route::Ack(channel, message) => {
                 Cow::Owned(format!("/channels/{channel}/messages/{message}/ack"))
             }
+            Route::AddReaction(channel, message, emoji)
+            | Route::RemoveReaction(channel, message, emoji) => Cow::Owned(format!(
+                "/channels/{channel}/messages/{message}/reactions/{}/@me",
+                escape(&emoji.key())
+            )),
             Route::RefreshAttachmentUrls => Cow::Borrowed("/attachments/refresh-urls"),
             // The provider is not on the `Route`: it is configuration, and a
             // bucket that carried it would count Tenor and Giphy separately
@@ -280,6 +299,15 @@ impl Route {
             Route::Typing(channel) => Cow::Owned(format!("POST /channels/{channel}/typing")),
             Route::Ack(channel, _) => {
                 Cow::Owned(format!("POST /channels/{channel}/messages/:id/ack"))
+            }
+            // The emoji is not in the bucket: Discord counts every reaction on
+            // a channel against one allowance, and a key carrying the emoji
+            // would be a fresh empty allowance for every different one.
+            Route::AddReaction(channel, _, _) => {
+                Cow::Owned(format!("PUT /channels/{channel}/messages/:id/reactions"))
+            }
+            Route::RemoveReaction(channel, _, _) => {
+                Cow::Owned(format!("DELETE /channels/{channel}/messages/:id/reactions"))
             }
             Route::RefreshAttachmentUrls => Cow::Borrowed("POST /attachments/refresh-urls"),
             Route::Gifs(request) => Cow::Owned(format!("GET /gifs/{}", request.leaf())),

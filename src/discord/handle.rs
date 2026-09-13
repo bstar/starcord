@@ -76,6 +76,39 @@ pub enum EmojiRef {
     },
 }
 
+impl EmojiRef {
+    /// What Discord calls this emoji in a reaction path, before encoding.
+    ///
+    /// The character itself for a unicode emoji; `name:id` for a custom one.
+    /// Percent-encoding is the route's business — see `http::route::escape` —
+    /// because a value that is encoded twice is a value nobody can read.
+    pub fn key(&self) -> String {
+        match self {
+            EmojiRef::Unicode(name) => name.clone(),
+            EmojiRef::Custom { name, id, .. } => format!("{name}:{id}"),
+        }
+    }
+
+    /// The same emoji as the gateway spells it on a message.
+    ///
+    /// The optimistic update and the event that confirms it have to agree on
+    /// what counts as the same reaction, and this is the one conversion.
+    pub fn as_partial(&self) -> crate::discord::model::PartialEmoji {
+        match self {
+            EmojiRef::Unicode(name) => crate::discord::model::PartialEmoji {
+                id: None,
+                name: Some(name.clone()),
+                animated: false,
+            },
+            EmojiRef::Custom { name, id, animated } => crate::discord::model::PartialEmoji {
+                id: Some(*id),
+                name: Some(name.clone()),
+                animated: *animated,
+            },
+        }
+    }
+}
+
 // Pictures live in `media`, spelled here because this file is the UI's whole
 // vocabulary and it should not have to know which module a type came from.
 #[allow(unused_imports)]

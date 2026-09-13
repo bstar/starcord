@@ -218,11 +218,20 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    /// A `Paths` pointing at a temporary directory, without touching the
-    /// process-wide environment that the real one reads.
+    /// `Paths` reads the directory out of the environment, which is
+    /// process-wide, and `cargo test` runs these in parallel threads of one
+    /// process. So every test that points `Paths` at a temporary directory
+    /// holds this first; without it two of them race and one reads the other's
+    /// directory.
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn exclusive() -> std::sync::MutexGuard<'static, ()> {
+        ENV.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A `Paths` pointing at a temporary directory. Only call it while holding
+    /// [`exclusive`].
     fn store(dir: &std::path::Path) -> SessionStore {
-        // The env var is read once per call and this is the only test that sets
-        // it, so the pair is kept together.
         std::env::set_var("STARCORD_SESSION_TEST_DIR", dir);
         SessionStore::load(Paths::new(
             "starcord",
@@ -233,6 +242,7 @@ mod tests {
 
     #[test]
     fn a_session_round_trips_through_the_file() {
+        let _env = exclusive();
         let dir = tempfile::tempdir().unwrap();
         let mut session = store(dir.path());
 
@@ -260,6 +270,7 @@ mod tests {
     fn the_session_file_is_readable_only_by_its_owner() {
         use std::os::unix::fs::PermissionsExt as _;
 
+        let _env = exclusive();
         let dir = tempfile::tempdir().unwrap();
         let mut session = store(dir.path());
         session.update(|s| s.set_draft(ChannelId(1), "something private"));
@@ -278,6 +289,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_session_file_is_ignored_rather_than_fatal() {
+        let _env = exclusive();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("session.toml"), "this is not [ toml").unwrap();
 
@@ -329,6 +341,7 @@ mod tests {
 
     #[test]
     fn an_unchanged_session_is_not_rewritten() {
+        let _env = exclusive();
         let dir = tempfile::tempdir().unwrap();
         let mut session = store(dir.path());
         session.update(|s| s.set_draft(ChannelId(1), "a"));

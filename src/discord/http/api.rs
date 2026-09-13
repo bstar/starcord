@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::discord::handle::EmojiRef;
 use crate::discord::model::gif::{GifPage, GifResult, Suggestion, Trending};
 use crate::discord::model::{Message, User};
 use crate::discord::snowflake::{ChannelId, MessageId};
@@ -268,6 +269,38 @@ pub async fn delete_message(
 ) -> Result<(), HttpError> {
     http.request(Route::DeleteMessage(channel, message), None::<&()>)
         .await
+}
+
+/// Put this account's reaction on a message.
+///
+/// A `PUT`, so sending it twice is the same as sending it once: a double click
+/// on a reaction chip should not be two requests with two different outcomes.
+pub async fn add_reaction(
+    http: &Http,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: &EmojiRef,
+) -> Result<(), HttpError> {
+    http.request(
+        Route::AddReaction(channel, message, emoji.clone()),
+        None::<&()>,
+    )
+    .await
+}
+
+/// Take it off again. Only ever this account's own: there is no route here for
+/// removing somebody else's reaction, which is a moderation action.
+pub async fn remove_reaction(
+    http: &Http,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: &EmojiRef,
+) -> Result<(), HttpError> {
+    http.request(
+        Route::RemoveReaction(channel, message, emoji.clone()),
+        None::<&()>,
+    )
+    .await
 }
 
 /// The typing indicator.

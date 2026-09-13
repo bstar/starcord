@@ -7,6 +7,7 @@ starcord probe [--qr [--qr-invert]] [--token-from-stdin]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
                [--send TEXT] [--send-file PATH]... [--reply-to ID [--ping]]
+               [--react MESSAGE_ID EMOJI [--unreact]]
                [--media URL] [--gifs QUERY]
 ```
 
@@ -212,6 +213,33 @@ because nothing about it is different from where the message ends up.
 A file over `[media] max_attachment_mib` — 25 by default, which is what an
 account without Nitro is allowed — is refused before any request is made, with
 the size in the message.
+
+## Reacting
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 --react 5000000000000000123 👍 < token.txt
+starcord probe --token-from-stdin --channel 1234567890 --react 5000000000000000123 pepe:12345 --unreact < token.txt
+```
+
+```
+[  2.51s] adding Unicode("👍") on 5000000000000000123
+[  2.51s] reactions on 5000000000000000123: 👍 1*
+[  2.88s] reactions on 5000000000000000123: 👍 1*
+```
+
+The emoji is spelled the way Discord spells it in a path: the character itself
+for a unicode emoji, `name:id` for a custom one. A `*` on the count means this
+account is one of the people who reacted.
+
+Two lines rather than one is the thing to watch. The first is this client
+changing the chip before Discord has heard about it, which is what makes
+clicking a reaction feel immediate; the second is the gateway agreeing. If the
+request is refused the chip is put back and a warning is printed instead, which
+is the case worth checking by hand: react in a channel where the account has no
+permission to.
+
+Only this account's own reaction can be added or removed. There is no way to
+remove somebody else's, here or in `Command`.
 
 ### Exit status
 

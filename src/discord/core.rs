@@ -467,6 +467,27 @@ impl Core {
                 tokio::spawn(async move { ops::send::delete(&ops, channel, message).await });
             }
 
+            Command::AddReaction {
+                channel,
+                message,
+                emoji,
+            } => {
+                let ops = self.ops.clone();
+                tokio::spawn(
+                    async move { ops::reactions::add(&ops, channel, message, emoji).await },
+                );
+            }
+            Command::RemoveReaction {
+                channel,
+                message,
+                emoji,
+            } => {
+                let ops = self.ops.clone();
+                tokio::spawn(
+                    async move { ops::reactions::remove(&ops, channel, message, emoji).await },
+                );
+            }
+
             Command::Typing(channel) => {
                 let ops = self.ops.clone();
                 tokio::spawn(async move { ops::typing::typing(&ops, channel).await });

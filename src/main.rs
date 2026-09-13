@@ -139,6 +139,10 @@ fn run_probe(options: cli::Probe) -> Result<()> {
     if let Some(channel) = options.channel.map(ChannelId) {
         open_channel(&handle, started, channel, deadline)?;
 
+        if let Some(react) = options.react.clone() {
+            react_once(&handle, started, channel, &react, options.unreact)?;
+        }
+
         if options.send.is_some() || !options.send_file.is_empty() {
             send_one(
                 &handle,
@@ -356,6 +360,90 @@ fn probe_media(url: &str) -> Result<()> {
         }
         Ok(())
     })
+}
+
+/// Put this account's reaction on a message, or take it off.
+///
+/// The emoji is given the way Discord spells it in a path: the character itself
+/// for a unicode one, `name:id` for a custom one.
+fn react_once(
+    handle: &Handle,
+    started: Instant,
+    channel: ChannelId,
+    args: &[String],
+    remove: bool,
+) -> Result<()> {
+    use discord::handle::EmojiRef;
+    use discord::snowflake::EmojiId;
+
+    let [id, emoji] = args else {
+        anyhow::bail!("--react takes a message id and an emoji");
+    };
+    let message = MessageId(id.parse().context("that is not a message id")?);
+
+    // `name:id` is a custom emoji; anything else is the character itself.
+    let emoji = match emoji.rsplit_once(':') {
+        Some((name, id)) if id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty() => {
+            EmojiRef::Custom {
+                name: name.to_string(),
+                id: EmojiId(id.parse().context("that is not an emoji id")?),
+                animated: false,
+            }
+        }
+        _ => EmojiRef::Unicode(emoji.clone()),
+    };
+
+    stamp(started);
+    println!(
+        "{} {emoji:?} on {message}",
+        if remove { "removing" } else { "adding" }
+    );
+
+    if remove {
+        handle.send(discord::Command::RemoveReaction {
+            channel,
+            message,
+            emoji,
+        });
+    } else {
+        handle.send(discord::Command::AddReaction {
+            channel,
+            message,
+            emoji,
+        });
+    }
+
+    // The optimistic change lands at once; what is worth waiting for is the
+    // gateway echoing it back, which is what says Discord agreed. A note means
+    // it did not, and the chip has already been put back by then.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut seen = 0usize;
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Messages(c, MessagesChange::Reactions(m))
+                    if c == channel && m == message =>
+                {
+                    seen += 1;
+                    report_change(handle, started, c, MessagesChange::Reactions(m));
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+        // The first is this client's own optimistic change; the second is the
+        // gateway agreeing, which is the one worth having waited for.
+        if seen >= 2 {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    println!("no gateway echo for that reaction within ten seconds");
+    Ok(())
 }
 
 /// Ask the picker and print the answers.

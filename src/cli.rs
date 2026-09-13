@@ -89,6 +89,18 @@ pub struct Probe {
     #[arg(long, requires = "reply_to")]
     pub ping: bool,
 
+    /// React to a message in `--channel`.
+    ///
+    /// Takes a message id and an emoji: the character itself for a unicode one,
+    /// `name:id` for a custom one. `--unreact` takes this account's reaction
+    /// off again instead of putting it on.
+    #[arg(long, value_names = ["MESSAGE_ID", "EMOJI"], num_args = 2, requires = "channel")]
+    pub react: Option<Vec<String>>,
+
+    /// Make `--react` remove the reaction rather than add it.
+    #[arg(long, requires = "react")]
+    pub unreact: bool,
+
     /// Sign in by scanning a code with the Discord phone app.
     ///
     /// Prints the login URL, draws the code, and waits. The password is never
@@ -313,6 +325,38 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_reaction_takes_a_message_and_an_emoji() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--react",
+            "500",
+            "\u{1f44d}",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(
+                    probe.react.as_deref(),
+                    Some(["500".to_string(), "\u{1f44d}".to_string()].as_slice())
+                );
+                assert!(!probe.unreact);
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--channel", "1", "--react", "500"]).is_err(),
+            "a message id on its own says nothing about which reaction"
+        );
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--unreact"]).is_err(),
+            "there is nothing to take off"
+        );
     }
 
     #[test]
