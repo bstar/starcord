@@ -91,3 +91,51 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 - **`docs/account-safety.md` and `docs/auth.md`**, which say plainly what a
   user-account session is, what Discord's terms say about one, what this client
   deliberately cannot express, and what actually revokes a token.
+- **The GIF picker.** Trending, search and suggestions, with the provider taken
+  from configuration rather than compiled in — Discord proxies somebody else's
+  service here and has announced a change of provider — and with the spacing
+  owned by the core rather than by whatever is calling it. A picker that
+  searches on every keystroke still sends one request per pause, and a request
+  overtaken while it waits is dropped, because by the time its answer came back
+  nobody would want it. Posting a GIF is an ordinary message whose content is
+  the link; there is no separate request for it and nothing pretends otherwise.
+- **Attachments, in three requests rather than one.** Ask Discord for a slot,
+  put the bytes on the storage host it names, then post a message that only
+  names the slot. The bytes never touch Discord's API, so a rate limit on the
+  message costs one small retry rather than twenty megabytes again, and they
+  never carry a token, because the host they go to is not Discord's. A 403 or a
+  404 on the slot endpoint falls back to the older multipart form. A file over
+  the configured cap is refused before any request is made — a rejected request
+  is still a request.
+- **Reactions, optimistically.** The chip moves before Discord has heard about
+  it, because a round trip is a tenth of a second of nothing happening. The
+  change is expressed as an add or a remove rather than as a new count, so
+  putting it back after a refusal lands in the right place even when somebody
+  else reacted in between. Only this account's own reaction can be touched.
+- **Search**, of a server or of one channel, spaced by the same gate the picker
+  uses. Results come back on the event rather than going into the message
+  store: a search reaches back through a year of a channel nobody has open, and
+  inserting what it finds would throw away the window somebody is reading.
+- **Threads, under the channel they belong to.** A thread is an ordinary
+  channel that the list draws beneath its parent, newest conversation first and
+  active only — a thread is archived rather than deleted and an old server has
+  thousands. A forum's posts are threads, so the same rule draws a forum with
+  no special case in it.
+- **Member lists**, which are not fetched but subscribed to by index range and
+  arrive as splices against that window: replace a range, insert a row, take
+  one out. The ranges are clamped to three windows of a hundred before anything
+  is sent, because Discord ignores a larger request rather than refusing it,
+  and a subscription that is ignored looks exactly like one that was accepted
+  and never delivered.
+- **A DM only with a friend.** `OpenDm` is refused for anybody else, with a
+  note saying why; a conversation that already exists is opened rather than
+  asked for again.
+- **Desktop notifications**, decided separately from being delivered so that
+  the whole decision is a table test. A muted channel, this account's own
+  message, anything not addressed to the reader, the channel already on screen
+  while the terminal has focus, and more than one message in two seconds for
+  one channel are each a reason to stay quiet — the last collapsing into a
+  count rather than a queue of popups. A spoiler stays a spoiler in the body.
+- **`probe --gifs`, `--send-file`, `--react`, `--unreact` and `--search`**, so
+  that every one of those paths can be run against a real account with no
+  terminal UI in the way.
