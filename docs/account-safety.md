@@ -37,6 +37,8 @@ UI work can reach them.
 - Friend requests, and any change to a relationship.
 - Joining or leaving a server; using or creating an invite.
 - Opening a DM with somebody who is not already a friend.
+- Removing somebody else's reaction, which is a moderation action. A reaction
+  can be added and taken off, and only this account's own.
 - Anything bulk: no "delete all", no "react to everything", no export.
 - Profile scraping: there is no way to ask for a user this client is not
   already showing you.
@@ -59,7 +61,17 @@ would have pressed a key for it.
   per channel. Read marks are coalesced to the newest message per channel per
   second, skipped when the channel is already read, and never sent for a
   channel you are not looking at. Member lists are requested only for the
-  server you have open. History is one request per channel.
+  server you have open, and only for the rows on screen. History is one request
+  per channel.
+- **A search box does not search on every letter.** The GIF picker and the
+  message search both go through the core's own gate: three hundred
+  milliseconds between requests, and a request overtaken while it waits is
+  dropped rather than sent. It is the core that guarantees this and not the
+  interface, so no amount of UI work can turn a search box into a request per
+  keystroke.
+- **An upload carries no token.** Discord hands back a signed URL on somebody
+  else's storage and the bytes go there on the client that has no token in
+  reach, which is the same rule every download follows.
 - **A rejected token stops everything.** A 401 is never retried and closes the
   session, because a client hammering a rejected credential is the single most
   conspicuous thing on Discord's side of the connection.

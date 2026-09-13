@@ -157,17 +157,30 @@ fn run_probe(options: cli::Probe) -> Result<()> {
 
     report_ready(&handle);
 
+    if let Some(query) = options.gifs.clone() {
+        report_gifs(&handle, started, &query);
+    }
+
     if let Some(channel) = options.channel.map(ChannelId) {
         open_channel(&handle, started, channel, deadline)?;
 
-        if let Some(text) = options.send.clone() {
+        if let Some(text) = options.search.clone() {
+            report_search(&handle, started, channel, &text, options.search_here);
+        }
+
+        if let Some(react) = options.react.clone() {
+            react_once(&handle, started, channel, &react, options.unreact)?;
+        }
+
+        if options.send.is_some() || !options.send_file.is_empty() {
             send_one(
                 &handle,
                 started,
                 channel,
-                text,
+                options.send.clone().unwrap_or_default(),
                 options.reply_to.map(MessageId),
                 options.ping,
+                options.send_file.clone(),
             );
         }
     }
@@ -378,6 +391,219 @@ fn probe_media(url: &str) -> Result<()> {
     })
 }
 
+/// Search, and print what came back.
+///
+/// The results are not put in the message store and are not drawn from it: a
+/// search reaches back through a year of a channel nobody has open, and what is
+/// on screen must not depend on what was last searched for. They arrive on the
+/// event and are printed from it.
+fn report_search(handle: &Handle, started: Instant, channel: ChannelId, text: &str, here: bool) {
+    use discord::handle::{RequestId, SearchQuery, SearchScope};
+
+    let guild = handle.state().channel(channel).and_then(|c| c.guild_id);
+    let scope = match (here, guild) {
+        (false, Some(guild)) => SearchScope::Guild(guild),
+        // A DM has no server to search, so there is only one answer.
+        _ => SearchScope::Channel(channel),
+    };
+
+    let id = RequestId(1);
+    stamp(started);
+    match scope {
+        SearchScope::Guild(guild) => println!("searching {guild} for {text:?}"),
+        SearchScope::Channel(channel) => println!("searching {channel} for {text:?}"),
+    }
+    handle.send(discord::Command::Search {
+        id,
+        scope,
+        query: SearchQuery {
+            content: text.to_string(),
+            ..Default::default()
+        },
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Search { id: got, result } if got == id => {
+                    stamp(started);
+                    match result {
+                        Ok(page) => {
+                            println!(
+                                "{} results, showing {} from offset {}",
+                                page.total,
+                                page.messages.len(),
+                                page.offset
+                            );
+                            println!();
+                            for message in &page.messages {
+                                print!("  {} ", message.channel_id);
+                                print_message(handle, message, "");
+                            }
+                        }
+                        Err(e) => println!("the search returned nothing: {e}"),
+                    }
+                    return;
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                }
+                _ => {}
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    println!("the search did not answer within twenty seconds");
+}
+
+/// Put this account's reaction on a message, or take it off.
+///
+/// The emoji is given the way Discord spells it in a path: the character itself
+/// for a unicode one, `name:id` for a custom one.
+fn react_once(
+    handle: &Handle,
+    started: Instant,
+    channel: ChannelId,
+    args: &[String],
+    remove: bool,
+) -> Result<()> {
+    use discord::handle::EmojiRef;
+    use discord::snowflake::EmojiId;
+
+    let [id, emoji] = args else {
+        anyhow::bail!("--react takes a message id and an emoji");
+    };
+    let message = MessageId(id.parse().context("that is not a message id")?);
+
+    // `name:id` is a custom emoji; anything else is the character itself.
+    let emoji = match emoji.rsplit_once(':') {
+        Some((name, id)) if id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty() => {
+            EmojiRef::Custom {
+                name: name.to_string(),
+                id: EmojiId(id.parse().context("that is not an emoji id")?),
+                animated: false,
+            }
+        }
+        _ => EmojiRef::Unicode(emoji.clone()),
+    };
+
+    stamp(started);
+    println!(
+        "{} {emoji:?} on {message}",
+        if remove { "removing" } else { "adding" }
+    );
+
+    if remove {
+        handle.send(discord::Command::RemoveReaction {
+            channel,
+            message,
+            emoji,
+        });
+    } else {
+        handle.send(discord::Command::AddReaction {
+            channel,
+            message,
+            emoji,
+        });
+    }
+
+    // The optimistic change lands at once; what is worth waiting for is the
+    // gateway echoing it back, which is what says Discord agreed. A note means
+    // it did not, and the chip has already been put back by then.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut seen = 0usize;
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Messages(c, MessagesChange::Reactions(m))
+                    if c == channel && m == message =>
+                {
+                    seen += 1;
+                    report_change(handle, started, c, MessagesChange::Reactions(m));
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+        // The first is this client's own optimistic change; the second is the
+        // gateway agreeing, which is the one worth having waited for.
+        if seen >= 2 {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    println!("no gateway echo for that reaction within ten seconds");
+    Ok(())
+}
+
+/// Ask the picker and print the answers.
+///
+/// An empty query asks for what is trending. The link is printed rather than
+/// the picture: it is the thing that would be sent, and the pictures are
+/// somebody else's host.
+fn report_gifs(handle: &Handle, started: Instant, query: &str) {
+    use discord::handle::RequestId;
+
+    let id = RequestId(1);
+    stamp(started);
+    if query.is_empty() {
+        println!("asking for trending gifs");
+        handle.send(discord::Command::GifTrending { id });
+    } else {
+        println!("searching gifs for {query:?}");
+        handle.send(discord::Command::GifSearch {
+            id,
+            query: query.to_string(),
+        });
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Gifs { id: got, result } if got == id => {
+                    stamp(started);
+                    match result {
+                        Ok(page) => {
+                            println!("{} results", page.results.len());
+                            println!();
+                            for gif in &page.results {
+                                let title = if gif.title.is_empty() {
+                                    "(untitled)"
+                                } else {
+                                    &gif.title
+                                };
+                                println!("  {:<40} {}", truncate(title, 40), gif.url);
+                            }
+                            if !page.categories.is_empty() {
+                                println!();
+                                let names: Vec<&str> =
+                                    page.categories.iter().map(|c| c.name.as_str()).collect();
+                                println!("categories: {}", names.join(", "));
+                            }
+                        }
+                        Err(e) => println!("the picker returned nothing: {e}"),
+                    }
+                    return;
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                }
+                _ => {}
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    println!("the picker did not answer within fifteen seconds");
+}
+
 /// Open a channel, wait for its history, and print it.
 ///
 /// The wait is on `Event::Messages(channel, Replaced)`, which is what an open
@@ -435,6 +661,7 @@ fn open_channel(
 /// The echo is the point: it is what proves the nonce round-tripped and that
 /// the optimistic row on screen became the real message rather than a second
 /// copy of it.
+#[allow(clippy::too_many_arguments)]
 fn send_one(
     handle: &Handle,
     started: Instant,
@@ -442,16 +669,26 @@ fn send_one(
     text: String,
     reply_to: Option<MessageId>,
     ping: bool,
+    files: Vec<std::path::PathBuf>,
 ) {
     stamp(started);
-    println!("sending {} characters to {channel}", text.chars().count());
+    match files.len() {
+        0 => println!("sending {} characters to {channel}", text.chars().count()),
+        n => println!(
+            "sending {} characters and {n} file(s) to {channel}",
+            text.chars().count()
+        ),
+    }
 
     handle.send(discord::Command::SendMessage {
         channel,
         content: text,
         reply_to,
         mention_author: ping,
-        attachments: Vec::new(),
+        attachments: files
+            .into_iter()
+            .map(discord::handle::Upload::Path)
+            .collect(),
     });
 
     // Long enough to cover the send's own ten-second echo fallback.
@@ -468,6 +705,10 @@ fn send_one(
                         stamp(started);
                         println!("pending as nonce {n}");
                     }
+                }
+                Event::UploadProgress { sent, total, .. } => {
+                    stamp(started);
+                    println!("uploaded {sent} of {total} bytes");
                 }
                 Event::SendResult { nonce: n, result } => {
                     stamp(started);

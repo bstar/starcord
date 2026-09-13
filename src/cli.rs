@@ -83,6 +83,13 @@ pub struct Probe {
     #[arg(long, value_name = "TEXT", requires = "channel")]
     pub send: Option<String>,
 
+    /// Attach a file to the message sent to `--channel`.
+    ///
+    /// May be given more than once. Works with or without `--send`: a message
+    /// with a file and no text is an ordinary message with a file in it.
+    #[arg(long, value_name = "PATH", requires = "channel")]
+    pub send_file: Vec<std::path::PathBuf>,
+
     /// Make `--send` a reply to this message.
     #[arg(long, value_name = "ID", requires = "send")]
     pub reply_to: Option<u64>,
@@ -91,6 +98,29 @@ pub struct Probe {
     /// own default is.
     #[arg(long, requires = "reply_to")]
     pub ping: bool,
+
+    /// Search for messages and print what came back.
+    ///
+    /// Searches the whole server `--channel` is in, or just that channel with
+    /// `--search-here`.
+    #[arg(long, value_name = "TEXT", requires = "channel")]
+    pub search: Option<String>,
+
+    /// Make `--search` look only in `--channel` rather than the whole server.
+    #[arg(long, requires = "search")]
+    pub search_here: bool,
+
+    /// React to a message in `--channel`.
+    ///
+    /// Takes a message id and an emoji: the character itself for a unicode one,
+    /// `name:id` for a custom one. `--unreact` takes this account's reaction
+    /// off again instead of putting it on.
+    #[arg(long, value_names = ["MESSAGE_ID", "EMOJI"], num_args = 2, requires = "channel")]
+    pub react: Option<Vec<String>>,
+
+    /// Make `--react` remove the reaction rather than add it.
+    #[arg(long, requires = "react")]
+    pub unreact: bool,
 
     /// Sign in by scanning a code with the Discord phone app.
     ///
@@ -116,6 +146,15 @@ pub struct Probe {
     /// result is reported as a size, a format and a frame count.
     #[arg(long, value_name = "URL")]
     pub media: Option<String>,
+
+    /// Search the GIF picker and print what came back.
+    ///
+    /// An empty string asks for what is trending. Prints a title and the link
+    /// that would be posted for each result, which is the whole of what the
+    /// picker sends: posting a GIF is an ordinary message whose content is that
+    /// link.
+    #[arg(long, value_name = "QUERY")]
+    pub gifs: Option<String>,
 
     /// Subscribe to member lists with op 14 rather than op 37.
     ///
@@ -270,6 +309,35 @@ mod tests {
     }
 
     #[test]
+    fn a_file_needs_somewhere_to_go_and_does_not_need_text() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--send-file",
+            "a.png",
+            "--send-file",
+            "b.png",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(probe.send_file.len(), 2);
+                assert!(
+                    probe.send.is_none(),
+                    "a message with a file and no text is an ordinary message"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--send-file", "a.png"]).is_err(),
+            "there is nowhere to send that"
+        );
+    }
+
+    #[test]
     fn a_reply_says_whether_it_pings() {
         let cli = Cli::parse_from([
             "starcord",
@@ -289,6 +357,63 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_search_needs_somewhere_to_look() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--search",
+            "kettle",
+            "--search-here",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(probe.search.as_deref(), Some("kettle"));
+                assert!(probe.search_here);
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--search", "kettle"]).is_err(),
+            "the scope comes from the channel, so there has to be one"
+        );
+    }
+
+    #[test]
+    fn a_reaction_takes_a_message_and_an_emoji() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--react",
+            "500",
+            "\u{1f44d}",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(
+                    probe.react.as_deref(),
+                    Some(["500".to_string(), "\u{1f44d}".to_string()].as_slice())
+                );
+                assert!(!probe.unreact);
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--channel", "1", "--react", "500"]).is_err(),
+            "a message id on its own says nothing about which reaction"
+        );
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--unreact"]).is_err(),
+            "there is nothing to take off"
+        );
     }
 
     #[test]

@@ -743,6 +743,16 @@ impl App {
             channel: Some(channel),
             terminal_focused: self.terminal_focused,
         });
+        // The member list is a subscription against a range, and the range is
+        // the top of the list: what the panel can draw without scrolling.
+        // Asking for more as it scrolls is the milestone after this one.
+        if let Some(guild) = self.nav.guild {
+            self.core.send(Command::RequestMembers {
+                guild,
+                channel,
+                ranges: vec![(0, 99)],
+            });
+        }
         self.focused_since = Instant::now();
         self.layout.focus_set(PanelId::Chat);
         self.view.stale = true;

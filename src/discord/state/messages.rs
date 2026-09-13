@@ -64,6 +64,11 @@ pub struct PendingSend {
     pub content: String,
     pub reply_to: Option<MessageId>,
     pub mention_author: bool,
+    /// The files this message is carrying, kept so that a retry re-uploads
+    /// them. An upload slot is short-lived and tied to one attempt, so there is
+    /// nothing else worth keeping: the retry starts the whole three-request
+    /// dance again.
+    pub attachments: Vec<crate::discord::handle::Upload>,
     pub state: PendingState,
     /// When the optimistic row appeared, for the fallback that inserts the
     /// HTTP response when no echo arrives.
@@ -77,9 +82,19 @@ impl PendingSend {
             content,
             reply_to,
             mention_author: mention,
+            attachments: Vec::new(),
             state: PendingState::Sending,
             created: jiff::Timestamp::now(),
         }
+    }
+
+    /// The same, carrying files.
+    pub fn with_attachments(mut self, attachments: Vec<crate::discord::handle::Upload>) -> Self {
+        if !attachments.is_empty() {
+            self.state = PendingState::Uploading { sent: 0, total: 0 };
+        }
+        self.attachments = attachments;
+        self
     }
 
     pub fn failed(&self) -> bool {

@@ -9,7 +9,6 @@
 //! thread. A runtime sized to the machine would spend most of a laptop's cores
 //! parked in `epoll`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -20,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 use crate::discord::auth::remote::{self, Authenticated};
 use crate::discord::auth::{Token, TokenStore};
 use crate::discord::gateway::{self, Bridge, Control, GatewayConfig};
+use crate::discord::gifs::{Ask, Gifs};
 use crate::discord::handle::{
     AuthEvent, Command, Connection, DiscordConfig, Event, EventSink, Note,
 };
@@ -69,6 +69,7 @@ pub fn run(
             state,
             events,
             status,
+            notify: crate::discord::notify::Notifier::new(config.notify.clone()),
         };
         let mut core = Core::new(config, paths, bridge)?;
         core.run(commands).await;
@@ -113,14 +114,12 @@ struct Core {
     /// it, so it is a task; but what it produces -- a token to store, a
     /// connection to open -- is `&mut self` work that only this loop may do.
     internal: Option<mpsc::Sender<Internal>>,
+    /// The GIF picker, which has its own spacing rule and no other state.
+    gifs: Gifs,
     session: Arc<std::sync::Mutex<SessionStore>>,
     token: Option<Token>,
     presence: PresenceStatus,
     rest: Arc<Semaphore>,
-    /// Commands that arrived before the milestone that handles them. Counted
-    /// rather than silently dropped, so "nothing happens when I press that" has
-    /// a number behind it.
-    unhandled: AtomicU64,
 }
 
 impl Core {
@@ -145,9 +144,16 @@ impl Core {
         let ops = Ops::new(
             Arc::clone(&http),
             bridge.clone(),
+            Arc::new(config.media.clone()),
             Arc::clone(&rest),
             Arc::clone(&control),
             config.legacy_lazy_request,
+        );
+
+        let gifs = Gifs::new(
+            Arc::clone(&http),
+            config.gifs.clone(),
+            bridge.events.clone(),
         );
 
         Ok(Self {
@@ -161,12 +167,12 @@ impl Core {
             media: None,
             remote: None,
             internal: None,
+            gifs,
             session: Arc::new(std::sync::Mutex::new(SessionStore::load(paths))),
             gateway: None,
             token: None,
             presence: PresenceStatus::Online,
             rest,
-            unhandled: AtomicU64::new(0),
         })
     }
 
@@ -384,6 +390,7 @@ impl Core {
                 terminal_focused,
             } => {
                 self.ops.set_focus(channel, terminal_focused);
+                self.bridge.notify.set_focus(channel, terminal_focused);
                 if let Some(channel) = channel {
                     let guild = self.ops.state().channel(channel).and_then(|c| c.guild_id);
                     self.with_session(|session| {
@@ -425,18 +432,17 @@ impl Core {
                 mention_author,
                 attachments,
             } => {
-                if !attachments.is_empty() {
-                    // Uploads arrive with the media milestone. Refusing loudly
-                    // beats sending the text and quietly dropping the file.
-                    self.bridge.note(Note::warning(
-                        "no-uploads",
-                        "attachments are not supported yet; the text was not sent",
-                    ));
-                    return;
-                }
                 let ops = self.ops.clone();
                 tokio::spawn(async move {
-                    ops::send::send_message(&ops, channel, content, reply_to, mention_author).await
+                    ops::send::send_message(
+                        &ops,
+                        channel,
+                        content,
+                        reply_to,
+                        mention_author,
+                        attachments,
+                    )
+                    .await
                 });
             }
             Command::RetrySend(nonce) => {
@@ -457,6 +463,27 @@ impl Core {
                 tokio::spawn(async move { ops::send::delete(&ops, channel, message).await });
             }
 
+            Command::AddReaction {
+                channel,
+                message,
+                emoji,
+            } => {
+                let ops = self.ops.clone();
+                tokio::spawn(
+                    async move { ops::reactions::add(&ops, channel, message, emoji).await },
+                );
+            }
+            Command::RemoveReaction {
+                channel,
+                message,
+                emoji,
+            } => {
+                let ops = self.ops.clone();
+                tokio::spawn(
+                    async move { ops::reactions::remove(&ops, channel, message, emoji).await },
+                );
+            }
+
             Command::Typing(channel) => {
                 let ops = self.ops.clone();
                 tokio::spawn(async move { ops::typing::typing(&ops, channel).await });
@@ -474,6 +501,22 @@ impl Core {
             }
             Command::SaveSession => self.with_session(SessionStore::save_if_dirty),
 
+            Command::OpenDm(user) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::open_dm(&ops, user).await });
+            }
+
+            Command::RequestMembers {
+                guild,
+                channel,
+                ranges,
+            } => ops::open::request_members(&self.ops, guild, channel, &ranges),
+
+            Command::Search { id, scope, query } => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::search::search(&ops, id, scope, query).await });
+            }
+
             Command::FetchMedia(request) => {
                 if let Some(media) = &self.media {
                     media.fetch(request);
@@ -490,14 +533,17 @@ impl Core {
                 }
             }
 
-            other => {
-                let total = self.unhandled.fetch_add(1, Ordering::Relaxed) + 1;
-                tracing::debug!(
-                    "{} is not implemented yet ({total} unhandled commands so far)",
-                    other.name()
-                );
-            }
+            // The picker's own task, because `run` sleeps out the gap between
+            // two searches and the command loop must not sleep with it.
+            Command::GifTrending { id } => self.ask_gifs(id, Ask::Trending),
+            Command::GifSearch { id, query } => self.ask_gifs(id, Ask::Search(query)),
+            Command::GifSuggest { id, prefix } => self.ask_gifs(id, Ask::Suggest(prefix)),
         }
+    }
+
+    fn ask_gifs(&self, id: crate::discord::handle::RequestId, ask: Ask) {
+        let gifs = self.gifs.clone();
+        tokio::spawn(async move { gifs.run(id, ask).await });
     }
 
     async fn login(&mut self, token: Token) {

@@ -127,6 +127,10 @@ pub struct Bridge {
     pub state: Arc<RwLock<State>>,
     pub events: EventSink,
     pub status: Arc<ArcSwap<Connection>>,
+    /// Decides whether something that just arrived should interrupt somebody.
+    /// Here rather than in `ops` because a mention is produced by applying a
+    /// dispatch, and this is where dispatches are applied.
+    pub notify: crate::discord::notify::Notifier,
 }
 
 impl Bridge {
@@ -149,8 +153,37 @@ impl Bridge {
             let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
             apply(&mut state, dispatch)
         };
+
+        // What deserves a desktop notification is exactly what `apply` called a
+        // mention, so the rule has one home and the bell, the badge and the
+        // popup cannot disagree.
+        let mentions: Vec<(
+            crate::discord::snowflake::ChannelId,
+            crate::discord::snowflake::MessageId,
+        )> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Mention { channel, message } => Some((*channel, *message)),
+                _ => None,
+            })
+            .collect();
+
         for event in events {
             self.events.send(event);
+        }
+
+        for (channel, message) in mentions {
+            // The read lock is taken and dropped around the decision; delivery
+            // happens on a blocking thread with nothing held.
+            let decision = {
+                let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+                state
+                    .message(channel, message)
+                    .and_then(|message| self.notify.consider(&state, &message))
+            };
+            if let Some(notification) = decision {
+                self.notify.deliver(notification);
+            }
         }
     }
 }

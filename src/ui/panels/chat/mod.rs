@@ -266,11 +266,12 @@ impl ChatState {
             })
             .unwrap_or_default();
 
+        let guild = state.channel(channel).and_then(|c| c.guild_id);
         self.typing = state
             .typing(channel)
             .into_iter()
             .filter(|id| Some(*id) != state.me().map(|u| u.id))
-            .map(|id| state.display_name(None, id))
+            .map(|id| state.display_name(guild, id))
             .collect();
 
         self.first_unread = first_unread(state, channel, &self.messages);

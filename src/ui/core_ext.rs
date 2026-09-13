@@ -1,7 +1,8 @@
-//! The two things the UI needs from the core that the core does not offer yet.
+//! What the UI asks `State` that `State` does not answer in that shape.
 //!
-//! Both are shims, both are here rather than spread through `app.rs`, and both
-//! have an owner on the core side who will delete them:
+//! Two of these are shims with an owner on the core side who will delete them;
+//! the rest are the small translations every panel would otherwise write for
+//! itself, kept here so the two that ask the same question ask it once.
 //!
 //! 1. **[`friends`]** derives the friends list from the DM list. `State` knows
 //!    every relationship — READY carries them and `apply` stores them — but the
@@ -12,21 +13,27 @@
 //!    who are friends, which is right for everybody you have ever messaged and
 //!    silently short for everybody you have not.
 //!
-//! 2. **[`last_channel`]** reads `session.toml` directly. The session file is
-//!    the core's, and a `session.rs` that owns it is landing in the milestone
-//!    beside this one; this reads the one key the UI needs to open the channel
-//!    somebody was last in, and is three lines rather than a design.
+//! 2. **[`last_channel`]** reads `session.toml` directly. The core owns that
+//!    file and sends `Event::SessionLoaded` with the whole of it, which is
+//!    what the UI uses; this is the fallback for a run where no event arrived,
+//!    and is three lines rather than a design.
 //!
 //! Neither reaches into anything private. They are shims because they are
 //! answering a question in the wrong place, not because they are cheating.
+//!
+//! [`member_rows`] and [`custom_emoji`] were shims too and are not any more:
+//! the core grew `State::member_list` and `State::custom_emoji`, and what is
+//! left here is the turn from the core's shape into the panel's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::discord::model::{PresenceStatus, User};
-use crate::discord::snowflake::{ChannelId, GuildId, UserId};
+use crate::discord::model::{PresenceStatus, Role, User};
+use crate::discord::snowflake::{ChannelId, EmojiId, GuildId, RoleId, UserId};
+use crate::discord::state::members::MemberRow;
 use crate::discord::state::State;
+use crate::ui::panels::members;
 
 /// Everybody this account is friends with, as far as the DM list can say.
 ///

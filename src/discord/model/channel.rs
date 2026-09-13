@@ -115,6 +115,28 @@ impl<'de> Deserialize<'de> for ChannelKind {
     }
 }
 
+/// A thread's own state, which is the only place its archived flag lives.
+///
+/// It matters because the channel list shows *active* threads and Discord keeps
+/// sending archived ones: a thread is archived rather than deleted, and a busy
+/// server has thousands of them. `archived` with no metadata at all reads as
+/// false, which is the safe direction — a thread wrongly shown is a row too
+/// many, and one wrongly hidden is a conversation nobody can find.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ThreadMetadata {
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub locked: bool,
+    /// Minutes of quiet before Discord archives it on its own.
+    #[serde(default)]
+    pub auto_archive_duration: u32,
+    #[serde(default)]
+    pub archive_timestamp: Option<String>,
+    #[serde(default)]
+    pub create_timestamp: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Channel {
     pub id: ChannelId,
@@ -152,9 +174,27 @@ pub struct Channel {
     pub icon: Option<String>,
     #[serde(default)]
     pub flags: u64,
+    /// Present on threads and nothing else.
+    #[serde(default)]
+    pub thread_metadata: Option<ThreadMetadata>,
+    /// How many messages a thread holds. Discord stops counting at 50 and the
+    /// field is absent on everything that is not a thread.
+    #[serde(default)]
+    pub message_count: Option<u32>,
 }
 
 impl Channel {
+    /// Whether this is a thread somebody could still post in.
+    ///
+    /// Archived threads are not deleted and keep arriving; a busy server has
+    /// thousands of them, and none belongs in a channel list.
+    pub fn is_active_thread(&self) -> bool {
+        self.kind.is_thread()
+            && !self
+                .thread_metadata
+                .as_ref()
+                .is_some_and(|meta| meta.archived)
+    }
     /// Everyone in a DM, however the payload spelled it.
     pub fn recipient_ids(&self) -> Vec<UserId> {
         if !self.recipient_ids.is_empty() {
@@ -217,5 +257,29 @@ mod tests {
         assert!(thread.kind.is_thread());
         assert!(thread.kind.is_text());
         assert_eq!(thread.parent_id, Some(ChannelId(2)));
+    }
+
+    #[test]
+    fn an_archived_thread_is_not_an_active_one() {
+        let live: Channel = serde_json::from_str(
+            r#"{"id":"1","type":11,"parent_id":"2",
+                "thread_metadata":{"archived":false,"auto_archive_duration":1440}}"#,
+        )
+        .unwrap();
+        assert!(live.is_active_thread());
+
+        let archived: Channel = serde_json::from_str(
+            r#"{"id":"1","type":11,"parent_id":"2","thread_metadata":{"archived":true}}"#,
+        )
+        .unwrap();
+        assert!(!archived.is_active_thread());
+
+        // No metadata at all reads as active: a row too many beats a
+        // conversation nobody can find.
+        let bare: Channel = serde_json::from_str(r#"{"id":"1","type":11}"#).unwrap();
+        assert!(bare.is_active_thread());
+
+        let not_a_thread: Channel = serde_json::from_str(r#"{"id":"1","type":0}"#).unwrap();
+        assert!(!not_a_thread.is_active_thread());
     }
 }

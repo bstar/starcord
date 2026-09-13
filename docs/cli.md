@@ -6,8 +6,10 @@ starcord probe [--qr [--qr-invert]] [--token-from-stdin]
                [--no-store] [--offline] [--timeout SECONDS]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
-               [--send TEXT [--reply-to ID [--ping]]]
-               [--media URL]
+               [--send TEXT] [--send-file PATH]... [--reply-to ID [--ping]]
+               [--search TEXT [--search-here]]
+               [--react MESSAGE_ID EMOJI [--unreact]]
+               [--media URL] [--gifs QUERY]
 ```
 
 `--verbose` raises the log level to debug. It goes to the log file at
@@ -76,6 +78,7 @@ want when checking somebody else's report against your own account.
 | `--offline` | Do not look up the current web-client build number; use the pinned one. Also what the tests use, because a test suite has no business making a request to a CDN. |
 | `--legacy-lazy-request` | Send op 14 rather than op 37 for member-list subscriptions. Same body either way. |
 | `--media URL` | Fetch and decode one picture and exit. See below. |
+| `--gifs QUERY` | Ask the GIF picker and print the results. An empty string asks for what is trending. |
 | `--qr-invert` | Draw the login code for a light terminal background. |
 
 ## Signing in by scanning
@@ -181,6 +184,95 @@ message, or the optimistic row on screen becomes a second copy of it.
 `--reply-to ID` makes it a reply; `--ping` makes that reply notify the person
 being answered, which it does not do by default.
 
+### Sending a file
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 \
+  --send "look at this" --send-file ~/Pictures/cat.png < token.txt
+```
+
+```
+[  2.51s] sending 12 characters and 1 file(s) to 1234567890
+[  2.52s] pending as nonce 5722948177327149
+[  2.90s] uploaded 262144 of 481232 bytes
+[  3.11s] uploaded 481232 of 481232 bytes
+[  3.40s] accepted as 5000000000000000457
+[  3.44s] echoed back by the gateway
+  09:58  Sam: look at this [cat.png]
+```
+
+`--send-file` may be given more than once, and works with no `--send` at all.
+
+The file goes up in three requests: one to ask Discord for a slot, one `PUT` of
+the bytes to the URL it hands back, and one message naming the slot. The second
+of those goes to Google's storage rather than to Discord, so it carries no
+token — the same rule that governs every download. If the slot endpoint answers
+403 or 404, which happens on some channels and some accounts, the bytes go
+inside the message as a multipart form instead; nothing is printed differently,
+because nothing about it is different from where the message ends up.
+
+A file over `[media] max_attachment_mib` — 25 by default, which is what an
+account without Nitro is allowed — is refused before any request is made, with
+the size in the message.
+
+## Searching
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 --search "kettle" < token.txt
+```
+
+```
+[  2.51s] searching 9876543210 for "kettle"
+[  2.94s] 42 results, showing 25 from offset 0
+
+  1234567890 09:41  Alex: the kettle is on
+  1111111111 14:02  Jordan: kettle broke again
+  ...
+```
+
+Searches the whole server the channel is in; `--search-here` looks only in that
+channel. A DM has no server, so it is always the channel either way.
+
+Results are printed from the event that carried them and are **not** put in the
+message store. A search reaches back through a year of a channel nobody has
+open, and inserting what comes back would throw away the window somebody is
+reading. Jumping to a result is a separate thing — `Command::JumpTo`, which
+fetches the page around it properly.
+
+Searches are kept three hundred milliseconds apart by the core, the same gate
+the GIF picker uses and for the same reason.
+
+A server Discord has not finished indexing answers 202 with a wait rather than
+results, which would otherwise look like a search that found nothing. That case
+prints `the server is still indexing its messages`.
+
+## Reacting
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 --react 5000000000000000123 👍 < token.txt
+starcord probe --token-from-stdin --channel 1234567890 --react 5000000000000000123 pepe:12345 --unreact < token.txt
+```
+
+```
+[  2.51s] adding Unicode("👍") on 5000000000000000123
+[  2.51s] reactions on 5000000000000000123: 👍 1*
+[  2.88s] reactions on 5000000000000000123: 👍 1*
+```
+
+The emoji is spelled the way Discord spells it in a path: the character itself
+for a unicode emoji, `name:id` for a custom one. A `*` on the count means this
+account is one of the people who reacted.
+
+Two lines rather than one is the thing to watch. The first is this client
+changing the chip before Discord has heard about it, which is what makes
+clicking a reaction feel immediate; the second is the gateway agreeing. If the
+request is refused the chip is put back and a warning is printed instead, which
+is the case worth checking by hand: react in a channel where the account has no
+permission to.
+
+Only this account's own reaction can be added or removed. There is no way to
+remove somebody else's, here or in `Command`.
+
 ### Exit status
 
 `0` when READY arrived. Non-zero, with the reason on stderr, when the token was
@@ -221,6 +313,38 @@ frame delays 90ms to 90ms
 Anything the decoder had to do differently is printed after the answer rather
 than hidden — an animation past the three-hundred-frame cap comes back as its
 first frame and says so.
+
+## Asking the GIF picker
+
+```sh
+starcord probe --token-from-stdin --gifs "cat" < token.txt
+```
+
+```
+[  2.10s] searching gifs for "cat"
+[  2.44s] 20 results
+
+  Cat Typing                               https://tenor.com/view/cat-typing-gif-16043823
+  Cat Stare                                https://tenor.com/view/cat-stare-gif-14192285
+  ...
+```
+
+The link is what gets printed because the link is what gets *sent*: posting a
+GIF is an ordinary message whose entire content is that URL, which Discord then
+unfurls into a `gifv` embed. There is no separate "post a GIF" request, and
+nothing in `Command` pretends otherwise.
+
+`--gifs ""` asks for trending instead, which also prints the category names the
+picker would show as shortcuts.
+
+Requests are kept three hundred milliseconds apart by the core rather than by
+whatever is calling it, so a picker that searches on every keystroke sends one
+request per pause and not one per letter. A request still waiting when a newer
+one arrives is dropped: by the time its answer came back nobody would want it.
+
+Which service is behind the picker is configuration — `[gifs] provider`,
+`media_format` and `locale` — because Discord proxies a third party here and
+has announced a change of provider for 2026.
 
 ### Recording fixtures
 

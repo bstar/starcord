@@ -13,6 +13,12 @@
 //! how Discord draws them and is not implied by their positions: Discord keeps
 //! two independent position sequences per category.
 //!
+//! **Threads sit under the channel they were started in**, immediately after
+//! it, newest conversation first. Only active ones: a thread is archived rather
+//! than deleted, Discord keeps sending the archived ones, and a year-old server
+//! has thousands. A forum channel is a parent in exactly the same way — its
+//! posts *are* threads — so the same rule draws it without a special case.
+//!
 //! **DMs.** Newest conversation first, by the last message in it. A DM with no
 //! messages falls back to its own id, which is its creation time, so a freshly
 //! opened conversation appears at the top rather than at the bottom.
@@ -30,20 +36,29 @@ fn rank(channel: &Channel) -> (u8, i32, u64) {
     (group, channel.position, channel.id.get())
 }
 
-/// Guild channels in display order, categories included as their own rows.
+/// Guild channels in display order, categories included as their own rows and
+/// active threads under the channel they belong to.
 pub fn order_guild_channels(channels: &[Arc<Channel>]) -> Vec<ChannelId> {
     let mut categories: Vec<&Arc<Channel>> = Vec::new();
     let mut uncategorised: Vec<&Arc<Channel>> = Vec::new();
     let mut by_category: HashMap<ChannelId, Vec<&Arc<Channel>>> = HashMap::new();
+    let mut threads: HashMap<ChannelId, Vec<&Arc<Channel>>> = HashMap::new();
 
     for channel in channels {
         if channel.kind == ChannelKind::GuildCategory {
             categories.push(channel);
         } else if channel.kind.is_thread() {
-            // Threads hang off their parent channel and are not rows in the
-            // channel list; the chat panel shows them under the message that
-            // started them.
-            continue;
+            // Archived threads are dropped outright rather than sorted and
+            // hidden: there are thousands of them in an old server and none of
+            // them is a row.
+            if !channel.is_active_thread() {
+                continue;
+            }
+            // A thread with no parent has nowhere to go but the end, which is
+            // what the orphan sweep below does with it.
+            if let Some(parent) = channel.parent_id {
+                threads.entry(parent).or_default().push(channel);
+            }
         } else if let Some(parent) = channel.parent_id {
             by_category.entry(parent).or_default().push(channel);
         } else {
@@ -51,26 +66,45 @@ pub fn order_guild_channels(channels: &[Arc<Channel>]) -> Vec<ChannelId> {
         }
     }
 
-    categories.sort_by_key(|c| (c.position, c.id.get()));
+    // Newest conversation first, as the DM list is ordered and for the same
+    // reason: a thread's position is its activity, not a number somebody set.
+    for children in threads.values_mut() {
+        children.sort_by_key(|c| std::cmp::Reverse(dm_recency(c)));
+    }
+
+    categories.sort_by_key(|c| rank(c));
     uncategorised.sort_by_key(|c| rank(c));
 
-    let mut out: Vec<ChannelId> = uncategorised.iter().map(|c| c.id).collect();
+    let mut out: Vec<ChannelId> = Vec::with_capacity(channels.len());
+    let push = |channel: &Arc<Channel>, out: &mut Vec<ChannelId>| {
+        out.push(channel.id);
+        if let Some(children) = threads.get(&channel.id) {
+            out.extend(children.iter().map(|c| c.id));
+        }
+    };
+
+    for channel in &uncategorised {
+        push(channel, &mut out);
+    }
     for category in categories {
         out.push(category.id);
         if let Some(children) = by_category.get_mut(&category.id) {
             children.sort_by_key(|c| rank(c));
-            out.extend(children.iter().map(|c| c.id));
+            for channel in children.iter() {
+                push(channel, &mut out);
+            }
         }
     }
 
     // A channel whose parent is not in this guild's list — a category that
-    // arrived in a later GUILD_UPDATE, most likely — would otherwise vanish.
-    // Appending is not where it belongs, but it is visible, and invisible is
-    // the worse failure.
+    // arrived in a later GUILD_UPDATE, or a thread whose channel has not — would
+    // otherwise vanish. Appending is not where it belongs, but it is visible,
+    // and invisible is the worse failure.
     let placed: std::collections::HashSet<ChannelId> = out.iter().copied().collect();
     let mut orphans: Vec<&Arc<Channel>> = channels
         .iter()
-        .filter(|c| !placed.contains(&c.id) && !c.kind.is_thread())
+        .filter(|c| !placed.contains(&c.id))
+        .filter(|c| !c.kind.is_thread() || c.is_active_thread())
         .collect();
     orphans.sort_by_key(|c| rank(c));
     out.extend(orphans.iter().map(|c| c.id));
@@ -102,6 +136,21 @@ pub fn order_dms(channels: &[Arc<Channel>]) -> Vec<ChannelId> {
 mod tests {
     use super::*;
     use crate::discord::snowflake::MessageId;
+
+    /// A thread hanging off `parent`, with its own activity.
+    fn thread(id: u64, parent: u64, last: Option<u64>, archived: bool) -> Arc<Channel> {
+        Arc::new(Channel {
+            id: ChannelId(id),
+            kind: ChannelKind::PublicThread,
+            parent_id: Some(ChannelId(parent)),
+            last_message_id: last.map(MessageId),
+            thread_metadata: Some(crate::discord::model::channel::ThreadMetadata {
+                archived,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
 
     fn channel(id: u64, kind: u8, position: i32, parent: Option<u64>) -> Arc<Channel> {
         Arc::new(Channel {
@@ -155,9 +204,73 @@ mod tests {
     }
 
     #[test]
-    fn threads_are_not_rows_in_the_channel_list() {
-        let channels = vec![channel(1, 0, 0, None), channel(2, 11, 0, Some(1))];
-        assert_eq!(order_guild_channels(&channels), vec![ChannelId(1)]);
+    fn an_active_thread_sits_under_the_channel_it_belongs_to() {
+        let channels = vec![
+            channel(1, 0, 0, None),
+            channel(2, 0, 1, None),
+            thread(11, 1, Some(500), false),
+        ];
+        assert_eq!(
+            order_guild_channels(&channels),
+            vec![ChannelId(1), ChannelId(11), ChannelId(2)],
+            "the thread belongs to #1, not between the two channels"
+        );
+    }
+
+    #[test]
+    fn an_archived_thread_is_not_a_row_at_all() {
+        let channels = vec![channel(1, 0, 0, None), thread(11, 1, Some(500), true)];
+        assert_eq!(
+            order_guild_channels(&channels),
+            vec![ChannelId(1)],
+            "an old server has thousands of these"
+        );
+    }
+
+    /// A thread's place is its activity, not a position somebody set: it has
+    /// none.
+    #[test]
+    fn threads_under_one_channel_are_newest_first() {
+        let channels = vec![
+            channel(1, 0, 0, None),
+            thread(11, 1, Some(100), false),
+            thread(12, 1, Some(900), false),
+            thread(950, 1, None, false),
+        ];
+        assert_eq!(
+            order_guild_channels(&channels),
+            vec![
+                ChannelId(1),
+                // 950 has no messages, so it falls back to its own id — its
+                // creation time, and the newest thing about it.
+                ChannelId(950),
+                ChannelId(12),
+                ChannelId(11)
+            ]
+        );
+    }
+
+    /// A forum's posts are threads, so the same rule draws it with no special
+    /// case at all.
+    #[test]
+    fn a_forums_posts_hang_off_the_forum() {
+        let channels = vec![
+            channel(10, 4, 0, None),      // a category
+            channel(20, 15, 0, Some(10)), // the forum inside it
+            thread(21, 20, Some(700), false),
+            thread(22, 20, Some(800), false),
+        ];
+        assert_eq!(
+            order_guild_channels(&channels),
+            vec![ChannelId(10), ChannelId(20), ChannelId(22), ChannelId(21)]
+        );
+    }
+
+    #[test]
+    fn a_thread_whose_channel_is_missing_is_still_shown() {
+        let channels = vec![channel(1, 0, 0, None), thread(11, 999, Some(1), false)];
+        let order = order_guild_channels(&channels);
+        assert!(order.contains(&ChannelId(11)), "{order:?}");
     }
 
     #[test]

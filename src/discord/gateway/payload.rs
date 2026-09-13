@@ -123,6 +123,37 @@ pub enum Dispatch {
     ChannelCreate(Box<Channel>),
     ChannelUpdate(Box<Channel>),
     ChannelDelete(Box<Channel>),
+    /// The pinned messages in a channel changed. Only the timestamp arrives;
+    /// what is pinned is a separate request nothing makes yet.
+    ChannelPinsUpdate {
+        channel_id: ChannelId,
+        last_pin_timestamp: Option<String>,
+    },
+    /// A thread. The payload is an ordinary channel of type 10, 11 or 12, so
+    /// there is no separate model for one.
+    ThreadCreate(Box<Channel>),
+    ThreadUpdate(Box<Channel>),
+    ThreadDelete {
+        id: ChannelId,
+        guild_id: Option<GuildId>,
+        parent_id: Option<ChannelId>,
+    },
+    /// The active threads in a guild, or in the channels named. Sent on
+    /// connect and whenever access to a channel changes.
+    ThreadListSync {
+        guild_id: Option<GuildId>,
+        /// The channels this list covers. Empty means the whole guild, which
+        /// is Discord's own convention and not a missing field.
+        channel_ids: Vec<ChannelId>,
+        threads: Vec<Channel>,
+    },
+    /// A guild's custom emoji changed.
+    GuildEmojisUpdate {
+        guild_id: GuildId,
+        emojis: Vec<crate::discord::model::Emoji>,
+    },
+    /// A member list window. The whole of `state::members` hangs off this.
+    GuildMemberListUpdate(Box<crate::discord::model::member_list::MemberListUpdate>),
     PresenceUpdate(Box<Presence>),
     UserUpdate(Box<User>),
     RelationshipAdd(Box<Relationship>),
@@ -214,6 +245,13 @@ impl Dispatch {
             Dispatch::ChannelCreate(_) => "CHANNEL_CREATE",
             Dispatch::ChannelUpdate(_) => "CHANNEL_UPDATE",
             Dispatch::ChannelDelete(_) => "CHANNEL_DELETE",
+            Dispatch::ChannelPinsUpdate { .. } => "CHANNEL_PINS_UPDATE",
+            Dispatch::ThreadCreate(_) => "THREAD_CREATE",
+            Dispatch::ThreadUpdate(_) => "THREAD_UPDATE",
+            Dispatch::ThreadDelete { .. } => "THREAD_DELETE",
+            Dispatch::ThreadListSync { .. } => "THREAD_LIST_SYNC",
+            Dispatch::GuildEmojisUpdate { .. } => "GUILD_EMOJIS_UPDATE",
+            Dispatch::GuildMemberListUpdate(_) => "GUILD_MEMBER_LIST_UPDATE",
             Dispatch::PresenceUpdate(_) => "PRESENCE_UPDATE",
             Dispatch::UserUpdate(_) => "USER_UPDATE",
             Dispatch::RelationshipAdd(_) => "RELATIONSHIP_ADD",
@@ -241,6 +279,39 @@ struct GuildDeletePayload {
     id: GuildId,
     #[serde(default)]
     unavailable: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChannelPinsPayload {
+    channel_id: ChannelId,
+    #[serde(default)]
+    last_pin_timestamp: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ThreadDeletePayload {
+    id: ChannelId,
+    #[serde(default)]
+    guild_id: Option<GuildId>,
+    #[serde(default)]
+    parent_id: Option<ChannelId>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ThreadListSyncPayload {
+    #[serde(default)]
+    guild_id: Option<GuildId>,
+    #[serde(default)]
+    channel_ids: Vec<ChannelId>,
+    #[serde(default)]
+    threads: Vec<Channel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GuildEmojisPayload {
+    guild_id: GuildId,
+    #[serde(default)]
+    emojis: Vec<crate::discord::model::Emoji>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -367,6 +438,39 @@ pub fn decode(event: &str, payload: Option<&RawValue>) -> Dispatch {
         "CHANNEL_CREATE" => parse!(Channel, |v| Dispatch::ChannelCreate(Box::new(v))),
         "CHANNEL_UPDATE" => parse!(Channel, |v| Dispatch::ChannelUpdate(Box::new(v))),
         "CHANNEL_DELETE" => parse!(Channel, |v| Dispatch::ChannelDelete(Box::new(v))),
+        "CHANNEL_PINS_UPDATE" => parse!(ChannelPinsPayload, |v: ChannelPinsPayload| {
+            Dispatch::ChannelPinsUpdate {
+                channel_id: v.channel_id,
+                last_pin_timestamp: v.last_pin_timestamp,
+            }
+        }),
+        "THREAD_CREATE" => parse!(Channel, |v| Dispatch::ThreadCreate(Box::new(v))),
+        "THREAD_UPDATE" => parse!(Channel, |v| Dispatch::ThreadUpdate(Box::new(v))),
+        "THREAD_DELETE" => parse!(ThreadDeletePayload, |v: ThreadDeletePayload| {
+            Dispatch::ThreadDelete {
+                id: v.id,
+                guild_id: v.guild_id,
+                parent_id: v.parent_id,
+            }
+        }),
+        "THREAD_LIST_SYNC" => parse!(ThreadListSyncPayload, |v: ThreadListSyncPayload| {
+            Dispatch::ThreadListSync {
+                guild_id: v.guild_id,
+                channel_ids: v.channel_ids,
+                threads: v.threads,
+            }
+        }),
+        "GUILD_EMOJIS_UPDATE" => parse!(GuildEmojisPayload, |v: GuildEmojisPayload| {
+            Dispatch::GuildEmojisUpdate {
+                guild_id: v.guild_id,
+                emojis: v.emojis,
+            }
+        }),
+        "GUILD_MEMBER_LIST_UPDATE" => {
+            parse!(crate::discord::model::member_list::MemberListUpdate, |v| {
+                Dispatch::GuildMemberListUpdate(Box::new(v))
+            })
+        }
         "PRESENCE_UPDATE" => parse!(Presence, |v| Dispatch::PresenceUpdate(Box::new(v))),
         "USER_UPDATE" => parse!(User, |v| Dispatch::UserUpdate(Box::new(v))),
         "RELATIONSHIP_ADD" => parse!(Relationship, |v| Dispatch::RelationshipAdd(Box::new(v))),

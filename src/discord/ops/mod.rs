@@ -20,8 +20,11 @@
 
 pub mod ack;
 pub mod open;
+pub mod reactions;
+pub mod search;
 pub mod send;
 pub mod typing;
+pub mod upload;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -53,6 +56,9 @@ pub struct Shared {
     /// Which channel each outstanding send belongs to, so `RetrySend` and
     /// `CancelSend` can find it from a nonce alone.
     pub sends: HashMap<Nonce, ChannelId>,
+    /// Keeps message searches three hundred milliseconds apart, which is the
+    /// same gate and the same reasoning as the GIF picker's.
+    pub searches: crate::discord::gifs::Spacer,
 }
 
 impl Shared {
@@ -64,6 +70,7 @@ impl Shared {
             focus: None,
             terminal_focused: true,
             sends: HashMap::new(),
+            searches: crate::discord::gifs::Spacer::default(),
         }
     }
 }
@@ -72,6 +79,9 @@ impl Shared {
 pub struct Ops {
     pub http: Arc<Http>,
     pub bridge: Bridge,
+    /// `[media]`. Read here for one thing only: the attachment cap, which is
+    /// checked before a file is sent rather than after Discord refuses it.
+    pub media: Arc<crate::discord::media::MediaConfig>,
     /// A cap on concurrency, not a rate limit: forty avatars must not open
     /// forty connections that then queue behind the same bucket anyway.
     pub rest: Arc<Semaphore>,
@@ -84,6 +94,7 @@ impl Ops {
     pub fn new(
         http: Arc<Http>,
         bridge: Bridge,
+        media: Arc<crate::discord::media::MediaConfig>,
         rest: Arc<Semaphore>,
         gateway: Arc<ArcSwapOption<mpsc::Sender<Control>>>,
         legacy_lazy_request: bool,
@@ -91,10 +102,16 @@ impl Ops {
         Self {
             http,
             bridge,
+            media,
             rest,
             gateway,
             shared: Arc::new(Mutex::new(Shared::new(legacy_lazy_request))),
         }
+    }
+
+    /// The largest message-worth of attachments this client will send.
+    pub fn attachment_cap(&self) -> u64 {
+        self.media.max_attachment_mib * 1024 * 1024
     }
 
     /// The shared policy. Never held across an `await`.
@@ -189,6 +206,7 @@ pub(crate) mod testing {
             state: Arc::new(RwLock::new(State::new())),
             events: sink,
             status: Arc::new(arc_swap::ArcSwap::from_pointee(Connection::LoggedOut)),
+            notify: crate::discord::notify::Notifier::new(Default::default()),
         };
         let http = Arc::new(
             Http::with_base(Arc::new(ClientProps::new("en-US", 1)), base.to_string())
@@ -202,6 +220,7 @@ pub(crate) mod testing {
         let ops = Ops::new(
             http,
             bridge,
+            Arc::new(crate::discord::media::MediaConfig::default()),
             Arc::new(Semaphore::new(8)),
             Arc::new(ArcSwapOption::from_pointee(control_tx)),
             false,

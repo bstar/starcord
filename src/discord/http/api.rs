@@ -6,10 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::discord::handle::{EmojiRef, SearchPage};
+use crate::discord::model::gif::{GifPage, GifResult, Suggestion, Trending};
 use crate::discord::model::{Message, User};
 use crate::discord::snowflake::{ChannelId, MessageId};
 
-use super::route::{History, Route, PAGE};
+use super::route::{GifProvider, GifRequest, History, Route, SearchIn, SearchTerms, PAGE};
 use super::{Http, HttpError};
 
 /// The longest message this client will send.
@@ -84,6 +86,20 @@ pub struct ReplyTo {
     pub fail_if_not_exists: bool,
 }
 
+/// One file on an outgoing message.
+///
+/// `id` is a per-message index as a string — `"0"`, `"1"` — and not a snowflake.
+/// It is what pairs this entry with the slot the upload went to, and Discord is
+/// particular about it being a string.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttachmentRef {
+    pub id: String,
+    pub filename: String,
+    /// What `POST /channels/{id}/attachments` called the slot the bytes were
+    /// put in. Absent on the multipart path, where the bytes are in the request.
+    pub uploaded_filename: String,
+}
+
 /// `POST /channels/{id}/messages`.
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateMessage<'a> {
@@ -96,6 +112,11 @@ pub struct CreateMessage<'a> {
     pub message_reference: Option<ReplyTo>,
     pub allowed_mentions: AllowedMentions,
     pub tts: bool,
+    /// Files already uploaded. Omitted entirely when there are none: a message
+    /// carrying `"attachments": []` is a message Discord reads as "remove the
+    /// attachments", which is only meaningful on an edit.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<AttachmentRef>,
 }
 
 /// Post a message.
@@ -115,6 +136,105 @@ pub async fn create_message(
     }
     http.request(Route::CreateMessage(channel), Some(body))
         .await
+}
+
+/// One file, asking for somewhere to put itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttachmentSlotRequest<'a> {
+    pub filename: &'a str,
+    pub file_size: u64,
+    /// The same per-message index that comes back on `AttachmentRef`.
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CreateAttachments<'a> {
+    files: &'a [AttachmentSlotRequest<'a>],
+}
+
+/// Somewhere to put one file.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AttachmentSlot {
+    /// The index this slot answers, echoed back. A number here, not a string.
+    #[serde(default)]
+    pub id: u32,
+    /// A signed, short-lived URL on somebody else's storage. Never sent a
+    /// token; see `Http::put_bytes`.
+    #[serde(default)]
+    pub upload_url: String,
+    /// What to call the file when the message that carries it is posted.
+    #[serde(default)]
+    pub upload_filename: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AttachmentSlots {
+    #[serde(default)]
+    pub attachments: Vec<AttachmentSlot>,
+}
+
+/// Ask for somewhere to put files, before the message that carries them.
+///
+/// This is the first of the three requests an attachment takes. It can be
+/// refused — a 403 or a 404 here means the endpoint is not available to this
+/// account or this channel — and the caller then falls back to putting the
+/// bytes in the message itself. See `ops::upload`.
+pub async fn create_attachments(
+    http: &Http,
+    channel: ChannelId,
+    files: &[AttachmentSlotRequest<'_>],
+) -> Result<AttachmentSlots, HttpError> {
+    http.request(
+        Route::CreateAttachments(channel),
+        Some(&CreateAttachments { files }),
+    )
+    .await
+}
+
+/// One file, as it goes up inside the message.
+pub struct MultipartFile {
+    pub filename: String,
+    pub content_type: String,
+    pub bytes: std::sync::Arc<Vec<u8>>,
+}
+
+/// Post a message with the files inside it.
+///
+/// The older of Discord's two ways, and the fallback: the body is a multipart
+/// form whose `payload_json` part is the same JSON the ordinary path sends, and
+/// whose `files[n]` parts are the bytes. It is one request rather than three,
+/// which sounds better until the file is twenty megabytes and a 429 on the
+/// message route means sending all of them again.
+pub async fn create_message_with_files(
+    http: &Http,
+    channel: ChannelId,
+    body: &CreateMessage<'_>,
+    files: &[MultipartFile],
+) -> Result<Message, HttpError> {
+    if body.content.chars().count() > MAX_CONTENT {
+        return Err(HttpError::Status {
+            status: 400,
+            code: 50035,
+            message: format!("a message may be at most {MAX_CONTENT} characters"),
+        });
+    }
+    let payload = serde_json::to_string(body).map_err(HttpError::Decode)?;
+
+    http.request_multipart(Route::CreateMessage(channel), || {
+        let mut form = reqwest::multipart::Form::new().text("payload_json", payload.clone());
+        for (index, file) in files.iter().enumerate() {
+            let part = reqwest::multipart::Part::bytes(file.bytes.as_ref().clone())
+                .file_name(file.filename.clone())
+                .mime_str(&file.content_type)
+                .unwrap_or_else(|_| {
+                    reqwest::multipart::Part::bytes(file.bytes.as_ref().clone())
+                        .file_name(file.filename.clone())
+                });
+            form = form.part(format!("files[{index}]"), part);
+        }
+        form
+    })
+    .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,6 +269,38 @@ pub async fn delete_message(
 ) -> Result<(), HttpError> {
     http.request(Route::DeleteMessage(channel, message), None::<&()>)
         .await
+}
+
+/// Put this account's reaction on a message.
+///
+/// A `PUT`, so sending it twice is the same as sending it once: a double click
+/// on a reaction chip should not be two requests with two different outcomes.
+pub async fn add_reaction(
+    http: &Http,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: &EmojiRef,
+) -> Result<(), HttpError> {
+    http.request(
+        Route::AddReaction(channel, message, emoji.clone()),
+        None::<&()>,
+    )
+    .await
+}
+
+/// Take it off again. Only ever this account's own: there is no route here for
+/// removing somebody else's reaction, which is a moderation action.
+pub async fn remove_reaction(
+    http: &Http,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: &EmojiRef,
+) -> Result<(), HttpError> {
+    http.request(
+        Route::RemoveReaction(channel, message, emoji.clone()),
+        None::<&()>,
+    )
+    .await
 }
 
 /// The typing indicator.
@@ -253,6 +405,153 @@ pub async fn refresh_attachment_urls(
     .await
 }
 
+/// `POST /users/@me/channels`.
+#[derive(Debug, Serialize)]
+struct CreateDm {
+    /// One id. Group DMs take several, and this client does not create them.
+    recipients: Vec<crate::discord::snowflake::UserId>,
+}
+
+/// Open a DM channel with one person.
+///
+/// The rule that makes this safe is not here: `ops::open::open_dm` refuses
+/// unless the other account is already a friend. This is the request.
+pub async fn create_dm(
+    http: &Http,
+    user: crate::discord::snowflake::UserId,
+) -> Result<crate::discord::model::Channel, HttpError> {
+    http.request(
+        Route::CreateDm,
+        Some(&CreateDm {
+            recipients: vec![user],
+        }),
+    )
+    .await
+}
+
+/// What a search came back with, before the groups are unpicked.
+///
+/// Discord answers a search with an array of *groups*: each one is the message
+/// that matched plus the couple on either side of it, and the match itself is
+/// marked `hit`. The messages stay as raw JSON here so that the flag can be
+/// read without teaching `Message` about a field that only exists in this one
+/// response.
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    #[serde(default)]
+    total_results: u32,
+    #[serde(default)]
+    messages: Vec<Vec<Box<serde_json::value::RawValue>>>,
+    /// Present instead of results when the server has not finished indexing
+    /// the guild. It is a 202 rather than an error, which is why it has to be
+    /// noticed here.
+    #[serde(default)]
+    retry_after: Option<f64>,
+    #[serde(default)]
+    documents_indexed: Option<u64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct Hit {
+    #[serde(default)]
+    hit: bool,
+}
+
+/// Search a guild or a channel.
+///
+/// Results are returned, not stored: see [`crate::discord::handle::SearchPage`]
+/// for why they must not reach the message store.
+pub async fn search(
+    http: &Http,
+    scope: SearchIn,
+    query: &SearchTerms,
+) -> Result<SearchPage, HttpError> {
+    let route = Route::Search {
+        scope,
+        query: query.clone(),
+    };
+    let response: SearchResponse = http.request(route, None::<&()>).await?;
+
+    if let Some(retry) = response.retry_after {
+        let indexed = response.documents_indexed.unwrap_or(0);
+        return Err(HttpError::Status {
+            status: 202,
+            code: 110000,
+            message: format!(
+                "the server is still indexing its messages ({indexed} so far);                  try again in about {retry:.0}s"
+            ),
+        });
+    }
+
+    let mut messages = Vec::with_capacity(response.messages.len());
+    for group in &response.messages {
+        // The match, or -- if nothing in the group is flagged, which happens on
+        // a channel search -- the first of them.
+        let chosen = group
+            .iter()
+            .find(|raw| {
+                serde_json::from_str::<Hit>(raw.get())
+                    .map(|h| h.hit)
+                    .unwrap_or(false)
+            })
+            .or_else(|| group.first());
+        let Some(raw) = chosen else { continue };
+        match serde_json::from_str::<Message>(raw.get()) {
+            Ok(message) => messages.push(std::sync::Arc::new(message)),
+            // One unparseable result must not cost the page.
+            Err(e) => tracing::debug!("a search result did not parse: {e}"),
+        }
+    }
+
+    Ok(SearchPage {
+        total: response.total_results,
+        messages,
+        offset: query.offset,
+    })
+}
+
+/// What everybody is posting today.
+pub async fn gifs_trending(http: &Http, provider: &GifProvider) -> Result<GifPage, HttpError> {
+    let route = Route::Gifs(GifRequest::Trending);
+    let path = route.path_with(provider).into_owned();
+    let trending: Trending = http.request_at(route, &path, None::<&()>).await?;
+    Ok(GifPage {
+        categories: trending.categories().to_vec(),
+        results: trending.into_results(),
+        suggestions: Vec::new(),
+    })
+}
+
+/// GIFs matching some text.
+pub async fn gifs_search(
+    http: &Http,
+    provider: &GifProvider,
+    query: &str,
+) -> Result<GifPage, HttpError> {
+    let route = Route::Gifs(GifRequest::Search(query.to_string()));
+    let path = route.path_with(provider).into_owned();
+    let results: Vec<GifResult> = http.request_at(route, &path, None::<&()>).await?;
+    Ok(GifPage {
+        results,
+        ..Default::default()
+    })
+}
+
+/// Search *terms* matching some text, for completing what is being typed.
+pub async fn gifs_suggest(
+    http: &Http,
+    provider: &GifProvider,
+    prefix: &str,
+) -> Result<GifPage, HttpError> {
+    let route = Route::Gifs(GifRequest::Suggest(prefix.to_string()));
+    let path = route.path_with(provider).into_owned();
+    let suggestions: Vec<Suggestion> = http.request_at(route, &path, None::<&()>).await?;
+    Ok(GifPage {
+        suggestions: suggestions.into_iter().map(Suggestion::into_text).collect(),
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,6 +600,7 @@ mod tests {
             message_reference: None,
             allowed_mentions: AllowedMentions::new(false),
             tts: false,
+            attachments: Vec::new(),
         };
         let value = serde_json::to_value(&body).unwrap();
         assert_eq!(value["content"], "hello");
@@ -332,6 +632,7 @@ mod tests {
                 }),
                 allowed_mentions: AllowedMentions::new(ping),
                 tts: false,
+                attachments: Vec::new(),
             };
             let value = serde_json::to_value(&body).unwrap();
             assert_eq!(value["message_reference"]["message_id"], "9");

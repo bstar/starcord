@@ -45,6 +45,13 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How much of an upload goes out between two progress reports.
+///
+/// A quarter of a megabyte: small enough that a bar moves visibly on a slow
+/// link, large enough that a twenty-five-megabyte file is a hundred callbacks
+/// rather than twenty-five thousand.
+const UPLOAD_CHUNK: usize = 256 * 1024;
+
 /// Why a request did not produce what was asked for.
 ///
 /// `Unauthorized` is separate from every other status because it is the only
@@ -223,7 +230,24 @@ impl Http {
         route: Route,
         body: Option<&(impl Serialize + ?Sized)>,
     ) -> Result<T, HttpError> {
-        let bytes = self.request_bytes(route, body).await?;
+        let path = route.path().into_owned();
+        self.request_at(route, &path, body).await
+    }
+
+    /// The same, with the path given rather than derived.
+    ///
+    /// One route has a path that depends on configuration: the GIF endpoints
+    /// carry the provider, which is a setting rather than part of the route's
+    /// identity. The *bucket* still comes from the route, which is the point —
+    /// changing provider must not invent a second allowance for a request
+    /// Discord counts as one.
+    pub async fn request_at<T: DeserializeOwned>(
+        &self,
+        route: Route,
+        path: &str,
+        body: Option<&(impl Serialize + ?Sized)>,
+    ) -> Result<T, HttpError> {
+        let bytes = self.request_bytes(route, path, body).await?;
         if bytes.is_empty() {
             // 204 No Content. `null` is the only JSON an empty body can mean,
             // and it deserialises into `()` and into every `Option`.
@@ -232,13 +256,51 @@ impl Http {
         serde_json::from_slice(&bytes).map_err(HttpError::Decode)
     }
 
+    /// Send a request whose body is a multipart form, and decode the answer.
+    ///
+    /// The form is *built* rather than passed, because a multipart body is a
+    /// stream and cannot be sent twice: a retry after a 429 or a 502 needs a
+    /// fresh one. Everything else — the bucket, the headers, the retry
+    /// arithmetic — is the same path every other request takes.
+    pub async fn request_multipart<T: DeserializeOwned>(
+        &self,
+        route: Route,
+        build: impl Fn() -> reqwest::multipart::Form,
+    ) -> Result<T, HttpError> {
+        let path = route.path().into_owned();
+        let bytes = self
+            .send_with(route, &path, |req| req.multipart(build()))
+            .await?;
+        if bytes.is_empty() {
+            return serde_json::from_str("null").map_err(HttpError::Decode);
+        }
+        serde_json::from_slice(&bytes).map_err(HttpError::Decode)
+    }
+
     async fn request_bytes(
         &self,
         route: Route,
+        path: &str,
         body: Option<&(impl Serialize + ?Sized)>,
     ) -> Result<Vec<u8>, HttpError> {
+        self.send_with(route, path, |req| match body {
+            Some(body) => req.json(body),
+            None => req,
+        })
+        .await
+    }
+
+    /// The whole of the request path: the limiter, the headers, the token, the
+    /// retries and the status arithmetic. What is being *sent* is the one thing
+    /// the caller decides, through `apply`.
+    async fn send_with(
+        &self,
+        route: Route,
+        path: &str,
+        apply: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
+    ) -> Result<Vec<u8>, HttpError> {
         let key = route.bucket().into_owned();
-        let url = format!("{}{}", self.base, route.path());
+        let url = format!("{}{}", self.base, path);
         let mut backoff = self.retry.server_error_backoff;
 
         for attempt in 1..=self.retry.attempts {
@@ -259,9 +321,7 @@ impl Http {
                     req = req.header(reqwest::header::AUTHORIZATION, token.expose());
                 }
             }
-            if let Some(body) = body {
-                req = req.json(body);
-            }
+            let req = apply(req);
 
             let response = match req.send().await {
                 Ok(response) => response,
@@ -330,6 +390,62 @@ impl Http {
         Err(HttpError::RateLimited {
             attempts: self.retry.attempts,
         })
+    }
+
+    /// Put bytes where Discord said to put them.
+    ///
+    /// The upload URL Discord hands back points at Google's storage, not at
+    /// Discord, so this goes out on the media client: **no token, ever**, to a
+    /// host Discord does not control. It is also why there is no rate-limit
+    /// bucket here — the request is not to Discord's API and is not counted
+    /// against any of its allowances.
+    ///
+    /// The body is a stream of chunks rather than one buffer so that `progress`
+    /// is called as the bytes actually leave, which is what a twenty-megabyte
+    /// attachment on a slow link needs. No retry: a half-sent upload is a
+    /// resumable-upload problem, and asking Discord for a fresh slot is both
+    /// simpler and what its own client does.
+    pub async fn put_bytes(
+        &self,
+        url: &str,
+        bytes: Arc<Vec<u8>>,
+        content_type: &str,
+        mut progress: impl FnMut(u64, u64) + Send + 'static,
+    ) -> Result<(), HttpError> {
+        if !url.starts_with("https://") && !self.insecure {
+            return Err(HttpError::NotHttps {
+                url: url.to_string(),
+            });
+        }
+
+        let total = bytes.len() as u64;
+        let mut sent = 0u64;
+        let chunks: Vec<Vec<u8>> = bytes.chunks(UPLOAD_CHUNK).map(<[u8]>::to_vec).collect();
+        let stream = futures_util::stream::iter(chunks.into_iter().map(move |chunk| {
+            sent += chunk.len() as u64;
+            progress(sent, total);
+            Ok::<Vec<u8>, std::io::Error>(chunk)
+        }));
+
+        let response = self
+            .media
+            .put(url)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .header(reqwest::header::CONTENT_LENGTH, total)
+            .body(reqwest::Body::wrap_stream(stream))
+            .send()
+            .await
+            .map_err(HttpError::Network)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(HttpError::Status {
+                status: status.as_u16(),
+                code: 0,
+                message: status.canonical_reason().unwrap_or("error").to_string(),
+            });
+        }
+        Ok(())
     }
 
     /// Fetch bytes from a CDN, with no token and a hard size cap.
@@ -884,6 +1000,7 @@ mod tests {
                 }),
                 allowed_mentions: api::AllowedMentions::new(true),
                 tts: false,
+                attachments: Vec::new(),
             },
         )
         .await
@@ -925,6 +1042,7 @@ mod tests {
                 message_reference: None,
                 allowed_mentions: api::AllowedMentions::new(false),
                 tts: false,
+                attachments: Vec::new(),
             },
         )
         .await

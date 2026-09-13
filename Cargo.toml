@@ -91,6 +91,10 @@ reqwest = { version = "0.13", default-features = false, features = [
     "json",
     "http2",
     "stream",
+    # The fallback path for an attachment. Discord's two-step upload is the
+    # normal one; when the attachments endpoint refuses, the file goes up in the
+    # message itself as `payload_json` plus `files[0]`, which is multipart.
+    "multipart",
 ] }
 
 # The provider itself, so `ring` is a direct and visible choice rather than
@@ -226,6 +230,23 @@ arboard = { version = "3.6", default-features = false, features = [
 # rank `general` below `gen-e-r-a-l` in some other channel's name, which is
 # exactly the difference a fuzzy matcher exists to get right.
 nucleo-matcher = "0.3"
+
+# A reaction is an emoji in a URL path. The unicode case is four bytes that are
+# not ASCII and the custom case is `name:id`, so neither can be formatted into a
+# path as it stands; this is the encoder, with the set spelled out rather than
+# left to whatever a URL type happens to do to a segment.
+percent-encoding = "2"
+
+# What to call the bytes of a file somebody attached. Discord's upload endpoint
+# wants a content type and the only evidence available is the name, so the
+# guess is made from the extension and falls back to `application/octet-stream`.
+mime_guess = "2"
+
+# Desktop notifications. Pure Rust: it reaches the notification daemon over
+# zbus, so there is no libdbus and no `-sys` crate, which is the rule this tree
+# keeps. Delivery happens on a blocking thread because the call is synchronous
+# and talks to another process.
+notify-rust = { version = "4.18", default-features = false, features = ["z"] }
 
 [dev-dependencies]
 # `start_paused` runtimes, so the rate limiter's sleeps are asserted rather

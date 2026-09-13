@@ -246,6 +246,8 @@ mod tests {
             owner_id: None,
             icon: None,
             flags: 0,
+            message_count: None,
+            thread_metadata: None,
         })
     }
 

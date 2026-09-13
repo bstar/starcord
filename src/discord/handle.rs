@@ -76,6 +76,39 @@ pub enum EmojiRef {
     },
 }
 
+impl EmojiRef {
+    /// What Discord calls this emoji in a reaction path, before encoding.
+    ///
+    /// The character itself for a unicode emoji; `name:id` for a custom one.
+    /// Percent-encoding is the route's business — see `http::route::escape` —
+    /// because a value that is encoded twice is a value nobody can read.
+    pub fn key(&self) -> String {
+        match self {
+            EmojiRef::Unicode(name) => name.clone(),
+            EmojiRef::Custom { name, id, .. } => format!("{name}:{id}"),
+        }
+    }
+
+    /// The same emoji as the gateway spells it on a message.
+    ///
+    /// The optimistic update and the event that confirms it have to agree on
+    /// what counts as the same reaction, and this is the one conversion.
+    pub fn as_partial(&self) -> crate::discord::model::PartialEmoji {
+        match self {
+            EmojiRef::Unicode(name) => crate::discord::model::PartialEmoji {
+                id: None,
+                name: Some(name.clone()),
+                animated: false,
+            },
+            EmojiRef::Custom { name, id, animated } => crate::discord::model::PartialEmoji {
+                id: Some(*id),
+                name: Some(name.clone()),
+                animated: *animated,
+            },
+        }
+    }
+}
+
 // Pictures live in `media`, spelled here because this file is the UI's whole
 // vocabulary and it should not have to know which module a type came from.
 #[allow(unused_imports)]
@@ -90,14 +123,30 @@ pub enum SearchScope {
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
     pub content: String,
+    /// Narrow a guild-wide search to one channel.
+    pub channel: Option<ChannelId>,
     pub author: Option<UserId>,
+    /// How many results to skip; Discord pages these twenty-five at a time.
     pub offset: u32,
 }
 
+/// One page of search results.
+///
+/// The messages are carried rather than named, which is the one place an
+/// `Event` in this program does not merely point at `State`. They are not in
+/// `State`: a search reaches back through a year of a channel nobody has open,
+/// and inserting what comes back into the store would blow the window away and
+/// make what is on screen depend on what was last searched for. The overlay
+/// holds them; jumping to one is `Command::JumpTo`, which fetches the page
+/// around it properly.
 #[derive(Debug, Clone, Default)]
 pub struct SearchPage {
+    /// How many results there are altogether, not how many are in this page.
     pub total: u32,
-    pub message_ids: Vec<(ChannelId, MessageId)>,
+    pub messages: Vec<Arc<crate::discord::model::Message>>,
+    /// The offset this page starts at, so the next one can ask for the one
+    /// after it.
+    pub offset: u32,
 }
 
 /// What kind of thing an external program is being asked to open, so the right
@@ -452,7 +501,7 @@ pub enum Event {
     },
     Gifs {
         id: RequestId,
-        result: Result<Vec<String>, String>,
+        result: Result<crate::discord::model::GifPage, String>,
     },
     Search {
         id: RequestId,
@@ -483,6 +532,10 @@ pub struct DiscordConfig {
     pub record_gateway: Option<PathBuf>,
     /// `[media]`: cache size, attachment cap, and the player argv.
     pub media: crate::discord::media::MediaConfig,
+    /// `[gifs]`: which service the picker asks, and in what format.
+    pub gifs: crate::discord::gifs::GifProvider,
+    /// `[notify]`: whether a mention reaches the desktop, and when.
+    pub notify: crate::discord::notify::NotifyConfig,
 }
 
 impl Default for DiscordConfig {
@@ -495,6 +548,8 @@ impl Default for DiscordConfig {
             discover_build: true,
             record_gateway: None,
             media: crate::discord::media::MediaConfig::default(),
+            gifs: crate::discord::gifs::GifProvider::default(),
+            notify: crate::discord::notify::NotifyConfig::default(),
         }
     }
 }

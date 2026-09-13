@@ -16,7 +16,27 @@
 
 use std::borrow::Cow;
 
-use crate::discord::snowflake::{ChannelId, MessageId};
+use crate::discord::handle::EmojiRef;
+use crate::discord::snowflake::{ChannelId, GuildId, MessageId, UserId};
+
+/// The characters that may appear in a path segment or a query value as they
+/// stand. Everything else is percent-encoded.
+///
+/// RFC 3986's unreserved set and nothing more. It is spelled out rather than
+/// taken from one of `percent_encoding`'s named sets because the thing being
+/// encoded is somebody's search text and somebody's emoji, and a set that
+/// happens to leave `&`, `?` or `/` alone would let either of them rewrite the
+/// request.
+pub const ESCAPE: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
+/// Percent-encode a value that came from outside this program.
+pub fn escape(value: &str) -> impl std::fmt::Display + '_ {
+    percent_encoding::utf8_percent_encode(value, ESCAPE)
+}
 
 /// The API this client speaks. v9 rather than v10: the user-account payloads
 /// this client relies on — the READY shape above all — are v9's, and v10
@@ -72,6 +92,13 @@ pub enum Route {
     },
     /// Post a message.
     CreateMessage(ChannelId),
+    /// Ask for somewhere to put a file before the message that carries it.
+    ///
+    /// Its own bucket rather than the channel's message allowance: a message
+    /// with three pictures is one message and four requests, and counting the
+    /// three against the allowance that sends the message would mean a client
+    /// could not attach anything to three messages in a row.
+    CreateAttachments(ChannelId),
     EditMessage(ChannelId, MessageId),
     DeleteMessage(ChannelId, MessageId),
     /// The typing indicator, which Discord expects roughly every eight to ten
@@ -79,6 +106,42 @@ pub enum Route {
     Typing(ChannelId),
     /// Mark a message, and everything before it, read.
     Ack(ChannelId, MessageId),
+    /// Add this account's reaction to a message.
+    ///
+    /// The emoji is part of the path and is the one place in this API where a
+    /// path segment is neither a snowflake nor a fixed word: it is four bytes
+    /// of UTF-8 for a unicode emoji and `name:id` for a custom one. Both are
+    /// percent-encoded with the unreserved set, so neither a `/` in a
+    /// mis-configured custom emoji name nor a `?` can rewrite the request.
+    AddReaction(ChannelId, MessageId, EmojiRef),
+    /// Take it off again.
+    RemoveReaction(ChannelId, MessageId, EmojiRef),
+    /// Open a DM with somebody.
+    ///
+    /// Reachable only through `ops::open::open_dm`, which refuses unless the
+    /// other account is already a friend. The gate is there rather than here
+    /// because a route is data and a rule is not.
+    CreateDm,
+
+    /// Search a server's messages, or one channel's.
+    ///
+    /// The query is in the path rather than in a body: it is a `GET`, and the
+    /// text somebody typed goes through the same percent-encoding as
+    /// everything else that came from outside this program.
+    Search {
+        scope: SearchIn,
+        query: SearchTerms,
+    },
+
+    /// The GIF picker's three requests.
+    ///
+    /// One bucket for all of them, because that is how Discord counts them:
+    /// they are not channel routes and there is no major parameter to separate
+    /// them by. The provider is in the query rather than in the variant because
+    /// it is configuration -- Discord is moving from Tenor to other services in
+    /// 2026, and a client with the name compiled in would have to be rebuilt.
+    Gifs(GifRequest),
+
     /// Re-sign a batch of expired attachment URLs.
     ///
     /// Not a channel route, despite what it fetches: Discord counts it against
@@ -87,17 +150,110 @@ pub enum Route {
     RefreshAttachmentUrls,
 }
 
+/// Where a search looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchIn {
+    Guild(GuildId),
+    Channel(ChannelId),
+}
+
+/// What a search asks for.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchTerms {
+    pub content: String,
+    /// Narrow a guild search to one channel. Meaningless on a channel search,
+    /// which is already narrowed.
+    pub channel: Option<ChannelId>,
+    pub author: Option<UserId>,
+    /// How many results to skip. Discord pages these twenty-five at a time.
+    pub offset: u32,
+}
+
+impl SearchTerms {
+    fn query_string(&self, scope: SearchIn) -> String {
+        let mut query = format!("?content={}", escape(&self.content));
+        if let (SearchIn::Guild(_), Some(channel)) = (scope, self.channel) {
+            query.push_str(&format!("&channel_id={channel}"));
+        }
+        if let Some(author) = self.author {
+            query.push_str(&format!("&author_id={author}"));
+        }
+        if self.offset > 0 {
+            query.push_str(&format!("&offset={}", self.offset));
+        }
+        query
+    }
+}
+
+/// Which of the picker's three questions is being asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GifRequest {
+    /// What everybody is posting today. No query.
+    Trending,
+    /// GIFs matching some text.
+    Search(String),
+    /// Search *terms* matching some text, for completing what is being typed.
+    Suggest(String),
+}
+
+impl GifRequest {
+    fn leaf(&self) -> &'static str {
+        match self {
+            GifRequest::Trending => "trending",
+            GifRequest::Search(_) => "search",
+            GifRequest::Suggest(_) => "suggest",
+        }
+    }
+
+    fn query(&self) -> Option<&str> {
+        match self {
+            GifRequest::Trending => None,
+            GifRequest::Search(q) | GifRequest::Suggest(q) => Some(q),
+        }
+    }
+}
+
+/// Which service is behind the picker, and how it should answer.
+///
+/// Data rather than constants. Discord proxies a third party here and has
+/// announced a change of provider; a client that hard-codes `tenor` is a client
+/// that stops returning results on the day that happens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GifProvider {
+    pub name: String,
+    /// `gif`, `mp4` or `tinygif`. What comes back in `src`.
+    pub media_format: String,
+    pub locale: String,
+}
+
+impl Default for GifProvider {
+    fn default() -> Self {
+        Self {
+            name: "tenor".into(),
+            media_format: "gif".into(),
+            locale: "en-US".into(),
+        }
+    }
+}
+
 impl Route {
     pub fn method(&self) -> reqwest::Method {
         match self {
-            Route::Me | Route::ChannelMessages { .. } => reqwest::Method::GET,
+            Route::Me | Route::ChannelMessages { .. } | Route::Gifs(_) | Route::Search { .. } => {
+                reqwest::Method::GET
+            }
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
+            | Route::CreateAttachments(_)
+            | Route::CreateDm
             | Route::Typing(_)
             | Route::Ack(_, _)
             | Route::RefreshAttachmentUrls => reqwest::Method::POST,
             Route::EditMessage(_, _) => reqwest::Method::PATCH,
-            Route::DeleteMessage(_, _) => reqwest::Method::DELETE,
+            // A reaction is a PUT rather than a POST because adding one twice
+            // has to be the same as adding it once.
+            Route::AddReaction(_, _, _) => reqwest::Method::PUT,
+            Route::DeleteMessage(_, _) | Route::RemoveReaction(_, _, _) => reqwest::Method::DELETE,
         }
     }
 
@@ -117,6 +273,9 @@ impl Route {
                 None => format!("/channels/{channel}/messages?limit={limit}"),
             }),
             Route::CreateMessage(channel) => Cow::Owned(format!("/channels/{channel}/messages")),
+            Route::CreateAttachments(channel) => {
+                Cow::Owned(format!("/channels/{channel}/attachments"))
+            }
             Route::EditMessage(channel, message) => {
                 Cow::Owned(format!("/channels/{channel}/messages/{message}"))
             }
@@ -127,8 +286,57 @@ impl Route {
             Route::Ack(channel, message) => {
                 Cow::Owned(format!("/channels/{channel}/messages/{message}/ack"))
             }
+            Route::AddReaction(channel, message, emoji)
+            | Route::RemoveReaction(channel, message, emoji) => Cow::Owned(format!(
+                "/channels/{channel}/messages/{message}/reactions/{}/@me",
+                escape(&emoji.key())
+            )),
+            Route::CreateDm => Cow::Borrowed("/users/@me/channels"),
+            Route::Search { scope, query } => Cow::Owned(match scope {
+                SearchIn::Guild(guild) => {
+                    format!(
+                        "/guilds/{guild}/messages/search{}",
+                        query.query_string(*scope)
+                    )
+                }
+                SearchIn::Channel(channel) => format!(
+                    "/channels/{channel}/messages/search{}",
+                    query.query_string(*scope)
+                ),
+            }),
             Route::RefreshAttachmentUrls => Cow::Borrowed("/attachments/refresh-urls"),
+            // The provider is not on the `Route`: it is configuration, and a
+            // bucket that carried it would count Tenor and Giphy separately
+            // against an allowance Discord counts as one. `path_with` is what
+            // builds the request; this is the shape of it.
+            Route::Gifs(request) => Cow::Owned(format!("/gifs/{}", request.leaf())),
         }
+    }
+
+    /// The path for a GIF request, with the configured provider in it.
+    ///
+    /// Separate from [`Route::path`] because the provider changes what is
+    /// *fetched* without changing what is *counted*, and the bucket is derived
+    /// from the other one.
+    pub fn path_with(&self, provider: &GifProvider) -> Cow<'static, str> {
+        let Route::Gifs(request) = self else {
+            return self.path();
+        };
+        let mut path = format!(
+            "/gifs/{}?provider={}",
+            request.leaf(),
+            escape(&provider.name)
+        );
+        if let Some(query) = request.query() {
+            path.push_str(&format!("&q={}", escape(query)));
+        }
+        // `suggest` answers with search terms rather than pictures, so asking
+        // it for a media format is asking a question it has no answer to.
+        if !matches!(request, GifRequest::Suggest(_)) {
+            path.push_str(&format!("&media_format={}", escape(&provider.media_format)));
+        }
+        path.push_str(&format!("&locale={}", escape(&provider.locale)));
+        Cow::Owned(path)
     }
 
     /// The key this route's allowance is counted under.
@@ -147,6 +355,9 @@ impl Route {
             Route::CreateMessage(channel) => {
                 Cow::Owned(format!("POST /channels/{channel}/messages"))
             }
+            Route::CreateAttachments(channel) => {
+                Cow::Owned(format!("POST /channels/{channel}/attachments"))
+            }
             Route::EditMessage(channel, _) => {
                 Cow::Owned(format!("PATCH /channels/{channel}/messages/:id"))
             }
@@ -157,7 +368,27 @@ impl Route {
             Route::Ack(channel, _) => {
                 Cow::Owned(format!("POST /channels/{channel}/messages/:id/ack"))
             }
+            // The emoji is not in the bucket: Discord counts every reaction on
+            // a channel against one allowance, and a key carrying the emoji
+            // would be a fresh empty allowance for every different one.
+            Route::AddReaction(channel, _, _) => {
+                Cow::Owned(format!("PUT /channels/{channel}/messages/:id/reactions"))
+            }
+            Route::RemoveReaction(channel, _, _) => {
+                Cow::Owned(format!("DELETE /channels/{channel}/messages/:id/reactions"))
+            }
+            Route::CreateDm => Cow::Borrowed("POST /users/@me/channels"),
+            // The major parameter is the guild or the channel; the words are
+            // not part of the allowance, or every different search would be a
+            // fresh empty one.
+            Route::Search { scope, .. } => Cow::Owned(match scope {
+                SearchIn::Guild(guild) => format!("GET /guilds/{guild}/messages/search"),
+                SearchIn::Channel(channel) => {
+                    format!("GET /channels/{channel}/messages/search")
+                }
+            }),
             Route::RefreshAttachmentUrls => Cow::Borrowed("POST /attachments/refresh-urls"),
+            Route::Gifs(request) => Cow::Owned(format!("GET /gifs/{}", request.leaf())),
         }
     }
 
