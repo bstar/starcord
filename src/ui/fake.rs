@@ -70,6 +70,50 @@ use crate::discord::{Command, Event, Handle};
 /// than spinning. Small enough that a command is still answered promptly.
 const TICK: Duration = Duration::from_millis(25);
 
+/// The scripted scan: a phone reads the code, and then confirms on it.
+const QR_SCAN_AFTER: Duration = Duration::from_secs(3);
+const QR_CONFIRM_AFTER: Duration = Duration::from_secs(6);
+
+/// What the code encodes. `.invalid` rather than `discord.com`, so a code
+/// photographed off a test run leads nowhere: this one is a picture of a
+/// pattern and not a handshake anybody can join.
+const QR_URL_BASE: &str = "https://discord.invalid/ra/";
+const QR_FINGERPRINT: &str = "0123456789abcdef0123456789abcdef";
+
+/// A code-shaped matrix for the replay.
+///
+/// Not a QR code: encoding one properly is the core's job and needs the
+/// `qrcode` crate, which the fake has no business reaching for. What this has
+/// is the three finder squares and a body derived from the fingerprint, which
+/// is everything the drawing has to get right and nothing a camera will
+/// mistake for a real one.
+fn qr_matrix(seed: &str) -> Vec<Vec<bool>> {
+    const N: usize = 25;
+    let bytes = seed.as_bytes();
+    let mut m = vec![vec![false; N]; N];
+    for (y, row) in m.iter_mut().enumerate() {
+        for (x, cell) in row.iter_mut().enumerate() {
+            let b = bytes[(x * 7 + y * 13) % bytes.len()] as usize;
+            *cell = (b + x * 3 + y * 5) % 5 < 2;
+        }
+    }
+    for (ox, oy) in [(0, 0), (N - 7, 0), (0, N - 7)] {
+        for y in 0..8 {
+            for x in 0..8 {
+                let (px, py) = (ox + x, oy + y);
+                if px >= N || py >= N {
+                    continue;
+                }
+                let inside = x < 7 && y < 7;
+                let edge = x == 0 || y == 0 || x == 6 || y == 6;
+                let core = (2..=4).contains(&x) && (2..=4).contains(&y);
+                m[py][px] = inside && (edge || core);
+            }
+        }
+    }
+    m
+}
+
 /// The event side, with the real core's drop bookkeeping.
 ///
 /// A copy of `handle::EventSink`, which has the same three fields and no
@@ -426,7 +470,7 @@ fn run(
     let user = session
         .first_ready()
         .and_then(|d| d.get("user"))
-        .and_then(|u| serde_json::from_value(u.clone()).ok())
+        .and_then(|u| serde_json::from_value::<crate::discord::model::User>(u.clone()).ok())
         .map(Arc::new);
 
     // Nothing happens until somebody signs in, because the login screen is
@@ -437,11 +481,51 @@ fn run(
     let pictures = session.pictures.clone();
     let mut served = Served::default();
     let mut signed_in = false;
+    // The scan, on a clock, because the whole of what the code screen does is
+    // wait: a code arrives, somebody's phone reads it three seconds later, and
+    // the phone confirms three seconds after that.
+    let mut qr: Option<Instant> = None;
+    let mut scanned = false;
+    // There is no stored token in a replay, and saying so is what puts the
+    // interface on the code screen without anybody pressing anything.
+    sink.send(Event::Auth(AuthEvent::NeedsLogin));
     while !signed_in {
-        match commands.blocking_recv() {
-            Some(Command::LoginWithToken(_)) | Some(Command::Connect) => signed_in = true,
-            Some(Command::Shutdown) | None => return,
-            Some(_) => {}
+        match commands.try_recv() {
+            Ok(Command::LoginWithToken(_)) | Ok(Command::Connect) => signed_in = true,
+            Ok(Command::StartRemoteAuth) => {
+                qr = Some(Instant::now());
+                scanned = false;
+                sink.send(Event::Auth(AuthEvent::QrReady {
+                    url: format!("{QR_URL_BASE}{QR_FINGERPRINT}"),
+                    fingerprint: QR_FINGERPRINT.into(),
+                    expires_in: Duration::from_secs(120),
+                    matrix: qr_matrix(QR_FINGERPRINT),
+                }));
+            }
+            Ok(Command::CancelRemoteAuth) => qr = None,
+            Ok(Command::Shutdown) => return,
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => return,
+            Ok(_) | Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+        }
+        if let Some(at) = qr {
+            let waited = at.elapsed();
+            if !scanned && waited >= QR_SCAN_AFTER {
+                scanned = true;
+                let who = user
+                    .as_ref()
+                    .map(|u| u.display_name().to_string())
+                    .unwrap_or_else(|| "somebody".into());
+                sink.send(Event::Auth(AuthEvent::QrScanned {
+                    username: who,
+                    avatar: None,
+                }));
+            }
+            if waited >= QR_CONFIRM_AFTER {
+                signed_in = true;
+            }
+        }
+        if !signed_in {
+            std::thread::sleep(TICK);
         }
     }
 
@@ -754,6 +838,49 @@ mod tests {
         );
     }
 
+    /// The scripted scan, end to end: a code, a phone reading it, and a
+    /// session. It is the one flow that cannot be tested against Discord
+    /// without a phone in somebody's hand, which is the reason it is scripted
+    /// here at all.
+    #[test]
+    fn the_replay_plays_a_whole_qr_login() {
+        let handle = spawn(fixture());
+        assert!(
+            wait_for(&handle, |e| matches!(e, Event::Auth(AuthEvent::NeedsLogin))),
+            "it did not say there was no token"
+        );
+        handle.send(Command::StartRemoteAuth);
+
+        let mut url = None;
+        let mut side = 0usize;
+        assert!(
+            wait_for(&handle, |e| {
+                if let Event::Auth(AuthEvent::QrReady { url: u, matrix, .. }) = e {
+                    url = Some(u.clone());
+                    side = matrix.len();
+                    return true;
+                }
+                false
+            }),
+            "no code arrived"
+        );
+        assert!(side >= 21, "a code of {side} modules is not one");
+        let url = url.unwrap();
+        assert!(
+            !url.contains("discord.com"),
+            "the fixture's code points at the real thing: {url}"
+        );
+
+        assert!(
+            wait_for(&handle, |e| matches!(
+                e,
+                Event::Auth(AuthEvent::QrScanned { .. })
+            )),
+            "nobody scanned it"
+        );
+        assert!(wait_for(&handle, |e| matches!(e, Event::Ready)), "no READY");
+    }
+
     /// Every dispatch in the file decodes into something the state machine
     /// knows. A fixture with a typo in an event name is a fixture that plays
     /// silently and teaches nothing.
@@ -832,13 +959,21 @@ mod tests {
         assert_eq!(back_at, 25_000);
     }
 
-    /// Nothing happens until somebody signs in, because the login screen is
-    /// the first thing this is for.
+    /// The timeline does not play until somebody signs in, because the login
+    /// screen is the first thing this is for. The one thing sent before that
+    /// is the statement that there is no token, which is what puts the
+    /// interface on the code screen.
     #[test]
     fn nothing_plays_before_the_login() {
         let handle = spawn(fixture());
         std::thread::sleep(Duration::from_millis(120));
-        assert_eq!(handle.drain().count(), 0);
+        let events: Vec<Event> = handle.drain().collect();
+        assert!(
+            events
+                .iter()
+                .all(|e| matches!(e, Event::Auth(AuthEvent::NeedsLogin))),
+            "the timeline started without a login: {events:?}"
+        );
         assert!(!handle.status().is_ready());
     }
 

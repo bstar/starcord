@@ -1,0 +1,27 @@
+---
+source: src/ui/login.rs
+expression: "screen_text(&s, 100, 30)"
+---
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                      ┌──────────────────────────────────────────────────────┐                      
+                      │ STAR/CORD                                            │                      
+                      │                                                      │                      
+                      │ that did not work                                    │                      
+                      │                                                      │                      
+                      │ the code was not confirmed in time (close 4003)      │                      
+                      │                                                      │                      
+                      │ r   try again                                        │                      
+                      │ 2   paste a token                                    │                      
+                      │ q   quit                                             │                      
+                      │                                                      │                      
+                      │                                                      │                      
+                      │                                                      │                      
+                      │                                                      │                      
+                      │                                                      │                      
+                      └──────────────────────────────────────────────────────┘

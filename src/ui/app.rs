@@ -66,7 +66,7 @@ use starkit::term;
 
 use super::keymap::{self, Action, PrefixKey};
 use super::layout::{Drag, LayoutState, Regions};
-use super::login::{LoginScreen, Outcome, Stage};
+use super::login::{LoginScreen, Outcome};
 use super::overlays::confirm::{Confirm, Pending};
 use super::overlays::quick::{self, Target};
 use super::overlays::settings::Setting;
@@ -340,6 +340,22 @@ impl App {
         self.refresh();
         self.settle_layout();
         self.maybe_mark_read();
+        self.refresh_qr();
+    }
+
+    /// A code nobody scanned in time is replaced without being asked.
+    ///
+    /// The countdown is redrawn thirty times a second and the request is not:
+    /// `start_qr` puts the screen back to waiting, which is what stops this
+    /// asking again on the next frame.
+    fn refresh_qr(&mut self) {
+        if !self.login.as_ref().is_some_and(LoginScreen::expired) {
+            return;
+        }
+        if let Some(screen) = &mut self.login {
+            screen.start_qr();
+        }
+        self.core.send(Command::StartRemoteAuth);
     }
 
     // -- events from the core ---------------------------------------------
@@ -379,7 +395,14 @@ impl App {
             }
             Event::Auth(auth) => match auth {
                 AuthEvent::NeedsLogin | AuthEvent::LoggedOut => {
-                    self.login = Some(LoginScreen::new());
+                    // Straight to the code. There is no token and no password
+                    // to type, so the menu would be one keystroke in front of
+                    // the only thing that can happen next; `2` is still there
+                    // for somebody who has a token in a password manager.
+                    let mut screen = LoginScreen::new();
+                    screen.start_qr();
+                    self.login = Some(screen);
+                    self.core.send(Command::StartRemoteAuth);
                 }
                 AuthEvent::Failed(reason) => {
                     self.login
@@ -397,15 +420,14 @@ impl App {
                     matrix,
                     ..
                 } => {
-                    if let Some(screen) = &mut self.login {
-                        screen.stage = Stage::Qr {
-                            url,
-                            expires: Instant::now() + expires_in,
-                            matrix,
-                        };
-                    }
+                    self.login
+                        .get_or_insert_with(LoginScreen::new)
+                        .qr_ready(url, expires_in, matrix);
                 }
                 AuthEvent::QrScanned { username, .. } => {
+                    if let Some(screen) = &mut self.login {
+                        screen.scanned(username.clone());
+                    }
                     self.note(format!("scanned by {username}"));
                 }
             },
@@ -1016,6 +1038,7 @@ impl App {
                 Outcome::Quit => self.quit = true,
                 Outcome::Consumed => {}
                 Outcome::StartQr => self.core.send(Command::StartRemoteAuth),
+                Outcome::CancelQr => self.core.send(Command::CancelRemoteAuth),
                 Outcome::Submit(text) => match crate::discord::auth::Token::new(&text) {
                     Ok(token) => self.core.send(Command::LoginWithToken(token)),
                     Err(e) => screen.failed(e.to_string()),
@@ -1984,7 +2007,7 @@ impl App {
         buf.set_style(area, bg);
 
         if let Some(screen) = &self.login {
-            screen.render(area, buf, &self.look.theme);
+            screen.render(area, buf, &self.look.theme, &mut self.look.graphics);
             return;
         }
 
