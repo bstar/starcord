@@ -307,9 +307,14 @@ impl ChatState {
         if let Some(row) = self.row_of(want) {
             self.list.scroll_to(row);
             self.follow_end = false;
-            self.cursor = row;
+            // The cursor goes back where it was as well, if that message is
+            // still held; the anchor alone would put the view in the right
+            // place with `r` and `e` pointing at the top of it.
+            self.cursor = memory.cursor.and_then(|id| self.row_of(id)).unwrap_or(row);
             self.clamp_cursor();
-            self.memory.entry(channel).or_default().anchor = None;
+            let entry = self.memory.entry(channel).or_default();
+            entry.anchor = None;
+            entry.cursor = None;
         }
     }
 

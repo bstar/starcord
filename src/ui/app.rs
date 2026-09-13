@@ -462,10 +462,14 @@ impl App {
             }
             Event::Mention { .. } => {
                 if self.cfg.notify.bell {
-                    // The terminal's own bell, which is the only notification
-                    // that needs nothing installed. Desktop notifications land
-                    // with the milestone that owns them.
-                    print!("\x07");
+                    // The terminal's own bell: the one notification that needs
+                    // nothing installed and reaches a machine over ssh. Written
+                    // and flushed here rather than left in a buffer that the
+                    // next frame would scribble over.
+                    use std::io::Write as _;
+                    let mut out = std::io::stdout();
+                    let _ = out.write_all(b"\x07");
+                    let _ = out.flush();
                 }
             }
             Event::UploadProgress { .. } | Event::Gifs { .. } | Event::Search { .. } => {}
