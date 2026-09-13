@@ -13,8 +13,8 @@ categories = ["command-line-utilities"]
 [dependencies]
 # The shared terminal foundation: paths, logging, atomic and private file
 # writes, theming, the dock layout engine and the image pipeline, all of it
-# already proven in staramp. starcord takes only what a chat client needs --
-# `wsz` is a Winamp skin format nothing here reads.
+# already proven in STAR/AMP. Only what a chat client needs: `wsz` is a Winamp
+# skin format nothing here reads.
 #
 # Commented out until the crate exists on disk. `src/paths.rs` and
 # `src/logging.rs` carry local copies of the two pieces M1 needs, with the same
@@ -129,12 +129,19 @@ bitflags = "2"
 # or one. Inline storage keeps that off the heap on the gateway's hot path.
 smallvec = { version = "1", features = ["union"] }
 
+# Stream and Sink for the websocket. tokio-tungstenite hands back a type that
+# implements both and re-exports neither trait.
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+
 # Jitter on heartbeats and reconnect backoff, and the nonce on an outgoing
 # message. Jitter is not cosmetic: without it every client that lost the same
 # connection redials at the same instant.
 rand = "0.9"
 
 [dev-dependencies]
+# `start_paused` runtimes, so the rate limiter's sleeps are asserted rather
+# than waited out.
+tokio = { version = "1", features = ["test-util"] }
 # Anything that parses foreign input gets a property test: the gateway
 # inflater, the model deserialisers and the markdown parser all read bytes
 # somebody else wrote.
