@@ -1,0 +1,20 @@
+---
+source: src/ui/frames.rs
+expression: "render(&mut app, 59, 30)"
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            terminal too small — 60x12 minimum

@@ -1,0 +1,16 @@
+---
+source: src/ui/frames.rs
+expression: "render(&mut app, 60, 12)"
+---
+┌═ First Guild ═───┐┌═ chat ═──────────────────────────────┐
+│  messages  close ││          search  pins  zen  settings │
+│# rules           ││                                      │
+│▾ TEXT CHANNELS   ││                                      │
+│  # general (2)   ││           choose a channel           │
+│  # random        ││                                      │
+│  ! announcements │└──────────────────────────────────────┘
+│▾ ARCHIVE         │┌═ compose ═───────────────────────────┐
+│  # old-decisions ││                   attach  emoji  gif │
+│                  ││open a channel to write in it         │
+└──────────────────┘└──────────────────────────────────────┘
+? help                    chat  6 unread · @3  ▲ online  off

@@ -1,0 +1,35 @@
+---
+source: src/ui/frames.rs
+assertion_line: 222
+expression: "render(&mut app, 100, 30)"
+---
+┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
+│      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
+│@    1││# rules                 ││↑ older messages                        ▐│REGULARS — 2          │
+│FG   2││▾ TEXT CHANNELS         ││───── Saturday, 12 September 2026 ──────▐│● Alex                │
+│SG   •││  # general (2)         ││▕ Alex  10:00                           ▐│● Jo                  │
+│··    ││  # random              ││▕ the first thing anybody said          ▐│ONLINE — 1            │
+│      ││  ! announcements       ││  and the second, half a minute later   ▐│● Sam                 │
+│      ││▾ ARCHIVE               ││  and the third, which makes a group of ▐│OFFLINE — 1           │
+│      ││  # old-decisions       ││  three                                 ▐│● Robin               │
+│      ││                        ││  Robin joined                          ▐│                      │
+│      ││                        ││  Jordan  10:10                         ▐│                      │
+│      ││                        ││  here is the thing I meant             ▐│                      │
+│      ││                        ││  ▏ rust                                ▐│                      │
+│      ││                        ││  ▏ fn main() {                         ▐│                      │
+│      ││                        ││  ▏     println!("hello");              ▐│                      │
+│      ││                        ││  ▏ }                                   ││                      │
+│      │└────────────────────────┘│────── Sunday, 13 September 2026 ───────││                      │
+│      │┌═ messages ═────────────┐│───────────── new messages ─────────────││                      │
+│      ││         friends  close ││ ╭ ↩ @Alex: the first thing anybody sa… ││                      │
+│      ││○ Wren of the Long Displ││  Alex  09:00                           ││                      │
+│      ││○ Alex, Jordan [3]      ││  yes, that one                         ││                      │
+│      ││● Alex (1)              ││  [👍  3] [:pepe: 1]                     ││                      │
+│      ││                        ││  Jordan  09:05                         ││                      │
+│      ││                        ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││                      │
+│      ││                        │└────────────────────────────────────────┘│                      │
+│      ││                        │┌═ compose ═─────────────────────────────┐│                      │
+│      ││                        ││                     attach  emoji  gif ││                      │
+│      ││                        ││message #general · First Guild          ││                      │
+└──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
+? help  #general · First Guild                           chat  ↓ 3 new  6 unread · @3  ▲ online  off

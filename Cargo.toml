@@ -12,19 +12,34 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 # The shared terminal foundation: paths, logging, atomic and private file
-# writes, theming, the dock layout engine and the image pipeline, all of it
-# already proven in STAR/AMP. Only what a chat client needs: `wsz` is a Winamp
-# skin format nothing here reads.
+# writes, theming, the dock layout engine, text entry, wrapping and the image
+# pipeline, all of it already proven in STAR/AMP. Only what a chat client
+# needs: `wsz` is a Winamp skin format nothing here reads, and `default-features
+# = false` is what keeps it out.
 #
-# Commented out, and not because the crate is missing -- it exists and its
-# `paths` and `logging` match the local copies in `src/paths.rs` and
-# `src/logging.rs` signature for signature. Two things have to happen first.
-# A path dependency on a sibling checkout cannot be built by the flake, whose
-# `src` is this directory, so the cutover waits for the git dependency and
-# `cargoLock.allowBuiltinFetchGit`. And `Paths` there has no `session_file()`
-# or `media_cache_dir()`, which this needs; either they move upstream or the
-# local file keeps them as an extension.
-# starkit = { path = "../starkit", default-features = false, features = ["image", "gif", "net"] }
+# It is also the one copy of `ratatui`, `crossterm`, `ratatui-image` and
+# `image` in the tree. Everything under `src/ui/` reaches them through
+# `starkit::`, and none of the four is a direct dependency here: a widget built
+# against a second copy of ratatui does not satisfy a signature expecting the
+# first, and the compiler reports that as two versions carrying the same
+# number.
+#
+# `src/paths.rs` stays local rather than becoming a wrapper over
+# `starkit::paths::Paths`: the shared type has no `session_file()` or
+# `media_cache_dir()`, and the core takes `crate::paths::Paths` by value
+# throughout.
+#
+# A sibling checkout is used through an uncommitted `.cargo/config.toml`, as
+# AGENTS.md describes.
+#
+# The `version` is not redundant with the tag: cargo-deny counts a dependency
+# with no version requirement as a wildcard and `wildcards = "deny"` refuses
+# it, whether or not the source is a git URL pinned to a tag.
+starkit = { git = "https://github.com/bstar/starkit", tag = "v0.1.0", version = "0.1", default-features = false, features = [
+    "image",
+    "gif",
+    "net",
+] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -199,6 +214,23 @@ qrcode = { version = "0.14", default-features = false }
 # go to the configured player instead, by argv and never through a shell.
 webbrowser = "1"
 
+# The system clipboard, for `y` and `Y`. `wayland-data-control` is what makes a
+# copy survive the program exiting under a Wayland compositor: without it the
+# clipboard is owned by a process that has gone away, and the paste lands
+# nowhere. The default features are off because the ones that matter here are
+# text, and `image-data` pulls a second decoder in beside the one the media
+# core already has.
+arboard = { version = "3.6", default-features = false, features = [
+    "wayland-data-control",
+] }
+
+# The quick switcher's ranking. The same matcher Helix and nucleo's own picker
+# use, as a library rather than a picker: this supplies the list and the
+# ordering, and the overlay draws it. A hand-written subsequence match would
+# rank `general` below `gen-e-r-a-l` in some other channel's name, which is
+# exactly the difference a fuzzy matcher exists to get right.
+nucleo-matcher = "0.3"
+
 # A reaction is an emoji in a URL path. The unicode case is four bytes that are
 # not ASCII and the custom case is `name:id`, so neither can be formatted into a
 # path as it stands; this is the encoder, with the set spelled out rather than
@@ -229,6 +261,10 @@ proptest = "1"
 wiremock = "0.6"
 # Token-store and path tests write real files with real modes.
 tempfile = "3"
+# The UI's snapshots. A layout regression is a diff of a drawn frame, which is
+# the only form in which anybody can actually see it; `insta` keeps the
+# accepted frame beside the test and shows the change as a diff.
+insta = "1"
 
 [profile.release]
 # Arithmetic on sequence numbers, sizes and offsets read off the wire. Wrapping

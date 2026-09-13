@@ -54,10 +54,10 @@ layout you arrange is the layout you get next time.
 | Key | Does |
 | --- | --- |
 | `[media] animate` | when an animated picture may move: `always`, `focused` (default), `never` |
-| `[media] cache_mb` | how large the on-disk media cache may grow before the oldest files are swept. Default `256` |
+| `[media] cache_max_mib` | how large the on-disk media cache may grow before the oldest files are swept, in mebibytes. Default `512` |
 | `[media] max_attachment_mib` | the largest attachment worth downloading. Default `25`, which is what an account without Nitro may upload |
 | `[media] save_dir` | where the media viewer's `s` puts a file. `~` is expanded. Default `"~/Downloads"` |
-| `[media] player` | argv for playing a video, never a shell line. The path is appended. Default `["mpv"]` |
+| `[media] player` | argv for playing a video, never a shell line. The path is appended. Default `["mpv", "--"]`, where `--` is what keeps a file called `-x` a file rather than an option |
 
 `player` is a list because a file name with a space or a semicolon in it is
 somebody else's file name, and it reaches a program without ever reaching a
@@ -68,6 +68,7 @@ shell.
 | Key | Does |
 | --- | --- |
 | `[notify] enabled` | say anything at all about a mention or a DM. Default `true` |
+| `[notify] only_when_unfocused` | say nothing about the channel already on screen while the terminal has focus. Default `true` |
 | `[notify] dms_only` | only direct messages, rather than every mention in every server. Default `false` |
 | `[notify] bell` | ring the terminal bell. Default `true` |
 | `[notify] desktop` | a desktop notification as well. Default `false`: it puts somebody's name and words on a screen that may not be yours alone |

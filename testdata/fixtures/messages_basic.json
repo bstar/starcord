@@ -1,0 +1,296 @@
+{
+  "_comment": [
+    "One channel's worth of conversation, for `starcord --replay` and for the",
+    "chat panel's snapshots. Synthetic, like everything else in testdata: no",
+    "account was recorded from, and a fixture that pretends to be a recording",
+    "is worse than one that says it is not.",
+    "",
+    "Ids follow ready.json's conventions -- 1000000000000000NN for users,",
+    "2000000000000000NN for guild things, 5000000000000000NN for messages,",
+    "6000000000000000NN for attachments, 7000000000000000NN for emoji -- so",
+    "the three files can be read side by side.",
+    "",
+    "It exists to carry one of each thing the renderer has to get right: a",
+    "group of three from the same person, a reply, reactions (one of them",
+    "this account's own), a fenced code block, a spoiler, an inline image, a",
+    "link-preview card, a gifv, a system message, a mention of the reader, and",
+    "a day boundary in the middle so the date divider is drawn. `older` is the",
+    "page `LoadOlder` answers with, which is what proves the view does not",
+    "jump when history arrives above it."
+  ],
+  "channels": {
+    "200000000000000011": {
+      "older": [
+        {
+          "id": "500000000000000090",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "older still, from the day before",
+          "timestamp": "2026-09-11T16:40:00.000000+00:00",
+          "author": {
+            "id": "100000000000000003",
+            "username": "jordan",
+            "global_name": "Jordan",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000091",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "and the line under it",
+          "timestamp": "2026-09-11T16:41:00.000000+00:00",
+          "author": {
+            "id": "100000000000000003",
+            "username": "jordan",
+            "global_name": "Jordan",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000092",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "the last of the older page",
+          "timestamp": "2026-09-11T16:42:00.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          }
+        }
+      ],
+      "messages": [
+        {
+          "id": "500000000000000101",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "the first thing anybody said",
+          "timestamp": "2026-09-12T10:00:00.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000102",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "and the second, half a minute later",
+          "timestamp": "2026-09-12T10:00:30.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000103",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "and the third, which makes a group of three",
+          "timestamp": "2026-09-12T10:01:00.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000104",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 7,
+          "content": "",
+          "timestamp": "2026-09-12T10:05:00.000000+00:00",
+          "author": {
+            "id": "100000000000000004",
+            "username": "robin",
+            "global_name": "Robin",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000105",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "here is the thing I meant\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```",
+          "timestamp": "2026-09-12T10:10:00.000000+00:00",
+          "author": {
+            "id": "100000000000000003",
+            "username": "jordan",
+            "global_name": "Jordan",
+            "discriminator": "0"
+          }
+        },
+        {
+          "id": "500000000000000106",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 19,
+          "content": "yes, that one",
+          "timestamp": "2026-09-13T09:00:00.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          },
+          "message_reference": {
+            "type": 0,
+            "message_id": "500000000000000101",
+            "channel_id": "200000000000000011",
+            "guild_id": "200000000000000001"
+          },
+          "referenced_message": {
+            "id": "500000000000000101",
+            "channel_id": "200000000000000011",
+            "type": 0,
+            "content": "the first thing anybody said",
+            "timestamp": "2026-09-12T10:00:00.000000+00:00",
+            "author": {
+              "id": "100000000000000002",
+              "username": "alex",
+              "global_name": "Alex",
+              "discriminator": "0"
+            }
+          },
+          "reactions": [
+            {
+              "count": 3,
+              "me": true,
+              "emoji": { "id": null, "name": "👍" }
+            },
+            {
+              "count": 1,
+              "me": false,
+              "emoji": { "id": "700000000000000001", "name": "pepe" }
+            }
+          ]
+        },
+        {
+          "id": "500000000000000107",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "<@100000000000000001> the answer is ||forty two|| if you want it",
+          "timestamp": "2026-09-13T09:05:00.000000+00:00",
+          "author": {
+            "id": "100000000000000003",
+            "username": "jordan",
+            "global_name": "Jordan",
+            "discriminator": "0"
+          },
+          "mentions": [
+            {
+              "id": "100000000000000001",
+              "username": "sam",
+              "global_name": "Sam",
+              "discriminator": "0"
+            }
+          ]
+        },
+        {
+          "id": "500000000000000108",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "the picture I took",
+          "timestamp": "2026-09-13T09:10:00.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          },
+          "attachments": [
+            {
+              "id": "600000000000000001",
+              "filename": "harbour.png",
+              "content_type": "image/png",
+              "size": 40213,
+              "url": "https://cdn.discordapp.invalid/attachments/200000000000000011/600000000000000001/harbour.png",
+              "proxy_url": "https://media.discordapp.invalid/attachments/200000000000000011/600000000000000001/harbour.png",
+              "width": 1024,
+              "height": 768
+            }
+          ]
+        },
+        {
+          "id": "500000000000000109",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "https://example.invalid/page",
+          "timestamp": "2026-09-13T09:15:00.000000+00:00",
+          "author": {
+            "id": "100000000000000003",
+            "username": "jordan",
+            "global_name": "Jordan",
+            "discriminator": "0"
+          },
+          "embeds": [
+            {
+              "type": "link",
+              "url": "https://example.invalid/page",
+              "title": "A page title",
+              "description": "Two sentences of description, as a link unfurl carries. The second is there so the wrapping has something to do.",
+              "color": 5814783,
+              "provider": { "name": "Example", "url": "https://example.invalid" },
+              "thumbnail": {
+                "url": "https://example.invalid/thumb.png",
+                "proxy_url": "https://images.discordapp.invalid/thumb.png",
+                "width": 200,
+                "height": 200
+              }
+            }
+          ]
+        },
+        {
+          "id": "500000000000000110",
+          "channel_id": "200000000000000011",
+          "guild_id": "200000000000000001",
+          "type": 0,
+          "content": "https://tenor.invalid/view/a-cat-12345",
+          "timestamp": "2026-09-13T09:20:00.000000+00:00",
+          "author": {
+            "id": "100000000000000002",
+            "username": "alex",
+            "global_name": "Alex",
+            "discriminator": "0"
+          },
+          "embeds": [
+            {
+              "type": "gifv",
+              "url": "https://tenor.invalid/view/a-cat-12345",
+              "title": "a cat, falling over",
+              "provider": { "name": "Tenor", "url": "https://tenor.invalid" },
+              "video": {
+                "url": "https://media.tenor.invalid/a-cat-12345.mp4",
+                "width": 498,
+                "height": 280
+              },
+              "thumbnail": {
+                "url": "https://media.tenor.invalid/a-cat-12345.png",
+                "width": 498,
+                "height": 280
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

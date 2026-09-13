@@ -24,6 +24,16 @@ pub struct Cli {
     #[arg(long, short, global = true)]
     pub verbose: bool,
 
+    /// Run against a recorded session instead of Discord.
+    ///
+    /// `--replay testdata/gateway/session.json` plays a timeline through the
+    /// whole interface with no network and no account: a READY, presences, a
+    /// connection that drops and comes back. It is how the client is developed
+    /// and how a layout is looked at without arranging for somebody to send a
+    /// message.
+    #[arg(long, value_name = "FILE")]
+    pub replay: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -225,6 +235,17 @@ mod tests {
         let cli = Cli::parse_from(["starcord"]);
         assert!(cli.command.is_none());
         assert!(!cli.verbose);
+        assert!(cli.replay.is_none());
+    }
+
+    #[test]
+    fn a_replay_names_a_file() {
+        let cli = Cli::parse_from(["starcord", "--replay", "testdata/gateway/session.json"]);
+        assert!(cli.command.is_none());
+        assert_eq!(
+            cli.replay.as_deref(),
+            Some(std::path::Path::new("testdata/gateway/session.json"))
+        );
     }
 
     #[test]
