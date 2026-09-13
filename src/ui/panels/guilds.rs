@@ -1,9 +1,14 @@
 //! The server rail.
 //!
-//! A narrow strip down the left, one row per server, with the DM home at the
-//! top. Two characters of the server's name stand in for its icon until there
-//! are pictures to draw; the mark to the right is the whole of the unread
-//! state, because at eight columns wide there is room for nothing else.
+//! A narrow strip down the left, with the DM home at the top. The mark to the
+//! right of each entry is the whole of the unread state, because at eight
+//! columns wide there is room for nothing else.
+//!
+//! An entry is one row of two characters where the terminal cannot draw a
+//! picture, and two rows carrying a four-by-two icon where it can. The height
+//! is the one thing everything else has to agree on: the cursor, the scroll
+//! and the mouse all go through [`row_rows`] and [`row_at`], so a rail with
+//! icons and a rail without behave the same way.
 
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
@@ -11,8 +16,13 @@ use starkit::ratatui::style::{Modifier, Style};
 
 use super::{empty, fit, rgb, width_of};
 use crate::config::GuildsStyle;
+use crate::discord::media::MediaKey;
 use crate::discord::snowflake::GuildId;
 use crate::ui::theme::Theme;
+
+/// Columns and rows an icon takes when there are pictures.
+const ICON_COLS: u16 = 4;
+const ICON_ROWS: u16 = 2;
 
 /// One entry, copied out of `State` before the lock is dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +30,8 @@ pub struct Row {
     /// `None` is the direct-message home, which is always first.
     pub id: Option<GuildId>,
     pub name: String,
+    /// The server's icon hash, where it has one.
+    pub icon: Option<String>,
     pub unread: bool,
     pub mentions: u32,
     /// A Discord-side outage. The row stays, greyed.
@@ -67,6 +79,26 @@ pub struct View<'a> {
     pub scroll: usize,
     pub style: GuildsStyle,
     pub focused: bool,
+    /// Whether this terminal can draw a server's icon.
+    pub pictures: bool,
+}
+
+/// Where one server's icon goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Icon {
+    pub rect: Rect,
+    pub key: MediaKey,
+    /// What the cells say until the picture arrives.
+    pub initials: String,
+}
+
+/// How many terminal rows one entry takes.
+pub fn row_rows(pictures: bool) -> u16 {
+    if pictures {
+        ICON_ROWS
+    } else {
+        1
+    }
 }
 
 /// Which row a body-relative `y` is on.
@@ -77,26 +109,27 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     if y < body.y || y >= body.y + body.height {
         return None;
     }
-    let index = v.scroll + usize::from(y - body.y);
+    let index = v.scroll + usize::from((y - body.y) / row_rows(v.pictures));
     (index < v.rows.len()).then_some(index)
 }
 
-pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
+/// Draw the rail, and say where the icons go.
+///
+/// The icons are placed rather than drawn: a protocol image is one escape
+/// sequence over a region, and every one of them on the screen goes down in a
+/// single pass after the text. What comes back is what that pass needs.
+pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) -> Vec<Icon> {
     let t = v.theme;
+    let mut icons = Vec::new();
     if v.rows.is_empty() {
         empty(body, buf, t, "—");
-        return;
+        return icons;
     }
     let width = body.width;
-    for (line, row) in v
-        .rows
-        .iter()
-        .enumerate()
-        .skip(v.scroll)
-        .take(usize::from(body.height))
-    {
-        let (index, row) = (line, row);
-        let y = body.y + (index - v.scroll) as u16;
+    let step = row_rows(v.pictures);
+    let visible = usize::from(body.height / step);
+    for (index, row) in v.rows.iter().enumerate().skip(v.scroll).take(visible) {
+        let y = body.y + (index - v.scroll) as u16 * step;
         let selected = index == v.cursor;
 
         let fg = if row.unavailable {
@@ -136,6 +169,42 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
             (n, _) => n.to_string(),
         };
         let initials = row.initials();
+
+        if v.pictures {
+            // Two rows: the icon's four columns, the mark beside it, and the
+            // selection carried across both so the entry reads as one thing.
+            for line in 0..step {
+                buf.set_string(body.x, y + line, " ".repeat(usize::from(width)), style);
+            }
+            let gap = usize::from(width.saturating_sub(ICON_COLS + width_of(&mark)));
+            buf.set_string(
+                body.x + ICON_COLS,
+                y,
+                fit(&format!("{:gap$}{mark}", ""), width - ICON_COLS),
+                style,
+            );
+            match (row.id, row.icon.clone()) {
+                (Some(guild), Some(hash)) => icons.push(Icon {
+                    rect: Rect {
+                        x: body.x,
+                        y,
+                        width: ICON_COLS.min(width),
+                        height: step,
+                    },
+                    key: MediaKey::GuildIcon {
+                        guild,
+                        hash,
+                        size: 32,
+                    },
+                    initials,
+                }),
+                // No icon to fetch: the initials are the icon, centred on the
+                // two rows so that a rail of mixed entries lines up.
+                _ => buf.set_string(body.x + 1, y, fit(&initials, ICON_COLS), style),
+            }
+            continue;
+        }
+
         let used = width_of(&initials) + width_of(&mark);
         let gap = usize::from(width.saturating_sub(used).max(1));
         let text = format!("{initials}{:gap$}{mark}", "", gap = gap);
@@ -145,6 +214,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
     // The list style is a later milestone; the rail is what M1 draws and
     // saying so beats drawing something that looks broken.
     let _ = v.style;
+    icons
 }
 
 #[cfg(test)]
@@ -155,6 +225,7 @@ mod tests {
         Row {
             id: Some(GuildId(1)),
             name: name.into(),
+            icon: None,
             unread: false,
             mentions: 0,
             unavailable: false,
@@ -190,11 +261,29 @@ mod tests {
         let home = Row {
             id: None,
             name: "direct messages".into(),
+            icon: None,
             unread: true,
             mentions: 0,
             unavailable: false,
         };
         assert_eq!(home.initials(), "@");
+    }
+
+    fn view<'a>(
+        rows: &'a [Row],
+        theme: &'a crate::ui::theme::Theme,
+        scroll: usize,
+        pictures: bool,
+    ) -> View<'a> {
+        View {
+            theme,
+            rows,
+            cursor: 0,
+            scroll,
+            style: GuildsStyle::Rail,
+            focused: true,
+            pictures,
+        }
     }
 
     /// The rule the mouse rests on: a row that was scrolled off the top is not
@@ -203,18 +292,67 @@ mod tests {
     fn row_at_answers_only_for_rows_that_were_drawn() {
         let rows: Vec<Row> = (0..5).map(|i| row(&format!("g{i}"))).collect();
         let theme = crate::ui::theme::tests_support::theme("terminal");
-        let v = View {
-            theme: &theme,
-            rows: &rows,
-            cursor: 0,
-            scroll: 2,
-            style: GuildsStyle::Rail,
-            focused: true,
-        };
+        let v = view(&rows, &theme, 2, false);
         let body = Rect::new(0, 4, 6, 3);
         assert_eq!(row_at(body, &v, 3), None, "above the body");
         assert_eq!(row_at(body, &v, 4), Some(2));
         assert_eq!(row_at(body, &v, 6), Some(4));
         assert_eq!(row_at(body, &v, 7), None, "below the body");
+    }
+
+    /// With icons an entry is two rows tall, and a click anywhere on either of
+    /// them is a click on that server. The renderer and the mouse share
+    /// `row_rows`, which is what makes that true rather than nearly true.
+    #[test]
+    fn an_entry_with_an_icon_is_two_rows_the_mouse_agrees_about() {
+        let rows: Vec<Row> = (0..4).map(|i| row(&format!("g{i}"))).collect();
+        let theme = crate::ui::theme::tests_support::theme("terminal");
+        let v = view(&rows, &theme, 1, true);
+        let body = Rect::new(0, 0, 6, 6);
+        assert_eq!(row_rows(true), 2);
+        assert_eq!(row_at(body, &v, 0), Some(1));
+        assert_eq!(row_at(body, &v, 1), Some(1), "the second row of the same");
+        assert_eq!(row_at(body, &v, 2), Some(2));
+        assert_eq!(row_at(body, &v, 5), Some(3));
+    }
+
+    /// A server with an icon hands back a four-by-two rectangle to draw it in;
+    /// one without keeps its initials, in the same place.
+    #[test]
+    fn an_icon_is_placed_rather_than_drawn() {
+        let theme = crate::ui::theme::tests_support::theme("terminal");
+        let mut rows = vec![row("First Guild"), row("Second Guild")];
+        rows[0].icon = Some("abc123".into());
+        let v = view(&rows, &theme, 0, true);
+        let body = Rect::new(0, 0, 6, 6);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
+        let icons = render(body, &mut buf, &v);
+
+        assert_eq!(icons.len(), 1, "only the one with a hash");
+        assert_eq!(icons[0].rect, Rect::new(0, 0, 4, 2));
+        assert_eq!(icons[0].initials, "FG");
+        assert!(
+            matches!(&icons[0].key, MediaKey::GuildIcon { hash, .. } if hash == "abc123"),
+            "{:?}",
+            icons[0].key
+        );
+
+        // The second entry has nothing to fetch, so its initials are on the
+        // screen where its icon would have been.
+        let second: String = (0..6).map(|x| buf[(x, 2)].symbol().to_string()).collect();
+        assert!(second.contains("SG"), "{second:?}");
+    }
+
+    /// And with no pictures nothing is placed at all: the rail is what it was.
+    #[test]
+    fn a_terminal_without_pictures_places_nothing() {
+        let theme = crate::ui::theme::tests_support::theme("terminal");
+        let mut rows = vec![row("First Guild")];
+        rows[0].icon = Some("abc123".into());
+        let v = view(&rows, &theme, 0, false);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
+        assert!(render(Rect::new(0, 0, 6, 6), &mut buf, &v).is_empty());
+        let first: String = (0..6).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert!(first.starts_with("FG"), "{first:?}");
     }
 }

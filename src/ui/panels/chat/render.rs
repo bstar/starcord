@@ -198,6 +198,11 @@ pub struct ImageSlot {
     pub rows: u16,
     pub key: MediaKey,
     pub kind: SlotKind,
+    /// What to draw in the cells while there are no pixels for them: a
+    /// person's initials in an avatar slot, nothing anywhere else. Carried on
+    /// the slot because the drawing pass has the rectangle and not the
+    /// message.
+    pub alt: String,
 }
 
 /// Two cells holding a custom emoji.
@@ -206,6 +211,9 @@ pub struct EmojiSlot {
     pub row: u16,
     pub col: u16,
     pub key: MediaKey,
+    /// What it is called, for the two cells to say something while the picture
+    /// is on its way.
+    pub name: String,
 }
 
 /// A run of cells that is a link.
@@ -506,6 +514,18 @@ impl<'a> Writer<'a> {
     fn header(&mut self, msg: &Message) {
         let t = self.theme;
         let gutter = self.ctx.gutter();
+        let mark = initials(msg.author_name());
+        // The avatar's four columns by two rows, taken out of the gutter the
+        // header and the first line of content already leave. An account with
+        // no avatar hash has no picture to ask for, and the same cells carry
+        // its initials instead -- which is why the gutter is five whenever
+        // avatars are on and pictures are possible, rather than only for the
+        // people who have one.
+        let lead = if gutter == AVATAR_GUTTER && msg.author.avatar.is_none() {
+            format!("{mark:<width$}", width = usize::from(gutter))
+        } else {
+            " ".repeat(usize::from(gutter))
+        };
         if gutter == AVATAR_GUTTER {
             if let Some(hash) = msg.author.avatar.clone() {
                 self.out.images.push(ImageSlot {
@@ -519,12 +539,18 @@ impl<'a> Writer<'a> {
                         size: 32,
                     },
                     kind: SlotKind::Avatar,
+                    alt: mark,
                 });
             }
         }
 
         let mut spans = vec![
-            Span::raw(" ".repeat(usize::from(gutter))),
+            Span::styled(
+                lead,
+                Style::default()
+                    .fg(rgb(t.chat.author_fg))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 msg.author_name().to_string(),
                 Style::default()
@@ -805,6 +831,7 @@ impl<'a> Writer<'a> {
                             animated: *animated,
                             size: 48,
                         },
+                        name: name.clone(),
                     });
                     self.plain.push_str(&format!(":{name}:"));
                     self.push_span("  ", style, &Mark::None);
@@ -841,7 +868,12 @@ impl<'a> Writer<'a> {
                         id: attachment.id.0,
                         url: attachment.url.clone(),
                     },
-                    kind: SlotKind::Still,
+                    kind: if is_animated(attachment) {
+                        SlotKind::Gif
+                    } else {
+                        SlotKind::Still
+                    },
+                    alt: String::new(),
                 });
                 for _ in 0..rows {
                     self.placeholder_row(gutter);
@@ -939,6 +971,15 @@ impl<'a> Writer<'a> {
                     viewable: false,
                 });
             }
+            // The still is drawn with a play marker over it; the file itself
+            // is an mp4 and opens in whatever `[media] player` names.
+            if let Some(url) = embed
+                .still()
+                .or(embed.video.as_ref())
+                .and_then(thumbnail_url)
+            {
+                self.thumbnail(url, SlotKind::Gifv);
+            }
             self.chip(gutter, &format!("[{what}{PLAY}{title}]"));
             return;
         }
@@ -993,17 +1034,41 @@ impl<'a> Writer<'a> {
                 );
             }
         }
-        if let Some(media) = embed.still() {
-            if let Some(url) = &media.url {
-                self.out.images.push(ImageSlot {
-                    row: self.row(),
-                    col: gutter + 2,
-                    cols: 8,
-                    rows: 4,
-                    key: MediaKey::EmbedImage { url: url.clone() },
-                    kind: SlotKind::Still,
-                });
-            }
+        if let Some(url) = embed.still().and_then(thumbnail_url) {
+            self.thumbnail(url, SlotKind::Still);
+        }
+    }
+
+    /// Eight columns by four rows against the right edge, for the picture on a
+    /// card.
+    ///
+    /// Right-aligned because a card is read left to right: the title and the
+    /// description are the part somebody asked for, and a thumbnail in front
+    /// of them pushes the words into a column half the width of the panel.
+    /// The rows are reserved whether or not the picture arrives, so the card
+    /// keeps its height.
+    fn thumbnail(&mut self, url: String, kind: SlotKind) {
+        const COLS: u16 = 8;
+        const ROWS: u16 = 4;
+        if !self.ctx.pictures || self.ctx.max_image_rows == 0 {
+            return;
+        }
+        let width = self.width();
+        if width < COLS + self.ctx.gutter() {
+            return;
+        }
+        let row = self.row();
+        self.out.images.push(ImageSlot {
+            row,
+            col: width - COLS,
+            cols: COLS,
+            rows: ROWS,
+            key: MediaKey::EmbedImage { url },
+            kind,
+            alt: String::new(),
+        });
+        for _ in 0..ROWS {
+            self.placeholder_row(width - COLS);
         }
     }
 
@@ -1017,8 +1082,14 @@ impl<'a> Writer<'a> {
         let row = self.row();
         let mut spans = vec![Span::raw(" ".repeat(usize::from(gutter)))];
         let mut col = gutter;
+        let pictures = self.ctx.pictures && self.ctx.emoji_images;
         for reaction in &msg.reactions {
+            // A custom emoji with pictures is two blank cells and a slot; the
+            // chip is measured from what is written, so the hit box is the
+            // same either way.
+            let custom = reaction.emoji.id.filter(|_| pictures);
             let name = match (&reaction.emoji.id, &reaction.emoji.name) {
+                _ if custom.is_some() => "  ".to_string(),
                 (Some(_), Some(name)) => format!(":{name}:"),
                 (_, Some(name)) => name.clone(),
                 _ => "?".into(),
@@ -1027,6 +1098,18 @@ impl<'a> Writer<'a> {
             let w = width_of(&chip);
             if col + w > self.width() {
                 break;
+            }
+            if let Some(id) = custom {
+                self.out.emoji.push(EmojiSlot {
+                    row,
+                    col: col + 1,
+                    key: MediaKey::Emoji {
+                        id,
+                        animated: reaction.emoji.animated,
+                        size: 48,
+                    },
+                    name: reaction.emoji.name.clone().unwrap_or_default(),
+                });
             }
             let style = if reaction.me {
                 Style::default()
@@ -1213,6 +1296,48 @@ fn relative(at: jiff::Timestamp) -> String {
 }
 
 /// `[image 1024x768 cat.png]`, `[file 1.2 MB notes.pdf]`.
+/// Two characters standing in for somebody's face.
+///
+/// The initials of the first two words, or the first two characters of one.
+/// The same rule the server rail uses, so a name is abbreviated the same way
+/// wherever it is too wide to write out.
+fn initials(name: &str) -> String {
+    let mut words = name
+        .split_whitespace()
+        .filter(|w| w.chars().any(char::is_alphanumeric) || w.chars().count() == 1);
+    match (words.next(), words.next()) {
+        (Some(a), Some(b)) => {
+            let mut s = String::new();
+            s.extend(a.chars().next());
+            s.extend(b.chars().next());
+            s
+        }
+        (Some(a), None) => a.chars().take(2).collect(),
+        _ => "\u{b7}\u{b7}".into(),
+    }
+}
+
+/// Whether a file is a moving picture, which decides whether the slot is one
+/// an animation pass will ever be asked to advance.
+fn is_animated(attachment: &Attachment) -> bool {
+    matches!(attachment.content_type.as_deref(), Some("image/gif"))
+        || attachment.filename.to_ascii_lowercase().ends_with(".gif")
+}
+
+/// Where a card's picture is fetched from.
+///
+/// The proxy first. Discord serves somebody else's image through its own media
+/// proxy, and the proxy is the copy that is resized, cached and served over a
+/// connection this client already has; the original is a request to a host the
+/// message merely named.
+fn thumbnail_url(media: &crate::discord::model::EmbedMedia) -> Option<String> {
+    media
+        .proxy_url
+        .clone()
+        .filter(|u| !u.is_empty())
+        .or_else(|| media.url.clone().filter(|u| !u.is_empty()))
+}
+
 fn attachment_chip(attachment: &Attachment) -> String {
     let what = if attachment.is_image() {
         "image"
@@ -1589,6 +1714,140 @@ mod tests {
         let none = render(&message, true, &ctx);
         assert!(none.images.is_empty());
         assert_eq!(none.height, flat.height);
+    }
+
+    /// The rows a picture is given come from what it says it is and from the
+    /// shape of a cell, and are then held to the setting.
+    ///
+    /// The cell aspect is the half of this nobody thinks about: a terminal
+    /// cell is about twice as tall as it is wide, so a square picture across
+    /// twenty columns is ten rows and not twenty. Getting it wrong is how a
+    /// photograph ends up letterboxed inside the space reserved for it.
+    #[test]
+    fn the_reserved_rows_follow_the_picture_and_the_cell() {
+        let mut message = msg("look");
+        message.attachments.push(Attachment {
+            id: crate::discord::snowflake::AttachmentId(600),
+            filename: "square.png".into(),
+            content_type: Some("image/png".into()),
+            url: "https://cdn.invalid/square.png".into(),
+            width: Some(400),
+            height: Some(400),
+            ..Attachment::default()
+        });
+        let t = theme("terminal");
+        let names = Names::default();
+        let revealed = Revealed::default();
+
+        let rows_at = |aspect: f32, cap: u16, width: u16| {
+            let mut ctx = RenderCtx::new(&t, width, &names, &revealed);
+            ctx.pictures = true;
+            ctx.max_image_rows = cap;
+            ctx.aspect = aspect;
+            render(&message, true, &ctx).images[0].rows
+        };
+
+        // Twenty-two columns wide, two of them the gutter: a square across
+        // twenty columns is ten rows at an aspect of two.
+        assert_eq!(rows_at(2.0, 40, 22), 10);
+        // A taller cell is fewer rows for the same picture.
+        assert_eq!(rows_at(2.5, 40, 22), 8);
+        // And the setting is a ceiling, whatever the arithmetic says.
+        assert_eq!(rows_at(2.0, 4, 22), 4);
+    }
+
+    /// Somebody with no avatar hash still gets the gutter, with their initials
+    /// in it: the five columns are a fact about the setting, not about who
+    /// happens to have uploaded a picture.
+    #[test]
+    fn a_head_without_an_avatar_carries_initials() {
+        let t = theme("terminal");
+        let names = Names::default();
+        let revealed = Revealed::default();
+        let mut ctx = RenderCtx::new(&t, 60, &names, &revealed);
+        ctx.pictures = true;
+        ctx.avatars = true;
+
+        let mut message = msg("hello");
+        message.author.username = "alex".into();
+        message.author.global_name = Some("Alex Green".into());
+        let bare = render(&message, true, &ctx);
+        assert!(bare.images.is_empty(), "nothing to fetch without a hash");
+        assert!(text_of(&bare)[0].starts_with("AG"), "{:?}", text_of(&bare));
+
+        message.author.avatar = Some("a1b2c3".into());
+        let with = render(&message, true, &ctx);
+        assert_eq!(with.images.len(), 1);
+        assert_eq!(with.images[0].kind, SlotKind::Avatar);
+        assert_eq!(with.images[0].rows, 2);
+        assert_eq!(with.images[0].cols, 4);
+        assert_eq!(
+            with.images[0].alt, "AG",
+            "no initials to draw while it loads"
+        );
+        assert!(
+            text_of(&with)[0].starts_with("     Alex"),
+            "the initials were drawn under the picture: {:?}",
+            text_of(&with)
+        );
+    }
+
+    /// A custom emoji is two cells and a slot when there are pictures, and its
+    /// own name when there are not.
+    #[test]
+    fn a_custom_emoji_is_two_cells_or_its_name() {
+        let t = theme("terminal");
+        let names = Names::default();
+        let revealed = Revealed::default();
+        let message = msg("nice <:pepe:900000000000000001> one");
+
+        let flat = render(&message, true, &RenderCtx::new(&t, 60, &names, &revealed));
+        let rows = text_of(&flat);
+        assert!(rows.iter().any(|r| r.contains(":pepe:")), "{rows:?}");
+        assert!(flat.emoji.is_empty());
+
+        let mut ctx = RenderCtx::new(&t, 60, &names, &revealed);
+        ctx.pictures = true;
+        ctx.emoji_images = true;
+        let with = render(&message, true, &ctx);
+        assert_eq!(with.emoji.len(), 1);
+        assert_eq!(with.emoji[0].name, "pepe");
+        assert!(
+            !text_of(&with).iter().any(|r| r.contains(":pepe:")),
+            "the name was written under the picture"
+        );
+        // And `y` still yields the text somebody typed, not two blanks.
+        assert!(with.plain.contains(":pepe:"));
+    }
+
+    /// A reaction carrying a custom emoji reserves the same two cells, and the
+    /// chip stays a chip: the hit box is measured from what was written.
+    #[test]
+    fn a_custom_reaction_reserves_its_two_cells() {
+        let t = theme("terminal");
+        let names = Names::default();
+        let revealed = Revealed::default();
+        let mut message = msg("hi");
+        message.reactions.push(crate::discord::model::Reaction {
+            count: 3,
+            me: false,
+            emoji: PartialEmoji {
+                id: Some(crate::discord::snowflake::EmojiId(900)),
+                name: Some("pepe".into()),
+                animated: false,
+            },
+            ..Default::default()
+        });
+
+        let mut ctx = RenderCtx::new(&t, 60, &names, &revealed);
+        ctx.pictures = true;
+        ctx.emoji_images = true;
+        let with = render(&message, true, &ctx);
+        assert_eq!(with.emoji.len(), 1);
+        assert_eq!(with.reactions.len(), 1);
+        // The slot sits inside the chip's brackets.
+        assert!(with.emoji[0].col > with.reactions[0].col);
+        assert!(with.emoji[0].col < with.reactions[0].col + with.reactions[0].width);
     }
 
     /// The code block keeps its bar and its language, and does not wrap.

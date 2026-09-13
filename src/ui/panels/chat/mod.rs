@@ -23,14 +23,16 @@
 //! per frame that fills [`ChatState::heights`] before the list is asked
 //! anything.
 //!
-//! ## What this does not do yet
+//! ## Pictures are placed here and drawn later
 //!
-//! Pictures. The slots are recorded — rows reserved from the attachment's
-//! declared size, keys in [`render::ImageSlot`] — and the rows they reserved
-//! draw a placeholder and a chip. The protocol images land with the milestone
-//! after this one, and when they do, nothing about the geometry changes.
+//! The rows a picture takes are reserved from its declared size, before any
+//! bytes have arrived, so nothing reflows when they do. What this pass
+//! produces for each one is a [`media::Placement`]: the absolute rectangle and
+//! the panel to cut it to. The drawing itself is a separate pass over every
+//! panel's placements at the end of the frame — see [`media`] for why.
 
 pub mod layout;
+pub mod media;
 pub mod render;
 
 use std::collections::HashMap;
@@ -44,7 +46,8 @@ use starkit::vlist::VirtualList;
 use starkit::wrap::width_of;
 
 use self::layout::{Row, Shape};
-use self::render::{Cache, Key, Names, RenderCtx, Rendered, Revealed};
+use self::media::{MediaStore, Placement};
+use self::render::{Cache, Key, Names, RenderCtx, Rendered, Revealed, SlotKind};
 use super::{empty, fit, rgb};
 use crate::config::Config;
 use crate::discord::model::{Message, PartialEmoji};
@@ -90,6 +93,12 @@ pub struct ChatState {
     pub names: Names,
     /// Bumped when a picture one of these messages owns arrives.
     pub media_gen: u64,
+    /// What is known about every picture on screen.
+    pub media: MediaStore,
+    /// Where this frame's pictures go. Filled while drawing, drained by the
+    /// caller afterwards: the panel knows the rectangles and the application
+    /// owns the terminal's graphics.
+    slots: Vec<Placement>,
 
     channel: Option<ChannelId>,
     memory: HashMap<ChannelId, Memory>,
@@ -137,6 +146,8 @@ impl ChatState {
             revealed: Revealed::default(),
             names: Names::default(),
             media_gen: 0,
+            media: MediaStore::new(),
+            slots: Vec::new(),
             channel: None,
             memory: HashMap::new(),
             messages: Vec::new(),
@@ -211,6 +222,9 @@ impl ChatState {
             return;
         }
         self.channel = Some(channel);
+        // Another conversation's pictures: whatever is queued for it is work
+        // nobody is waiting for any more, and the generation is what says so.
+        self.media.viewport_moved();
         self.messages.clear();
         self.rows.clear();
         self.heights.clear();
@@ -446,6 +460,7 @@ impl ChatState {
         }
         let heights = |i: usize| self.heights.get(i).copied().unwrap_or(0);
         self.list.scroll_rows(rows, body, heights, self.rows.len());
+        self.media.viewport_moved();
         self.follow_end = self.list.is_at_end();
         if rows < 0 {
             self.asked_older = false;
@@ -637,6 +652,7 @@ impl ChatState {
     /// right border; `body` is what the frame left for contents.
     pub fn render(&mut self, outer: Rect, body: Rect, buf: &mut Buffer, v: &Params<'_>) {
         self.hits.clear();
+        self.slots.clear();
         if body.width == 0 || body.height == 0 {
             return;
         }
@@ -715,6 +731,9 @@ impl ChatState {
                     };
                     let id = self.messages.get(*index).map(|m| m.id);
                     draw_message(&rendered, item.area, item.skip, buf, t, selected);
+                    if v.pictures {
+                        collect_slots(&mut self.slots, &rendered, item.area, item.skip, body, t);
+                    }
                     if let Some(id) = id {
                         self.hits.push((item.area, Hit::Message(id)));
                         collect_hits(&mut self.hits, &rendered, item.area, item.skip, id);
@@ -724,6 +743,15 @@ impl ChatState {
         }
 
         scrollbar(outer, buf, t, &self.list, &heights, self.rows.len(), body);
+    }
+
+    /// This frame's pictures, for the pass that draws them.
+    ///
+    /// Taken rather than borrowed: the drawing needs the terminal's graphics,
+    /// which the application owns, and handing the rectangles over is what
+    /// keeps this panel from owning a second copy of it.
+    pub fn take_slots(&mut self) -> Vec<Placement> {
+        std::mem::take(&mut self.slots)
     }
 }
 
@@ -788,6 +816,83 @@ fn fit_span(text: &str, room: u16) -> String {
         return text.to_string();
     }
     render::cut(text, room)
+}
+
+/// Turn one message's picture slots into absolute placements.
+///
+/// `area` is where the message was drawn and `skip` is how many of its own
+/// rows are above the top of the viewport, which is the one case where a
+/// picture starts above the screen: a rectangle cannot, so the rows are taken
+/// off the top here and the placement is marked as already cut.
+fn collect_slots(
+    out: &mut Vec<Placement>,
+    rendered: &Rendered,
+    area: Rect,
+    skip: u16,
+    clip: Rect,
+    theme: &Theme,
+) {
+    let horizontal = |col: u16, cols: u16| -> Option<(u16, u16)> {
+        let width = cols.min(area.width.saturating_sub(col));
+        (width > 0).then_some((area.x + col, width))
+    };
+    for slot in &rendered.images {
+        let Some((x, width)) = horizontal(slot.col, slot.cols) else {
+            continue;
+        };
+        let top = i32::from(area.y) + i32::from(slot.row) - i32::from(skip);
+        let floor = i32::from(clip.y);
+        let (y, height) = if top < floor {
+            (floor, i32::from(slot.rows) - (floor - top))
+        } else {
+            (top, i32::from(slot.rows))
+        };
+        if height <= 0 {
+            continue;
+        }
+        let shape = match slot.kind {
+            SlotKind::Avatar => media::Shape::Icon {
+                initials: slot.alt.clone(),
+                colour: theme.chat.author_fg,
+            },
+            SlotKind::Gifv => media::Shape::Play,
+            SlotKind::Still | SlotKind::Gif => media::Shape::Picture,
+        };
+        out.push(Placement {
+            rect: Rect {
+                x,
+                y: y as u16,
+                width,
+                height: height as u16,
+            },
+            clip,
+            clipped: top < floor,
+            key: slot.key.clone(),
+            shape,
+        });
+    }
+    for slot in &rendered.emoji {
+        let Some((x, width)) = horizontal(slot.col, 2) else {
+            continue;
+        };
+        let Some(row) = slot.row.checked_sub(skip) else {
+            continue;
+        };
+        out.push(Placement {
+            rect: Rect {
+                x,
+                y: area.y + row,
+                width,
+                height: 1,
+            },
+            clip,
+            clipped: false,
+            key: slot.key.clone(),
+            shape: media::Shape::Emoji {
+                name: slot.name.clone(),
+            },
+        });
+    }
 }
 
 fn collect_hits(
@@ -1283,8 +1388,84 @@ mod tests {
         );
     }
 
+    /// Every picture a frame places is inside the panel it belongs to, and a
+    /// picture the scroll has carried part-way off the top is cut rather than
+    /// dropped.
+    #[test]
+    fn a_picture_is_placed_inside_the_panel_and_cut_at_its_edge() {
+        use crate::discord::model::Attachment;
+
+        let mut chat = ChatState::new();
+        chat.open(ChannelId(1));
+        let mut messages: Vec<Arc<Message>> = Vec::new();
+        for i in 0..6u64 {
+            let mut m = message(200 + i, 1_000_000 + (i as i64) * 100_000);
+            m.author.id = crate::discord::snowflake::UserId(10 + i);
+            m.attachments.push(Attachment {
+                id: crate::discord::snowflake::AttachmentId(600 + i),
+                filename: format!("p{i}.png"),
+                content_type: Some("image/png".into()),
+                url: format!("https://cdn.invalid/p{i}.png"),
+                width: Some(400),
+                height: Some(400),
+                ..Attachment::default()
+            });
+            messages.push(Arc::new(m));
+        }
+        chat.messages = messages;
+        chat.rows = layout::rows(&Shape {
+            messages: &chat.messages,
+            pending: 0,
+            group_window_secs: 420,
+            has_older: false,
+            first_unread: None,
+            typing: false,
+            tz: jiff::tz::TimeZone::UTC,
+        });
+        chat.cursor = chat.rows.len().saturating_sub(1);
+
+        let t = theme("terminal");
+        let cfg = Config::default();
+        let body = Rect::new(3, 2, 40, 10);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 50, 14));
+        let params = Params {
+            theme: &t,
+            cfg: &cfg,
+            focused: true,
+            pictures: true,
+            aspect: 2.0,
+            me: None,
+            tz: jiff::tz::TimeZone::UTC,
+        };
+        chat.render(body, body, &mut buf, &params);
+        let slots = chat.take_slots();
+
+        assert!(!slots.is_empty(), "nothing was placed");
+        for slot in &slots {
+            assert_eq!(slot.clip, body);
+            assert!(slot.rect.x >= body.x, "{:?}", slot.rect);
+            assert!(
+                slot.rect.x + slot.rect.width <= body.x + body.width,
+                "a picture ran off the right of the panel: {:?}",
+                slot.rect
+            );
+            assert!(slot.rect.y >= body.y, "{:?}", slot.rect);
+            assert!(
+                media::intersect(slot.rect, body).is_some(),
+                "a placement nothing can draw: {:?}",
+                slot.rect
+            );
+        }
+        // The list is anchored at the end, so the topmost picture is the one
+        // the viewport has cut, and it says so.
+        assert!(
+            slots.iter().any(|s| s.clipped),
+            "nothing was cut at the top of a full viewport"
+        );
+    }
+
     /// The typing line names who, and says how many when there are more than
-    /// two.
+    /// two."""
     #[test]
     fn the_typing_line_names_people() {
         assert_eq!(typing_line(&[]), "");

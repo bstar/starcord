@@ -451,14 +451,18 @@ impl App {
                 self.view.stale = true;
             }
             Event::Media { key, result } => {
-                if result.is_ok() {
+                // Kept whether it arrived or not: a failure is an answer, and
+                // one that is not recorded is one that is asked for again on
+                // every frame for as long as the message is on screen.
+                let ok = result.is_ok();
+                self.chat.media.arrived(key, result);
+                if ok {
                     // Every message that owns this picture has to be measured
                     // again; the generation is what makes their cache keys
                     // miss.
-                    let _ = key;
                     self.chat.media_gen = self.chat.media_gen.wrapping_add(1);
-                    self.view.stale = true;
                 }
+                self.view.stale = true;
             }
             Event::Mention { .. } => {
                 if self.cfg.notify.bell {
@@ -526,6 +530,7 @@ impl App {
         let mut rail = vec![guilds::Row {
             id: None,
             name: "direct messages".into(),
+            icon: None,
             unread: state
                 .dms_ordered()
                 .iter()
@@ -548,6 +553,7 @@ impl App {
             rail.push(guilds::Row {
                 id: Some(guild.id),
                 name: guild.name.clone(),
+                icon: guild.icon.clone(),
                 unread: marks.0,
                 mentions: marks.1,
                 unavailable: guild.unavailable,
@@ -959,6 +965,21 @@ impl App {
         self.view.stale = true;
     }
 
+    /// Whether a picture can be put on the screen at all.
+    ///
+    /// Not the same question as [`Graphics::pictures_available`], which asks
+    /// what the terminal can do and ignores the setting. `off` means chips and
+    /// nothing else; `halfblocks` means pictures on any terminal at all, drawn
+    /// two pixels to a cell; `auto` means whatever was detected. The message
+    /// list reserves rows on this answer, so it has to be the whole of it.
+    pub fn pictures(&self) -> bool {
+        match self.look.graphics.mode() {
+            Mode::Off => false,
+            Mode::Blocks => true,
+            _ => self.look.graphics.pictures_available(),
+        }
+    }
+
     fn cycle_theme(&mut self, forward: bool) {
         if self.look.ids.is_empty() {
             return;
@@ -975,9 +996,13 @@ impl App {
         let name = theme.name.clone();
         self.look.theme = theme;
         self.cfg.ui.theme = id;
-        // Every protocol image was encoded for the old colours, and every
-        // measured message carried the old ones in its key.
-        self.look.graphics.forget_all();
+        // Every measured message carried the old theme in its cache key, so
+        // the measurements go. The built protocols do not: an avatar is the
+        // same pixels in every theme, and anything this program rasterises for
+        // itself names its colours in its `ImageId`, so a theme change gives it
+        // a new identity and the sweep at the end of the next frame drops the
+        // old one. Throwing them all away here would re-encode every picture on
+        // the screen for a change none of them can see.
         self.chat.cache.clear();
         self.note(name);
     }
@@ -1900,6 +1925,7 @@ impl App {
             rows: &self.view.guilds,
             cursor: self.nav.guild_cursor,
             scroll: self.nav.guild_scroll,
+            pictures: self.pictures(),
             style: self.cfg.layout.guilds,
             focused,
         }
@@ -1976,6 +2002,10 @@ impl App {
         }
 
         let focus = self.layout.focus();
+        // Everything asked for after this counts as on screen; what is not
+        // asked for again before `end_frame` has scrolled away.
+        self.chat.media.begin_frame();
+        let mut icons: Vec<(guilds::Icon, Rect)> = Vec::new();
         for panel in regions.visible() {
             let Some(rect) = regions.rect_of(panel) else {
                 continue;
@@ -1998,7 +2028,10 @@ impl App {
                 continue;
             }
             match panel {
-                PanelId::Guilds => guilds::render(body, buf, &self.guilds_view(focused)),
+                PanelId::Guilds => {
+                    let placed = guilds::render(body, buf, &self.guilds_view(focused));
+                    icons.extend(placed.into_iter().map(|icon| (icon, body)));
+                }
                 PanelId::Channels if self.dms_in_the_fold() => {
                     dms::render(body, buf, &self.dms_view(focused))
                 }
@@ -2010,7 +2043,7 @@ impl App {
                         theme: &self.look.theme,
                         cfg: &self.cfg,
                         focused,
-                        pictures: self.look.graphics.pictures_available(),
+                        pictures: self.pictures(),
                         aspect: self.look.graphics.cell_aspect().unwrap_or(2.0),
                         me: self.core.state().me().map(|u| u.id),
                         tz: self.tz.clone(),
@@ -2028,6 +2061,12 @@ impl App {
             }
         }
 
+        // The pictures, all of them, in one pass over what every panel placed.
+        // After the text and before the overlays: an overlay clears the cells
+        // it covers, and a protocol image whose cell has been cleared is one
+        // the terminal is never told about.
+        self.paint_pictures(icons, buf);
+
         // The message list asks for older history once it is looking at the
         // top of what it has, which is only knowable after it has been laid
         // out.
@@ -2040,6 +2079,49 @@ impl App {
         status::render(regions.status, buf, &self.status_view());
         self.over.render(area, buf, &self.look.theme, &self.cfg);
         self.draw_caret(area, buf);
+    }
+
+    /// Draw every picture the frame placed, and tell the core what is missing.
+    ///
+    /// One pass for the whole screen, because the set of what is on it is what
+    /// decides which built protocols are still worth the terminal's memory.
+    fn paint_pictures(&mut self, icons: Vec<(guilds::Icon, Rect)>, buf: &mut Buffer) {
+        let mut places = self.chat.take_slots();
+        places.extend(
+            icons
+                .into_iter()
+                .map(|(icon, clip)| chat::media::Placement {
+                    rect: icon.rect,
+                    clip,
+                    clipped: false,
+                    key: icon.key,
+                    shape: chat::media::Shape::Icon {
+                        initials: icon.initials,
+                        colour: self.look.theme.row_fg,
+                    },
+                }),
+        );
+
+        let painted = chat::media::paint(
+            &places,
+            &mut self.look.graphics,
+            &mut self.chat.media,
+            &self.look.theme,
+            buf,
+        );
+        // Whatever is not on the screen is not worth the terminal's memory.
+        // Kitty keeps every uploaded image until it is told otherwise, and a
+        // client left open all day would otherwise hand it a conversation's
+        // worth of pictures and never take one back.
+        self.look.graphics.forget_unused(&painted.drawn);
+
+        self.chat.media.end_frame();
+        for request in self.chat.media.take_requests() {
+            self.core.send(Command::FetchMedia(request));
+        }
+        for key in self.chat.media.take_cancels() {
+            self.core.send(Command::CancelMedia(key));
+        }
     }
 
     /// The caret, drawn rather than placed.
