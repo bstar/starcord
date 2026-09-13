@@ -139,3 +139,12 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 - **`probe --gifs`, `--send-file`, `--react`, `--unreact` and `--search`**, so
   that every one of those paths can be run against a real account with no
   terminal UI in the way.
+- **Packages, documentation and a release that builds itself.** A Nix flake
+  with a home-manager module and an overlay, an Arch `PKGBUILD`, a `.deb` per
+  Debian generation, a portable tarball built against glibc 2.31, and an
+  AppImage that is started on eight distributions before a release is drafted.
+  The dependency list for all of them is the C runtime and nothing else, which
+  is worth stating because it is unusual: there is no ffmpeg, no ALSA and no
+  libdbus anywhere in this tree. The documentation grew a page per task —
+  installing, configuring, theming, what to check when something is wrong, and
+  an honest status page saying which parts are built and which are not.
