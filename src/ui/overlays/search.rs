@@ -1,7 +1,7 @@
 //! Finding something somebody said.
 //!
 //! A query, a scope and a page of hits. `/` searches the channel that is open
-//! and `alt+/` searches the whole server, which are the two questions anybody
+//! and `alt+f` searches the whole server, which are the two questions anybody
 //! actually asks; narrowing by author or by date is a form, and a form in a
 //! terminal is a worse version of Discord's own search box.
 //!

@@ -1,9 +1,11 @@
 //! The settings a panel owns, listed and changed in place.
 //!
-//! Five rows, every one of them something the key table can also do. That is
+//! Six rows, and every one of them is also something a key does. That is
 //! deliberate: the overlay is for finding a setting, the key is for using it
 //! once you know it exists, and a setting that only one of the two can reach
-//! is a setting that is either undiscoverable or tedious.
+//! is a setting that is either undiscoverable or tedious. The one exception is
+//! `[channels] show_voice`, which has no key at all — it is the sort of thing
+//! somebody sets once — and would otherwise mean opening the file.
 //!
 //! Changing a row does two things — it changes the running program, and it
 //! writes the key through [`starkit::config::edit`], which rewrites one line
@@ -29,6 +31,7 @@ pub enum Setting {
     Avatars,
     Animate,
     SendKey,
+    ShowVoice,
 }
 
 impl Setting {
@@ -41,6 +44,7 @@ impl Setting {
         Setting::Avatars,
         Setting::Animate,
         Setting::SendKey,
+        Setting::ShowVoice,
     ];
 
     pub fn label(self) -> &'static str {
@@ -50,6 +54,7 @@ impl Setting {
             Setting::Avatars => "avatars",
             Setting::Animate => "animate pictures",
             Setting::SendKey => "send with",
+            Setting::ShowVoice => "voice channels",
         }
     }
 
@@ -61,6 +66,7 @@ impl Setting {
             Setting::Avatars => ("chat", "show_avatars"),
             Setting::Animate => ("media", "animate"),
             Setting::SendKey => ("compose", "send_key"),
+            Setting::ShowVoice => ("channels", "show_voice"),
         }
     }
 
@@ -75,6 +81,7 @@ impl Setting {
                 crate::config::SendKey::Enter => "enter".into(),
                 crate::config::SendKey::CtrlEnter => "ctrl+enter".into(),
             },
+            Setting::ShowVoice => on_off(cfg.channels.show_voice).into(),
         }
     }
 }
@@ -263,7 +270,11 @@ mod tests {
         let mut s = Settings::new(PanelId::Chat);
         assert_eq!(s.selected(), Setting::Theme);
         s.handle(key(KeyCode::Up));
-        assert_eq!(s.selected(), Setting::SendKey, "up from the top wraps");
+        assert_eq!(
+            s.selected(),
+            *Setting::ALL.last().unwrap(),
+            "up from the top wraps"
+        );
         s.handle(key(KeyCode::Down));
         assert_eq!(
             s.handle(key(KeyCode::Enter)),

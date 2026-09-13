@@ -216,6 +216,9 @@ pub struct App {
     pending_jump: Option<(ChannelId, MessageId)>,
     /// A picture waiting for its undecoded bytes so it can be written out.
     pending_save: Option<super::overlays::media::Item>,
+    /// Whether anything was modal on the previous frame, so that the frame
+    /// after one closes is a whole one.
+    overlay_was_open: bool,
     quit: bool,
 }
 
@@ -268,6 +271,7 @@ impl App {
             repaint: false,
             pending_jump: None,
             pending_save: None,
+            overlay_was_open: false,
             quit: false,
             core,
             cfg,
@@ -367,6 +371,16 @@ impl App {
         self.settle_layout();
         self.maybe_mark_read();
         self.refresh_qr();
+
+        // An overlay that has gone away took the cells it blanked with it, and
+        // the panels underneath have to claim them back. Decided here rather
+        // than wherever it closed, because it closes from five places and the
+        // one that was forgotten is the one somebody sees.
+        let open = self.over.open();
+        if self.overlay_was_open && !open {
+            self.repaint = true;
+        }
+        self.overlay_was_open = open;
 
         let now = Instant::now();
         self.over.tick(now);
@@ -634,12 +648,18 @@ impl App {
             // every message to everything that quotes it.
             MessagesChange::Updated(_) => self.chat.cache.clear(),
             MessagesChange::Replaced => {
+                // Two windows arrive for one jump: the channel's own latest
+                // page, and then the page around the message. Only the one
+                // that actually holds it counts, or the jump lands on the
+                // bottom of the channel and looks like nothing happened.
                 if let Some((wanted, message)) = self.pending_jump {
                     if wanted == channel {
-                        self.pending_jump = None;
                         self.refresh_now();
-                        self.chat.select(message);
-                        self.note("jumped \u{b7} G for the newest");
+                        if self.chat.holds(message) {
+                            self.pending_jump = None;
+                            self.chat.select(message);
+                            self.note("jumped \u{b7} G for the newest");
+                        }
                     }
                 }
             }
@@ -1266,16 +1286,6 @@ impl App {
 
     /// One action. The single place a key turns into a change.
     pub fn handle(&mut self, action: Action) {
-        // An overlay that is about to go away takes the cells it blanked with
-        // it, and the panels underneath have to claim them back. See `repaint`.
-        let was_open = self.over.open();
-        self.act(action);
-        if was_open && !self.over.open() {
-            self.repaint = true;
-        }
-    }
-
-    fn act(&mut self, action: Action) {
         match action {
             Action::Quit => self.ask_to_quit(),
             Action::Help => self.over.toggle_help(),
@@ -1301,7 +1311,7 @@ impl App {
             }
             Action::End | Action::ToBottom => {
                 if self.layout.focus() == PanelId::Chat || action == Action::ToBottom {
-                    self.chat.to_bottom();
+                    self.back_to_the_present();
                 } else {
                     self.move_cursor(isize::MAX / 2);
                 }
@@ -1697,6 +1707,39 @@ impl App {
         }
     }
 
+    /// `G`: the end of the conversation, and the present if the view has been
+    /// carried somewhere else.
+    ///
+    /// A jump leaves the store holding a page from the middle of a channel,
+    /// and the bottom of *that* is not the newest message. Re-opening the
+    /// channel is what asks for the latest page again, which is the way back
+    /// from a search result.
+    fn back_to_the_present(&mut self) {
+        self.chat.to_bottom();
+        let Some(channel) = self.nav.channel else {
+            return;
+        };
+        let at_latest = self
+            .core
+            .state()
+            .messages(channel)
+            .map(|s| s.at_latest())
+            .unwrap_or(true);
+        if !at_latest {
+            self.pending_jump = None;
+            self.core.send(Command::OpenChannel(channel));
+            self.note("back to the newest");
+        }
+    }
+
+    /// Whether the open channel's window still ends at the newest message.
+    /// For the test next door, which is about exactly that.
+    #[cfg(test)]
+    pub fn core_state_at_latest(&self) -> Option<bool> {
+        let channel = self.nav.channel?;
+        self.core.state().messages(channel).map(|s| s.at_latest())
+    }
+
     fn page(&mut self, direction: isize) {
         if self.layout.focus() == PanelId::Chat {
             let h = i32::from(self.body_height(PanelId::Chat)).max(1);
@@ -1848,6 +1891,10 @@ impl App {
             Setting::Timestamps => self.cfg.chat.timestamps = self.cfg.chat.timestamps.next(),
             Setting::Avatars => self.cfg.chat.show_avatars = !self.cfg.chat.show_avatars,
             Setting::Animate => self.cfg.media.animate = self.cfg.media.animate.next(),
+            Setting::ShowVoice => {
+                self.cfg.channels.show_voice = !self.cfg.channels.show_voice;
+                self.view.stale = true;
+            }
             Setting::SendKey => {
                 self.cfg.compose.send_key = match self.cfg.compose.send_key {
                     crate::config::SendKey::Enter => crate::config::SendKey::CtrlEnter,
@@ -1861,7 +1908,9 @@ impl App {
         // The file says what the running program says, always. A row that
         // changed only one of the two is a setting that reverts on restart.
         let value = match setting {
-            Setting::Avatars => value.replace("on", "true").replace("off", "false"),
+            Setting::Avatars | Setting::ShowVoice => {
+                value.replace("on", "true").replace("off", "false")
+            }
             Setting::SendKey => value.replace("ctrl+enter", "ctrl-enter"),
             _ => value,
         };
@@ -3013,8 +3062,10 @@ mod tests {
         let mut a = app();
         a.login = None;
         a.handle(Action::Help);
+        a.tick();
         assert!(!a.repaint, "opening one does not need it");
         a.handle(Action::CloseOverlay);
+        a.tick();
         assert!(a.repaint, "closing one does");
 
         a.repaint = false;

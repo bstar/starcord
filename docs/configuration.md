@@ -53,7 +53,7 @@ layout you arrange is the layout you get next time.
 
 | Key | Does |
 | --- | --- |
-| `[media] animate` | when an animated picture may move: `always`, `focused` (default), `never` |
+| `[media] animate` | when an animated picture may move: `always`, `focused` (default), `never`. At most four move at once, and only ones that are on screen; `alt+n` cycles it while running |
 | `[media] cache_max_mib` | how large the on-disk media cache may grow before the oldest files are swept, in mebibytes. Default `512` |
 | `[media] max_attachment_mib` | the largest attachment worth downloading. Default `25`, which is what an account without Nitro may upload |
 | `[media] save_dir` | where the media viewer's `s` puts a file. `~` is expanded. Default `"~/Downloads"` |
@@ -67,11 +67,11 @@ shell.
 
 | Key | Does |
 | --- | --- |
-| `[notify] enabled` | say anything at all about a mention or a DM. Default `true` |
+| `[notify] enabled` | say anything at all about a mention or a DM. Default `true`. Off means no bell, no line in the status bar and no desktop notification |
 | `[notify] only_when_unfocused` | say nothing about the channel already on screen while the terminal has focus. Default `true` |
 | `[notify] dms_only` | only direct messages, rather than every mention in every server. Default `false` |
-| `[notify] bell` | ring the terminal bell. Default `true` |
-| `[notify] desktop` | a desktop notification as well. Default `false`: it puts somebody's name and words on a screen that may not be yours alone |
+| `[notify] bell` | ring the terminal bell. Default `true`. The one notification that needs nothing installed and reaches a machine over ssh |
+| `[notify] desktop` | a desktop notification as well, over the session bus. Default `false`: it puts somebody's name and words on a screen that may not be yours alone. With this off the client still beeps and still writes the line |
 
 ### Writing
 

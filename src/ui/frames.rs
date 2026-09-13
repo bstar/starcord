@@ -497,3 +497,75 @@ fn the_message_menu() {
     ));
     insta::assert_snapshot!("menu-terminal-100x30", render(&mut app, 100, 30));
 }
+
+/// A search result opens the message it names, and `G` comes back to the
+/// present.
+///
+/// End to end through the replay, because the interesting part is the order of
+/// the two windows that arrive: the channel's own latest page, and then the
+/// page around the message. Landing on the first of them is landing at the
+/// bottom of the channel, which looks exactly like nothing happening.
+#[test]
+fn a_search_result_is_jumped_to_and_g_comes_back() {
+    let (mut app, mut idle) = in_general("terminal");
+    render(&mut app, 100, 30);
+    app.handle(Action::FocusChat);
+    app.handle(Action::Search);
+    for c in "older".chars() {
+        app.key(starkit::crossterm::event::KeyEvent::from(
+            starkit::crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    // Run it, and let the replay answer.
+    app.key(starkit::crossterm::event::KeyEvent::from(
+        starkit::crossterm::event::KeyCode::Enter,
+    ));
+    app.tick();
+    idle.pump();
+    app.tick();
+    let hits = app
+        .over
+        .search
+        .as_ref()
+        .expect("the box is open")
+        .hits
+        .len();
+    assert!(hits > 0, "the search found nothing to jump to");
+
+    // And open the one the cursor is on.
+    app.key(starkit::crossterm::event::KeyEvent::from(
+        starkit::crossterm::event::KeyCode::Enter,
+    ));
+    assert!(app.over.search.is_none(), "it stayed open");
+    for _ in 0..4 {
+        app.tick();
+        idle.pump();
+        render(&mut app, 100, 30);
+    }
+    let on = app.chat.selected().expect("a message is selected");
+    assert!(
+        app.chat.text_at_cursor().contains("older"),
+        "the cursor landed on {on:?} rather than the hit"
+    );
+    // The window it landed in is a page out of the middle of the channel, so
+    // the store knows it is not showing the newest message any more. That is
+    // what makes `G` a way back rather than a key that does nothing.
+    let carried = app.core_state_at_latest().expect("the channel has a store");
+    assert!(
+        !carried,
+        "the jump left the window at the end of the channel"
+    );
+
+    // `G` asks for the present back.
+    app.handle(Action::End);
+    for _ in 0..3 {
+        app.tick();
+        idle.pump();
+        render(&mut app, 100, 30);
+    }
+    assert!(app.chat.at_bottom());
+    assert!(
+        app.core_state_at_latest().unwrap(),
+        "it is the present again"
+    );
+}

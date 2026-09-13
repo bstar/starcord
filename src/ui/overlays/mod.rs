@@ -113,6 +113,12 @@ pub struct Overlays {
     pub search: Option<Search>,
     pub attach: Option<Attach>,
     pub menu: Option<Menu>,
+    /// Commands from an overlay that has since closed.
+    ///
+    /// Choosing a GIF sends a message and closes the picker in one keystroke,
+    /// and the picker is dropped before the frame's drain gets to it. Without
+    /// this the message would go nowhere at all, which is exactly what it did.
+    queued: Vec<Command>,
 }
 
 impl Overlays {
@@ -158,9 +164,9 @@ impl Overlays {
         self.confirm = None;
         self.quick = None;
         self.settings = None;
-        self.picker = None;
+        self.close_picker();
         self.viewer = None;
-        self.search = None;
+        self.close_search();
         self.attach = None;
         self.menu = None;
     }
@@ -224,7 +230,7 @@ impl Overlays {
 
     /// What the open overlay wants asked of the core.
     pub fn take_commands(&mut self) -> Vec<Command> {
-        let mut out = Vec::new();
+        let mut out = std::mem::take(&mut self.queued);
         if let Some(picker) = &mut self.picker {
             out.extend(picker.take_commands());
         }
@@ -232,6 +238,19 @@ impl Overlays {
             out.extend(search.take_commands());
         }
         out
+    }
+
+    /// Take an overlay's commands before the overlay goes away.
+    fn close_picker(&mut self) {
+        if let Some(mut picker) = self.picker.take() {
+            self.queued.extend(picker.take_commands());
+        }
+    }
+
+    fn close_search(&mut self) {
+        if let Some(mut search) = self.search.take() {
+            self.queued.extend(search.take_commands());
+        }
     }
 
     /// A page of GIF results. True when it was one this overlay asked for.
@@ -296,11 +315,11 @@ impl Overlays {
             return match picker.handle(key) {
                 picker::Action::Taken => Key::Taken,
                 picker::Action::Close => {
-                    self.picker = None;
+                    self.close_picker();
                     Key::Taken
                 }
                 picker::Action::Insert(text) => {
-                    self.picker = None;
+                    self.close_picker();
                     Key::Insert(text)
                 }
                 picker::Action::ToGif => {
@@ -329,11 +348,11 @@ impl Overlays {
             return match search.handle(key) {
                 search::Action::Taken => Key::Taken,
                 search::Action::Close => {
-                    self.search = None;
+                    self.close_search();
                     Key::Taken
                 }
                 search::Action::Jump { channel, message } => {
-                    self.search = None;
+                    self.close_search();
                     Key::JumpToMessage { channel, message }
                 }
                 search::Action::Quit => Key::Quit,
@@ -458,17 +477,17 @@ impl Overlays {
                 picker.cursor = index;
                 return match picker.choose() {
                     picker::Action::Insert(text) => {
-                        self.picker = None;
+                        self.close_picker();
                         Key::Insert(text)
                     }
                     picker::Action::Close => {
-                        self.picker = None;
+                        self.close_picker();
                         Key::Taken
                     }
                     _ => Key::Taken,
                 };
             }
-            self.picker = None;
+            self.close_picker();
             return Key::Taken;
         }
         if let Some(viewer) = &mut self.viewer {
@@ -485,12 +504,12 @@ impl Overlays {
                 search.cursor = index;
                 if let Some(hit) = search.selected() {
                     let (channel, message) = (hit.channel, hit.message);
-                    self.search = None;
+                    self.close_search();
                     return Key::JumpToMessage { channel, message };
                 }
                 return Key::Taken;
             }
-            self.search = None;
+            self.close_search();
             return Key::Taken;
         }
         self.close();
@@ -815,6 +834,33 @@ mod tests {
                 "an open overlay drew nothing"
             );
         }
+    }
+
+    /// A picker that chose something and closed in the same keystroke still
+    /// gets its command sent. It did not, once: choosing a GIF closed the grid
+    /// and the message went nowhere.
+    #[test]
+    fn a_command_survives_the_overlay_that_asked_for_it() {
+        let mut o = Overlays::default();
+        let picker = Picker::new(
+            picker::Kind::Reaction(MessageId(5)),
+            Some(ChannelId(1)),
+            vec![("pepe".into(), crate::discord::snowflake::EmojiId(1), false)],
+            2.0,
+        );
+        o.open_picker(picker);
+        for c in "pepe".chars() {
+            o.handle(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(
+            o.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Key::Taken
+        );
+        assert!(!o.open(), "it closed");
+        assert!(
+            matches!(o.take_commands().first(), Some(Command::AddReaction { .. })),
+            "the reaction was dropped with the picker"
+        );
     }
 
     /// The picker and the search box ask the core for things; nothing else

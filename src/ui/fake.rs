@@ -716,7 +716,15 @@ fn answer(
             // the UI's spinner is driven by them, and a spinner that never
             // stops is exactly the bug this should be able to reproduce.
             sink.send(Event::Messages(channel, MessagesChange::Loading(true)));
-            if served.opened.insert(channel) {
+            // The first time, and any time the window has been carried away
+            // from the end by a jump: re-opening a channel is the way back to
+            // the present, and a replay that refused would make `G` a key that
+            // does nothing.
+            let carried = {
+                let guard = state.read().unwrap_or_else(|e| e.into_inner());
+                guard.messages(channel).is_some_and(|s| !s.at_latest())
+            };
+            if served.opened.insert(channel) || carried {
                 if let Some(page) = conversations.page(channel) {
                     let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
                     let store = guard.messages_mut(channel);

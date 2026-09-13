@@ -19,9 +19,9 @@ expression: "render(&mut app, 100, 30)"
 │      ││               ║ avatars                                       on ║│                      │
 │      ││               ║ animate pictures                         focused ║│                      │
 │      │└───────────────║ send with                                  enter ║│                      │
-│      │┌═ messages ═───║                                                  ║│                      │
-│      ││         friend╚════════════════════════ enter change · esc close ╝│                      │
-│      ││○ Wren of the Long Displ││  │ to do.                              ▐│                      │
+│      │┌═ messages ═───║ voice channels                               off ║│                      │
+│      ││         friend║                                                  ║│                      │
+│      ││○ Wren of the L╚════════════════════════ enter change · esc close ╝│                      │
 │      ││○ Alex, Jordan [3]      ││▕ Alex  09:20                           ▐│                      │
 │      ││● Alex (1)              ││▕ https://tenor.invalid/view/a-cat-1234 ▐│                      │
 │      ││                        ││▕ 5                                     ▐│                      │

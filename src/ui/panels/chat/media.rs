@@ -253,10 +253,14 @@ impl MediaStore {
     }
 
     /// Start a frame. Everything asked for after this counts as on screen.
+    ///
+    /// The queues are not cleared here. They are emptied by `take_requests`
+    /// and `take_cancels` at the end of every frame, and clearing them again
+    /// at the top of the next one throws away anything asked for *between*
+    /// frames -- which is when a key is handled, and is how the media viewer's
+    /// `s` used to ask for the bytes and never get them.
     pub fn begin_frame(&mut self) {
         self.frame = self.frame.wrapping_add(1);
-        self.requests.clear();
-        self.cancels.clear();
     }
 
     /// This picture is on screen at this size.
@@ -640,6 +644,25 @@ mod tests {
         }
     }
 
+    /// A request made between frames -- which is when a key is handled -- is
+    /// still asked for. The media viewer's `s` is the one that noticed.
+    #[test]
+    fn something_asked_for_between_frames_survives_the_next_one() {
+        let mut store = MediaStore::new();
+        store.begin_frame();
+        store.end_frame();
+        assert!(store.take_requests().is_empty());
+
+        // Between frames: no `begin_frame` has happened since.
+        store.want_bytes(&key(3));
+        store.begin_frame();
+        assert_eq!(
+            store.take_requests().len(),
+            1,
+            "the request was thrown away by the frame after it"
+        );
+    }
+
     /// The whole state machine: nothing is asked for twice, an answer sticks,
     /// and a failure is not retried on every frame.
     #[test]
@@ -682,6 +705,9 @@ mod tests {
         let mut store = MediaStore::new();
         store.begin_frame();
         store.want(&key(2), 10, 4);
+        // Drained as the end of a frame drains it, so what is counted below is
+        // the second ask and not both of them.
+        store.take_requests();
         store.arrived(key(2), Err(MediaError::Cancelled));
         store.begin_frame();
         assert!(matches!(store.want(&key(2), 10, 4), MediaState::Loading));

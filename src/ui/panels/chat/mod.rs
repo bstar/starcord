@@ -678,6 +678,19 @@ impl ChatState {
             .map(|(_, hit)| hit.clone())
     }
 
+    /// The message under the cursor, as text. For a test that wants to know
+    /// where the view actually landed.
+    pub fn text_at_cursor(&self) -> String {
+        self.selected()
+            .map(|m| m.content.clone())
+            .unwrap_or_default()
+    }
+
+    /// Whether this message is in the window being drawn.
+    pub fn holds(&self, message: MessageId) -> bool {
+        self.row_of(message).is_some()
+    }
+
     /// Put the cursor on a message, by id.
     pub fn select(&mut self, message: MessageId) {
         if let Some(row) = self.row_of(message) {
