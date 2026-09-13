@@ -1,6 +1,8 @@
 /target
 /result
 /result-*
+# Release artifacts from scripts/build-dist.sh.
+/dist
 .direnv/
 
 # Gateway recordings from STARCORD_RECORD_GATEWAY. They are captured from a
