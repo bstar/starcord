@@ -23,6 +23,7 @@
 
 pub mod channel;
 pub mod guild;
+pub mod message;
 pub mod presence;
 pub mod read_state;
 pub mod ready;
@@ -36,6 +37,11 @@ pub mod user;
 pub use channel::{Channel, ChannelKind};
 #[allow(unused_imports)]
 pub use guild::{Guild, Role};
+#[allow(unused_imports)]
+pub use message::{
+    Attachment, Embed, EmbedKind, EmbedMedia, Message, MessageKind, MessageReference, PartialEmoji,
+    PartialMember, Reaction, StickerItem,
+};
 #[allow(unused_imports)]
 pub use presence::{ClientStatus, Presence, PresenceStatus};
 #[allow(unused_imports)]

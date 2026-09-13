@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::discord::snowflake::UserId;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: UserId,
     #[serde(default)]

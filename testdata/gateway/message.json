@@ -1,0 +1,115 @@
+{
+  "id": "500000000000000110",
+  "channel_id": "200000000000000011",
+  "guild_id": "200000000000000001",
+  "type": 19,
+  "content": "a **reply** with a link https://example.invalid/page and <@100000000000000001>",
+  "timestamp": "2026-09-13T11:58:00.123000+00:00",
+  "edited_timestamp": "2026-09-13T11:59:00.456000+00:00",
+  "flags": 0,
+  "pinned": false,
+  "tts": false,
+  "mention_everyone": false,
+  "nonce": "81237712343",
+  "author": {
+    "id": "100000000000000002",
+    "username": "alex",
+    "global_name": "Alex",
+    "discriminator": "0",
+    "avatar": null
+  },
+  "member": {
+    "nick": "Al",
+    "roles": ["200000000000000002"],
+    "joined_at": "2025-01-02T03:04:05.000000+00:00",
+    "avatar": null
+  },
+  "mentions": [
+    {
+      "id": "100000000000000001",
+      "username": "sam",
+      "global_name": "Sam",
+      "discriminator": "0",
+      "avatar": null
+    }
+  ],
+  "mention_roles": ["200000000000000002"],
+  "attachments": [
+    {
+      "id": "600000000000000001",
+      "filename": "picture.png",
+      "content_type": "image/png",
+      "size": 40213,
+      "url": "https://cdn.discordapp.invalid/attachments/200000000000000011/600000000000000001/picture.png",
+      "proxy_url": "https://media.discordapp.invalid/attachments/200000000000000011/600000000000000001/picture.png",
+      "width": 1024,
+      "height": 768
+    }
+  ],
+  "embeds": [
+    {
+      "type": "link",
+      "url": "https://example.invalid/page",
+      "title": "A page title",
+      "description": "Two sentences of description, as a link unfurl carries.",
+      "color": 5814783,
+      "provider": { "name": "Example", "url": "https://example.invalid" },
+      "thumbnail": {
+        "url": "https://example.invalid/thumb.png",
+        "proxy_url": "https://images.discordapp.invalid/thumb.png",
+        "width": 200,
+        "height": 200
+      }
+    },
+    {
+      "type": "gifv",
+      "url": "https://tenor.invalid/view/example-12345",
+      "provider": { "name": "Tenor", "url": "https://tenor.invalid" },
+      "thumbnail": {
+        "url": "https://media.tenor.invalid/example.png",
+        "proxy_url": "https://images.discordapp.invalid/example.png",
+        "width": 498,
+        "height": 280
+      },
+      "video": {
+        "url": "https://media.tenor.invalid/example.mp4",
+        "width": 498,
+        "height": 280
+      }
+    }
+  ],
+  "reactions": [
+    {
+      "count": 3,
+      "me": true,
+      "emoji": { "id": null, "name": "👍", "animated": false }
+    },
+    {
+      "count": 1,
+      "me": false,
+      "emoji": { "id": null, "name": "🎉", "animated": false }
+    }
+  ],
+  "sticker_items": [
+    { "id": "700000000000000001", "name": "a sticker", "format_type": 1 }
+  ],
+  "message_reference": {
+    "type": 0,
+    "message_id": "500000000000000109",
+    "channel_id": "200000000000000011",
+    "guild_id": "200000000000000001"
+  },
+  "referenced_message": {
+    "id": "500000000000000109",
+    "channel_id": "200000000000000011",
+    "type": 0,
+    "content": "the message being answered",
+    "timestamp": "2026-09-13T11:57:00.000000+00:00",
+    "author": {
+      "id": "100000000000000003",
+      "username": "jordan",
+      "global_name": "Jordan",
+      "discriminator": "0"
+    }
+  }
+}
