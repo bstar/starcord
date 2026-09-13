@@ -4,6 +4,7 @@ mod cli;
 mod discord;
 mod logging;
 mod paths;
+mod session;
 
 use std::io::Read as _;
 use std::io::Write as _;

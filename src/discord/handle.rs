@@ -258,6 +258,21 @@ pub enum Command {
         channel: ChannelId,
         up_to: MessageId,
     },
+
+    /// Remember the half-typed text in a channel. Held in memory and written
+    /// to `session.toml`, which is mode 0600 for exactly this reason.
+    SetDraft {
+        channel: ChannelId,
+        text: String,
+    },
+    /// Remember where the view is anchored in a channel; `None` is the bottom.
+    SetAnchor {
+        channel: ChannelId,
+        message: Option<MessageId>,
+    },
+    /// Write the session now rather than at the next autosave. Sent on the way
+    /// out, where "in thirty seconds" is too late.
+    SaveSession,
     AddReaction {
         channel: ChannelId,
         message: MessageId,
@@ -325,6 +340,9 @@ impl Command {
             Command::DeleteMessage { .. } => "DeleteMessage",
             Command::Typing(_) => "Typing",
             Command::MarkRead { .. } => "MarkRead",
+            Command::SetDraft { .. } => "SetDraft",
+            Command::SetAnchor { .. } => "SetAnchor",
+            Command::SaveSession => "SaveSession",
             Command::AddReaction { .. } => "AddReaction",
             Command::RemoveReaction { .. } => "RemoveReaction",
             Command::OpenDm(_) => "OpenDm",
@@ -466,6 +484,9 @@ pub enum Event {
     Auth(AuthEvent),
     /// READY has been applied and `State` is worth drawing.
     Ready,
+    /// The session file was read. Carries the whole of it, because it is small
+    /// and because the UI needs the drafts before it draws anything.
+    SessionLoaded(Arc<crate::session::Session>),
     Note(Note),
     Guilds,
     /// One guild's channel list, or the DM list when `None`.
@@ -550,6 +571,16 @@ pub struct EventSink {
 }
 
 impl EventSink {
+    /// A sink with its own counters, for the tests in `ops`.
+    #[cfg(test)]
+    pub fn for_tests(tx: crossbeam_channel::Sender<Event>) -> Self {
+        Self {
+            tx,
+            dropped: Arc::new(AtomicU64::new(0)),
+            needs_refresh: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
     pub fn send(&self, event: Event) {
         // A dropped event means the UI's incremental picture may be wrong, so
         // the next one that fits is preceded by a Refresh. Sending the Refresh

@@ -28,6 +28,7 @@ pub mod handle;
 pub mod http;
 pub mod markdown;
 pub mod model;
+pub mod ops;
 pub mod props;
 pub mod snowflake;
 pub mod state;

@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_util::sync::CancellationToken;
 
@@ -24,9 +24,11 @@ use crate::discord::handle::{
 };
 use crate::discord::http::{Http, HttpError};
 use crate::discord::model::PresenceStatus;
+use crate::discord::ops::{self, Ops};
 use crate::discord::props::{self, ClientProps};
 use crate::discord::state::State;
 use crate::paths::Paths;
+use crate::session::{SessionStore, AUTOSAVE};
 
 /// How much REST work may be in flight at once.
 ///
@@ -34,6 +36,15 @@ use crate::paths::Paths;
 /// scroll that asks for forty avatars does not open forty connections and then
 /// queue every one of them behind the same bucket anyway.
 const REST_CONCURRENCY: usize = 8;
+
+/// How often the housekeeping task wakes.
+///
+/// Two seconds is short enough that a typing indicator lapses within a
+/// noticeable fraction of its ten-second lease, and long enough that an idle
+/// client is genuinely idle. Everything on this timer is something nothing
+/// arrives to announce: a lease expiring, a guild subscription's grace running
+/// out, a session that has been dirty for half a minute.
+const HOUSEKEEPING: Duration = Duration::from_secs(2);
 
 /// Entry point for the thread `Handle::spawn` starts.
 pub fn run(
@@ -77,6 +88,11 @@ struct Core {
     store: TokenStore,
     bridge: Bridge,
     gateway: Option<GatewayTask>,
+    /// The live socket's control channel, published for the tasks in `ops`
+    /// that outlive any one connection.
+    control: Arc<ArcSwapOption<mpsc::Sender<Control>>>,
+    ops: Ops,
+    session: Arc<std::sync::Mutex<SessionStore>>,
     token: Option<Token>,
     presence: PresenceStatus,
     rest: Arc<Semaphore>,
@@ -103,6 +119,15 @@ impl Core {
 
         let http = Arc::new(Http::new(Arc::clone(&props))?);
         let store = TokenStore::new(paths, config.store);
+        let rest = Arc::new(Semaphore::new(REST_CONCURRENCY));
+        let control = Arc::new(ArcSwapOption::empty());
+        let ops = Ops::new(
+            Arc::clone(&http),
+            bridge.clone(),
+            Arc::clone(&rest),
+            Arc::clone(&control),
+            config.legacy_lazy_request,
+        );
 
         Ok(Self {
             config,
@@ -110,10 +135,13 @@ impl Core {
             http,
             store,
             bridge,
+            control,
+            ops,
+            session: Arc::new(std::sync::Mutex::new(SessionStore::load(paths))),
             gateway: None,
             token: None,
             presence: PresenceStatus::Online,
-            rest: Arc::new(Semaphore::new(REST_CONCURRENCY)),
+            rest,
             unhandled: AtomicU64::new(0),
         })
     }
@@ -122,6 +150,16 @@ impl Core {
         if self.config.discover_build {
             self.start_build_discovery();
         }
+
+        // The session is on disk before anything connects, so a UI can restore
+        // its drafts and its last channel while the gateway is still dialling.
+        {
+            let session = self.session.lock().unwrap_or_else(|e| e.into_inner());
+            self.bridge
+                .events
+                .send(Event::SessionLoaded(Arc::new(session.get().clone())));
+        }
+        let housekeeping = self.start_housekeeping();
 
         match self.store.load() {
             Some((token, kind)) => {
@@ -144,7 +182,70 @@ impl Core {
             self.handle(command).await;
         }
 
+        housekeeping.abort();
+        self.session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .save_if_dirty();
         self.disconnect().await;
+    }
+
+    /// The timer that carries everything nothing announces.
+    fn start_housekeeping(&self) -> tokio::task::JoinHandle<()> {
+        let ops = self.ops.clone();
+        let bridge = self.bridge.clone();
+        let session = Arc::clone(&self.session);
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(HOUSEKEEPING);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut was_ready = false;
+            let mut since_save = Duration::ZERO;
+
+            loop {
+                ticker.tick().await;
+
+                // A reconnect resets what the gateway knows, so everything that
+                // was subscribed has to be said again. Losing the socket clears
+                // the record of what it was told.
+                let ready = bridge.status.load().is_ready();
+                if ready && !was_ready {
+                    ops::open::resubscribe(&ops);
+                } else if !ready && was_ready {
+                    ops.shared().subscriptions.forget_connection();
+                }
+                was_ready = ready;
+
+                // Nobody sends a "stopped typing"; the lease simply lapses.
+                let lapsed = {
+                    let mut state = bridge.state.write().unwrap_or_else(|e| e.into_inner());
+                    let lapsed = state.typing_mut().sweep(std::time::Instant::now());
+                    if !lapsed.is_empty() {
+                        state.touch();
+                    }
+                    lapsed
+                };
+                for channel in lapsed {
+                    bridge.events.send(Event::Typing(channel));
+                }
+
+                ops::open::sweep_subscriptions(&ops);
+
+                since_save += HOUSEKEEPING;
+                if since_save >= AUTOSAVE {
+                    since_save = Duration::ZERO;
+                    session
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .save_if_dirty();
+                }
+            }
+        })
+    }
+
+    fn with_session(&self, f: impl FnOnce(&mut SessionStore)) {
+        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
+        f(&mut session);
     }
 
     /// Refresh the build number in the background.
@@ -212,6 +313,102 @@ impl Core {
                 tracing::debug!("presence will be {} on the next connect", status.as_str());
             }
             Command::Shutdown => {}
+
+            Command::SetFocus {
+                channel,
+                terminal_focused,
+            } => {
+                self.ops.set_focus(channel, terminal_focused);
+                if let Some(channel) = channel {
+                    let guild = self.ops.state().channel(channel).and_then(|c| c.guild_id);
+                    self.with_session(|session| {
+                        session.update(|s| {
+                            let changed = s.last_channel != Some(channel) || s.last_guild != guild;
+                            s.last_channel = Some(channel);
+                            s.last_guild = guild;
+                            changed
+                        })
+                    });
+                }
+            }
+
+            // Everything below runs on its own task. The command loop is the
+            // only consumer of the channel the UI writes to, and a fetch that
+            // takes a second must not hold up the keystroke behind it.
+            Command::OpenChannel(channel) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::open_channel(&ops, channel).await });
+            }
+            Command::CloseChannel(channel) => ops::open::close_channel(&self.ops, channel),
+            Command::LoadOlder(channel) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::load_older(&ops, channel).await });
+            }
+            Command::LoadNewer(channel) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::load_newer(&ops, channel).await });
+            }
+            Command::JumpTo { channel, message } => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::jump_to(&ops, channel, message).await });
+            }
+
+            Command::SendMessage {
+                channel,
+                content,
+                reply_to,
+                mention_author,
+                attachments,
+            } => {
+                if !attachments.is_empty() {
+                    // Uploads arrive with the media milestone. Refusing loudly
+                    // beats sending the text and quietly dropping the file.
+                    self.bridge.note(Note::warning(
+                        "no-uploads",
+                        "attachments are not supported yet; the text was not sent",
+                    ));
+                    return;
+                }
+                let ops = self.ops.clone();
+                tokio::spawn(async move {
+                    ops::send::send_message(&ops, channel, content, reply_to, mention_author).await
+                });
+            }
+            Command::RetrySend(nonce) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::send::retry(&ops, nonce).await });
+            }
+            Command::CancelSend(nonce) => ops::send::cancel(&self.ops, nonce),
+            Command::EditMessage {
+                channel,
+                message,
+                content,
+            } => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::send::edit(&ops, channel, message, content).await });
+            }
+            Command::DeleteMessage { channel, message } => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::send::delete(&ops, channel, message).await });
+            }
+
+            Command::Typing(channel) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::typing::typing(&ops, channel).await });
+            }
+            Command::MarkRead { channel, up_to } => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::ack::mark_read(&ops, channel, up_to).await });
+            }
+
+            Command::SetDraft { channel, text } => {
+                self.with_session(|session| session.update(|s| s.set_draft(channel, &text)));
+            }
+            Command::SetAnchor { channel, message } => {
+                self.with_session(|session| session.update(|s| s.set_anchor(channel, message)));
+            }
+            Command::SaveSession => self.with_session(SessionStore::save_if_dirty),
+
             other => {
                 let total = self.unhandled.fetch_add(1, Ordering::Relaxed) + 1;
                 tracing::debug!(
@@ -306,6 +503,7 @@ impl Core {
             gateway::run(config, bridge, control_rx, child).await;
         });
 
+        self.control.store(Some(Arc::new(control_tx.clone())));
         self.gateway = Some(GatewayTask {
             control: control_tx,
             cancel,
@@ -314,6 +512,8 @@ impl Core {
     }
 
     async fn disconnect(&mut self) {
+        self.control.store(None);
+        self.ops.shared().subscriptions.forget_connection();
         let Some(task) = self.gateway.take() else {
             return;
         };
