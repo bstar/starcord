@@ -4,15 +4,15 @@ expression: "render(&mut app, 100, 30)"
 ---
 ┌──────┐┌═ First Guild ═─────────┐┌═ #random · First Guild ═───────────────┐┌═ members ═───────────┐
 │      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│ @   1││# rules                 ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││REGULARS — 2          │
+│ @   1││# rules                 ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                   ││REGULARS — 2          │
 │      ││▾ TEXT CHANNELS         ││▀▀▀▀ Jordan  11:01                      ││● Alex                │
 │▀▀▀▀ 2││  # general (2)         ││▀▀▀▀ and one that moves                 ││● Jo                  │
-│▀▀▀▀  ││  # random              ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││ONLINE — 1            │
-│▀▀▀▀ •││  ! announcements       ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││● Sam                 │
-│▀▀▀▀  ││▾ ARCHIVE               ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││OFFLINE — 1           │
-│ ··   ││  # old-decisions       ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││● Robin               │
-│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▐│                      │
-│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▐│                      │
+│▀▀▀▀  ││  # random              ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││ONLINE — 1            │
+│▀▀▀▀ •││  ! announcements       ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││● Sam                 │
+│▀▀▀▀  ││▾ ARCHIVE               ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││OFFLINE — 1           │
+│ ··   ││  # old-decisions       ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││● Robin               │
+│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ▐│                      │
+│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ▐│                      │
 │      ││                        ││▀▀▀▀ Robin  11:02                       ▐│                      │
 │      ││                        ││▀▀▀▀ nice ▀▀ one                        ▐│                      │
 │      ││                        ││     [▀▀ 3]                             ▐│                      │

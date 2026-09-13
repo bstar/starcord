@@ -5,9 +5,9 @@ and the only binary blobs in the tree.
 
 | File | What it is |
 |---|---|
-| `avatar.png` | 32x32, a soft disc. Stands in for every avatar and every server icon in `session.json`. |
-| `harbour.png` | 64x48, a horizon. The inline image, and the thumbnail on the link card. |
-| `cat.gif` | 24x24, three frames, a dot crossing a ground. The animated attachment, and the custom emoji. |
+| `avatar.png` | 96x96, a soft disc. Stands in for every avatar and every server icon in `session.json`. |
+| `harbour.png` | 400x300, a horizon. The inline image, and the thumbnail on the link card. |
+| `cat.gif` | 96x96, three frames, a dot crossing a ground. The animated attachment, and the custom emoji. |
 
 They are **synthetic**, like every other fixture here: no picture was taken
 from an account, from the internet, or from anybody's disk. Each is a few

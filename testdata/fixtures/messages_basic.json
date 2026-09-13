@@ -344,11 +344,11 @@
        "id": "600000000000000011",
        "filename": "harbour.png",
        "content_type": "image/png",
-       "size": 618,
+       "size": 3360,
        "url": "https://cdn.discordapp.invalid/attachments/200000000000000012/600000000000000011/harbour.png",
        "proxy_url": "https://media.discordapp.invalid/attachments/200000000000000012/600000000000000011/harbour.png",
-       "width": 64,
-       "height": 48
+       "width": 400,
+       "height": 300
       }
      ]
     },
@@ -371,11 +371,11 @@
        "id": "600000000000000012",
        "filename": "cat.gif",
        "content_type": "image/gif",
-       "size": 1308,
+       "size": 923,
        "url": "https://cdn.discordapp.invalid/attachments/200000000000000012/600000000000000012/cat.gif",
        "proxy_url": "https://media.discordapp.invalid/attachments/200000000000000012/600000000000000012/cat.gif",
-       "width": 24,
-       "height": 24
+       "width": 96,
+       "height": 96
       }
      ]
     },
@@ -428,8 +428,8 @@
        "thumbnail": {
         "url": "https://example.invalid/thumb.png",
         "proxy_url": "https://images.discordapp.invalid/thumb.png",
-        "width": 64,
-        "height": 48
+        "width": 400,
+        "height": 300
        }
       }
      ]

@@ -857,12 +857,12 @@ impl<'a> Writer<'a> {
             });
 
             let chip = attachment_chip(attachment);
-            let rows = self.picture_rows(attachment);
+            let (cols, rows) = self.picture_box(attachment);
             if rows > 0 {
                 self.out.images.push(ImageSlot {
                     row,
                     col: gutter,
-                    cols: self.width().saturating_sub(gutter).max(1),
+                    cols,
                     rows,
                     key: MediaKey::Attachment {
                         message: msg.id,
@@ -877,7 +877,7 @@ impl<'a> Writer<'a> {
                     alt: chip,
                 });
                 for _ in 0..rows {
-                    self.placeholder_row(gutter);
+                    self.placeholder_row(gutter, cols);
                 }
                 // No chip under it. The rows are the picture; a caption
                 // repeating its file name under every photograph is a caption
@@ -889,38 +889,49 @@ impl<'a> Writer<'a> {
         }
     }
 
-    /// Rows to reserve for a picture, from what the attachment says it is.
+    /// The cells to reserve for a picture, from what the attachment says it is.
     ///
     /// From the declared size rather than from the bytes, so the height is
     /// settled before anything is downloaded and the list does not reflow
     /// under the reader when it arrives.
-    fn picture_rows(&self, attachment: &Attachment) -> u16 {
+    ///
+    /// The rows come first, because they are what the setting caps and what
+    /// the scrolling depends on; the columns follow from them, so the box has
+    /// the picture's own shape. A box the width of the panel would letterbox
+    /// every photograph into its top-left corner and reserve a screenful of
+    /// blank beside it, which is what this looked like before the box was
+    /// measured in both directions.
+    fn picture_box(&self, attachment: &Attachment) -> (u16, u16) {
         if !self.ctx.pictures || self.ctx.max_image_rows == 0 || !attachment.is_image() {
-            return 0;
+            return (0, 0);
         }
         let (Some(w), Some(h)) = (attachment.width, attachment.height) else {
-            return 0;
+            return (0, 0);
         };
         if w == 0 || h == 0 {
-            return 0;
+            return (0, 0);
         }
-        let cols = f32::from(
-            self.ctx
-                .width
-                .saturating_sub(self.ctx.gutter())
-                .min(w.min(u32::from(u16::MAX)) as u16),
-        );
+        let room = self.width().saturating_sub(self.ctx.gutter()).max(1);
         let aspect = if self.ctx.aspect > 0.0 {
             self.ctx.aspect
         } else {
             2.0
         };
-        let rows = (cols * (h as f32 / w as f32) / aspect).ceil();
-        (rows.max(1.0) as u16).min(self.ctx.max_image_rows)
+        // A picture wider than the panel is cut to the panel; one narrower
+        // keeps its own width, which is what stops a postage stamp being
+        // blown up across a conversation.
+        let wide = f32::from(room.min(w.min(u32::from(u16::MAX)) as u16));
+        let rows = ((wide * (h as f32 / w as f32) / aspect).ceil().max(1.0) as u16)
+            .min(self.ctx.max_image_rows);
+        let cols = ((f32::from(rows) * aspect * (w as f32 / h as f32))
+            .ceil()
+            .max(1.0) as u16)
+            .min(room);
+        (cols, rows)
     }
 
-    fn placeholder_row(&mut self, gutter: u16) {
-        let room = self.width().saturating_sub(gutter).max(1);
+    fn placeholder_row(&mut self, gutter: u16, cols: u16) {
+        let room = cols.min(self.width().saturating_sub(gutter)).max(1);
         self.row_of(vec![
             Span::raw(" ".repeat(usize::from(gutter))),
             Span::styled(
@@ -1074,7 +1085,7 @@ impl<'a> Writer<'a> {
             alt: String::new(),
         });
         for _ in 0..ROWS {
-            self.placeholder_row(width - COLS);
+            self.placeholder_row(width - COLS, COLS);
         }
     }
 
