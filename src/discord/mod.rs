@@ -26,6 +26,7 @@ pub mod core;
 pub mod gateway;
 pub mod handle;
 pub mod http;
+pub mod markdown;
 pub mod model;
 pub mod props;
 pub mod snowflake;

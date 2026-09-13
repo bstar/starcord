@@ -150,6 +150,12 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 # connection redials at the same instant.
 rand = "0.9"
 
+# The unicode emoji table, for the markdown parser. A table rather than a
+# character-range test because the ranges are not the answer: whether a
+# sequence of code points is one emoji is a lookup, and getting it wrong means
+# measuring a family of four as four people and ruining the line.
+emojis = "0.9"
+
 [dev-dependencies]
 # `start_paused` runtimes, so the rate limiter's sleeps are asserted rather
 # than waited out.
