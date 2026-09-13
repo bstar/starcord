@@ -237,10 +237,7 @@ impl Session {
         for (name, file) in &session.media {
             let at = dir.join(file);
             let bytes = std::fs::read(&at).with_context(|| format!("reading {}", at.display()))?;
-            session
-                .pictures
-                .files
-                .insert(name.clone(), Arc::new(bytes));
+            session.pictures.files.insert(name.clone(), Arc::new(bytes));
         }
         Ok(session)
     }

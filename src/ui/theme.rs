@@ -181,7 +181,12 @@ impl Chat {
                 bg,
                 MARK_CONTRAST,
             ),
-            divider_fg: f.divider_fg.unwrap_or(core.divider),
+            // The panel chrome's own divider, held away from the panel.
+            // `divider` is drawn between two rows of a list, where being
+            // barely there is the point; a day rule across the message list
+            // carries a date on it, and at the 1.46:1 one theme resolves to
+            // that date is a rumour.
+            divider_fg: stated_or(f.divider_fg, core.divider, bg, MARK_CONTRAST),
             // Unread is the one colour that has to be found without looking
             // for it, so it borrows the palette's orange rather than its
             // accent, which a theme may have spent on something else.
@@ -259,6 +264,10 @@ impl Chat {
             ("presence_offline", self.presence_offline, panel_bg),
             ("embed_bar", self.embed_bar, panel_bg),
             ("spoiler_bg", self.spoiler_bg, panel_bg),
+            // The day and unread rules. They carry a label, but the label is
+            // drawn in the same colour as the rule and is not prose: the mark
+            // threshold is the honest one for a line across a panel.
+            ("divider_fg", self.divider_fg, panel_bg),
         ]
     }
 }
@@ -343,23 +352,35 @@ mod tests {
     #[test]
     fn every_builtin_chat_role_is_legible() {
         for b in BUILTINS {
-            let t = theme(b.id);
-            for (role, fg, bg) in t.chat.text_roles(t.panel_bg, t.fg) {
-                let c = bg.contrast(fg);
-                assert!(
-                    c >= TEXT_CONTRAST,
-                    "{}: {role} is {c:.2}:1 against its background",
-                    b.id
-                );
-            }
-            for (role, fg, bg) in t.chat.mark_roles(t.panel_bg) {
-                let c = bg.contrast(fg);
-                assert!(
-                    c >= MARK_CONTRAST,
-                    "{}: {role} is {c:.2}:1 against its background",
-                    b.id
-                );
-            }
+            assert_legible(b.id, &theme(b.id));
+        }
+
+        // And the desktop's own palette, where there is one. `system` is the
+        // one theme nobody here chose: it arrives from Stylix or from COSMIC
+        // and is whatever the machine's colours happen to be, which is exactly
+        // the case a rule written against sixteen known palettes can fail on.
+        // Skipped rather than faked where no desktop theme is set, because a
+        // synthesised one would be a seventeenth builtin with a misleading
+        // name.
+        if let Some((file, _)) = starkit::theme::system::theme() {
+            assert_legible("system", &Theme::resolve(&file));
+        }
+    }
+
+    fn assert_legible(id: &str, t: &Theme) {
+        for (role, fg, bg) in t.chat.text_roles(t.panel_bg, t.fg) {
+            let c = bg.contrast(fg);
+            assert!(
+                c >= TEXT_CONTRAST,
+                "{id}: {role} is {c:.2}:1 against its background"
+            );
+        }
+        for (role, fg, bg) in t.chat.mark_roles(t.panel_bg) {
+            let c = bg.contrast(fg);
+            assert!(
+                c >= MARK_CONTRAST,
+                "{id}: {role} is {c:.2}:1 against its background"
+            );
         }
     }
 
