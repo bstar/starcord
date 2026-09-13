@@ -13,6 +13,11 @@
 //! group the order is the channel list's own, so the hop is predictable rather
 //! than a ranking.
 //!
+//! It is one list rather than two groups walked in turn, and that matters: from
+//! the last mention there is nowhere else in that group to go, so two groups
+//! would send every press back to the mention it had just left. One list makes
+//! every press progress, and still starts at a mention.
+//!
 //! It wraps, because the list is a loop and stopping at the end would mean
 //! pressing a key that does nothing while there is still something unread
 //! above.
@@ -42,35 +47,37 @@ pub struct Stop {
 /// nothing anywhere is unread, which is the state that should leave the key
 /// doing nothing rather than moving the cursor somewhere arbitrary.
 pub fn hop(order: &[Stop], from: Option<ChannelId>, forward: bool) -> Option<ChannelId> {
-    // Mentions first, then everything else with traffic in it. A muted channel
-    // is never a stop: muting is the one instruction a person gives a client
-    // about what may interrupt them.
-    let mentioned: Vec<&Stop> = order
+    // One list: the channels that named you, in the order the channel list
+    // puts them, and then the ones that merely have traffic, in the same
+    // order. A muted channel is never a stop -- muting is the one instruction
+    // a person gives a client about what may interrupt them.
+    //
+    // One list rather than two groups walked in turn, because two would mean
+    // that leaving a mention sent you straight back to it: from the last
+    // mention there is nowhere else in that group to go. This way every press
+    // makes progress and the loop still starts at a mention.
+    let mut stops: Vec<ChannelId> = order
         .iter()
         .filter(|s| !s.muted && s.mentions > 0)
+        .map(|s| s.channel)
         .collect();
-    let rest: Vec<&Stop> = order
-        .iter()
-        .filter(|s| !s.muted && s.mentions == 0 && s.unread)
-        .collect();
-    if !mentioned.is_empty() {
-        return step(&mentioned, from, forward).or_else(|| step(&rest, from, forward));
-    }
-    step(&rest, from, forward)
-}
-
-/// The next stop in one group, wrapping.
-fn step(stops: &[&Stop], from: Option<ChannelId>, forward: bool) -> Option<ChannelId> {
+    stops.extend(
+        order
+            .iter()
+            .filter(|s| !s.muted && s.mentions == 0 && s.unread)
+            .map(|s| s.channel),
+    );
     if stops.is_empty() {
         return None;
     }
-    let here = from.and_then(|c| stops.iter().position(|s| s.channel == c));
+
+    let here = from.and_then(|c| stops.iter().position(|s| *s == c));
     let n = stops.len() as isize;
     let next = match here {
         Some(at) => (at as isize + if forward { 1 } else { -1 }).rem_euclid(n) as usize,
-        // Not in this group at all: forward starts at the top of it, backward
-        // at the bottom, which is what "next" and "previous" mean to somebody
-        // who is somewhere else entirely.
+        // Not a stop at all: forward starts at the head of the list, which is
+        // the first mention, and backward at the end of it. That is what
+        // "next" and "previous" mean to somebody who is somewhere calm.
         None => {
             if forward {
                 0
@@ -79,7 +86,7 @@ fn step(stops: &[&Stop], from: Option<ChannelId>, forward: bool) -> Option<Chann
             }
         }
     };
-    Some(stops[next].channel)
+    Some(stops[next])
 }
 
 /// Whether the terminal should say something about a message.
@@ -156,7 +163,19 @@ mod tests {
             stop(4, true, 0),
         ];
         assert_eq!(hop(&order, None, true), Some(ChannelId(3)));
-        assert_eq!(hop(&order, Some(ChannelId(1)), true), Some(ChannelId(3)));
+        assert_eq!(
+            hop(&order, Some(ChannelId(2)), true),
+            Some(ChannelId(3)),
+            "from somewhere with nothing in it, the mention is first"
+        );
+        // And from the mention, on through the rest in the list's own order.
+        assert_eq!(hop(&order, Some(ChannelId(3)), true), Some(ChannelId(1)));
+        assert_eq!(hop(&order, Some(ChannelId(1)), true), Some(ChannelId(4)));
+        assert_eq!(
+            hop(&order, Some(ChannelId(4)), true),
+            Some(ChannelId(3)),
+            "and round to the mention again"
+        );
     }
 
     /// Once the mentions are dealt with, the rest are walked in the list's own
@@ -193,17 +212,52 @@ mod tests {
         assert_eq!(hop(&order, Some(ChannelId(2)), false), Some(ChannelId(3)));
     }
 
+    /// Every stop is reached, once, before any of them is reached twice.
+    #[test]
+    fn a_lap_visits_everything_unread() {
+        let order = vec![
+            stop(1, true, 0),
+            stop(2, true, 3),
+            stop(3, false, 0),
+            stop(4, true, 0),
+            stop(5, true, 1),
+        ];
+        let mut seen = Vec::new();
+        let mut at = None;
+        for _ in 0..4 {
+            at = hop(&order, at, true);
+            seen.push(at.unwrap());
+        }
+        assert_eq!(
+            seen,
+            vec![ChannelId(2), ChannelId(5), ChannelId(1), ChannelId(4)],
+            "the mentions lead, then the rest, each once"
+        );
+        assert_eq!(hop(&order, at, true), Some(ChannelId(2)), "then round");
+    }
+
     /// The last mention leads back into the ordinary unread rather than
     /// looping around the mentions for ever.
     #[test]
     fn the_last_mention_hands_over_to_the_rest() {
         let order = vec![stop(1, true, 1), stop(2, true, 0)];
-        // One mention: stepping from it wraps within the group, which is
-        // itself.
-        assert_eq!(hop(&order, Some(ChannelId(1)), true), Some(ChannelId(1)));
+        // Standing in the only mentioned channel: the next stop is the
+        // ordinary unread one, not itself.
+        assert_eq!(hop(&order, Some(ChannelId(1)), true), Some(ChannelId(2)));
+        // And with two mentions it walks them first.
+        let two = vec![stop(1, true, 1), stop(2, true, 0), stop(3, true, 2)];
+        assert_eq!(hop(&two, Some(ChannelId(1)), true), Some(ChannelId(3)));
+        assert_eq!(hop(&two, Some(ChannelId(3)), true), Some(ChannelId(2)));
+
         // With nothing mentioned at all it is the plain list.
         let quiet = vec![stop(1, true, 0), stop(2, true, 0)];
         assert_eq!(hop(&quiet, Some(ChannelId(1)), true), Some(ChannelId(2)));
+
+        // And with nowhere else to go it stays put rather than answering
+        // nothing, which would be a key that does nothing while something is
+        // still unread.
+        let only = vec![stop(1, true, 1)];
+        assert_eq!(hop(&only, Some(ChannelId(1)), true), Some(ChannelId(1)));
     }
 
     #[test]

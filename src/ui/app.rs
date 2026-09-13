@@ -182,7 +182,7 @@ pub struct App {
     conn: Arc<Connection>,
     pub login: Option<LoginScreen>,
     clicks: ClickTracker,
-    note: Option<(String, NoteLevel, Instant)>,
+    pub(super) note: Option<(String, NoteLevel, Instant)>,
     g_prefix: bool,
     last_frame: Instant,
     /// The zone message times are drawn in. Read once: a client left running
@@ -943,7 +943,7 @@ impl App {
         });
     }
 
-    fn set_terminal_focus(&mut self, focused: bool) {
+    pub(super) fn set_terminal_focus(&mut self, focused: bool) {
         if self.terminal_focused == focused {
             return;
         }

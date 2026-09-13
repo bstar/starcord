@@ -204,8 +204,67 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   boils down to; the scripted login has no stored token, a code, a phone
   reading it three seconds later and a session three seconds after that.
 
+- **Animated GIFs, and a rule about which of them may move.** A picture that
+  was not drawn last frame never advances, at most four move at once, and a
+  frame delay under fifty milliseconds is played at fifty. `[media] animate`
+  and `alt+n` decide whether any of it happens; the event loop wakes for the
+  next frame that is due, or a hundred-millisecond animation would arrive a
+  frame late every time. A video's thumbnail never moves however many frames it
+  has: the marker over it says the terminal will not play it.
+- **One picker for emoji, reactions and GIFs.** `ctrl+e` from the composer, `+`
+  on a message, `ctrl+g` for the GIF grid and from inside the emoji grid. The
+  emoji half offers the server's own before every unicode one; the reaction
+  half is told which reactions are already yours, so choosing one of them takes
+  it off; the GIF half asks what is trending when it opens and searches three
+  hundred milliseconds after the typing stops, with the tile under the cursor
+  the only thing on the screen that moves.
+- **Attaching a file.** `alt+a` types a path, with `~` expanded, and checks it
+  before it becomes a chip: it has to exist and be under
+  `[media] max_attachment_mib`, because a chip that fails at send time is a
+  message somebody believes they sent. `ctrl+v` does the same for a picture on
+  the clipboard, encoded to PNG at the edge so the size on the chip is the size
+  that goes out. Clicking a chip's `×` takes it off, and the row a message
+  waits on says how far its files have got.
+- **A viewer for one picture.** `enter` on a message with something viewable
+  opens every picture in the channel, in order: `h` and `l` walk them, `z` is
+  fitted or actual size, `s` writes the file to `[media] save_dir` -- the whole
+  file, asked for again, not the thumbnail that was on screen -- `o` opens it
+  elsewhere and `y` copies its link. A save never replaces a file that is
+  already there.
+- **Search, and a way back from it.** `/` for this channel and `alt+f` for the
+  whole server, paged twenty-five at a time. `enter` on a hit fetches the page
+  around the message and lands on it; `G` asks for the present back, because
+  the bottom of a page out of the middle of a channel is not the newest thing
+  anybody said.
+- **Threads, unread hopping and the terminal's own notifications.** A thread is
+  listed under the channel it belongs to and marked on the message it was
+  started from, and `space` opens it. `alt+up` and `alt+down` walk what is
+  unread, mentions first and wrapping. A mention rings the bell and writes a
+  line saying who and where, and never for the channel already on screen while
+  the window is in front.
+- **A menu on a message**, on the right button, listing what can be done to it
+  and naming the key for each -- reply, react, edit, delete, copy, open, copy a
+  link. `ctrl+y` copies a link to a message from anywhere.
+- **A scrollbar that can be dragged**, `↓ n new` that can be pressed, and
+  `[channels] show_voice` where the other settings are.
+
 ### Changed
 
+- **A picture arriving re-measures only the messages that draw it.** The
+  generation in the wrap cache's key is per message now rather than one counter
+  for the window, so a channel of photographs no longer re-measures all five
+  hundred of them for each one that lands. An attachment that arrives without
+  saying how big it is -- which is most of what a bot posts -- is a chip that
+  asks to be measured, and becomes a picture on the measurement after the bytes
+  arrive.
+- **`[notify] desktop` is what turns the desktop notification on.** It was
+  documented that way and wired the other: the core's switch is the desktop
+  popup and nothing else, and the bell and the line in the status bar are the
+  terminal's own. Anding the two is what stops a mention being announced twice.
+- **The frame after an overlay closes is a whole one.** The terminal is a
+  shared surface, and a cell this program's buffer does not know changed is a
+  cell the diff will never repaint -- which showed as a box left behind after
+  the quick switcher closed. `ctrl+l` asks for the same at any time.
 - **The day rule is held to a contrast the date on it can be read at.** It was
   the one `[chat]` role taken from the panel chrome with no floor under it, and
   on one of the sixteen themes it resolved to 1.46:1. The legibility test now

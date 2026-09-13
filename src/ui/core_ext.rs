@@ -210,15 +210,20 @@ pub fn unread_stops(state: &State, guild: Option<GuildId>) -> Vec<crate::ui::unr
 /// Who said what, and where, for the line a mention puts in the status bar.
 pub fn mention_line(state: &State, channel: ChannelId, message: MessageId) -> (bool, String) {
     let muted = state.unread(channel).muted;
-    let Some(msg) = state.message(channel, message) else {
-        return (muted, String::new());
-    };
-    let guild = state.channel(channel).and_then(|c| c.guild_id);
-    let who = state.display_name(guild, msg.author.id);
     let place = state
         .channel(channel)
         .and_then(|c| c.name().map(|n| format!("#{n}")))
         .unwrap_or_else(|| state.dm_title(channel));
+    // The event names a message and the truth is read out of `State`, as
+    // everywhere else. A message the window no longer holds -- one evicted by
+    // a busy channel between the event and the frame -- still gets a line: the
+    // reader is being told where to look, and "somewhere" is worse than the
+    // channel's name.
+    let Some(msg) = state.message(channel, message) else {
+        return (muted, format!("somebody mentioned you in {place}"));
+    };
+    let guild = state.channel(channel).and_then(|c| c.guild_id);
+    let who = state.display_name(guild, msg.author.id);
     let what = crate::discord::markdown::parse(&msg.content).plain_text();
     let one: String = what.lines().next().unwrap_or("").chars().take(60).collect();
     (muted, format!("@{who} in {place}: {one}"))

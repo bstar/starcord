@@ -569,3 +569,75 @@ fn a_search_result_is_jumped_to_and_g_comes_back() {
         "it is the present again"
     );
 }
+
+/// Somebody says this account's name in a channel that is not open: the status
+/// bar says so, and says where.
+#[test]
+fn a_mention_elsewhere_writes_a_line() {
+    // Thirteen seconds in, which is after the fixture's MESSAGE_CREATE
+    // carrying the mention and before the connection drops.
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/gateway/session.json");
+    let session = fake::Session::read(&path).expect("the replay fixture");
+    let mention = session
+        .steps
+        .iter()
+        .find(|s| s.dispatch.as_deref() == Some("MESSAGE_CREATE"))
+        .and_then(|s| s.data.clone())
+        .expect("the fixture carries a mention");
+
+    // Thirteen seconds in, so the message the event names is in the store.
+    let (core, _idle) = fake::loaded(&session, 13_000);
+    let mut app = App::new(
+        core,
+        config("terminal"),
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        Graphics::disabled(),
+    );
+    app.tz = jiff::tz::TimeZone::UTC;
+    app.tick();
+    app.open_channel(CHANNEL);
+    app.tick();
+
+    // The channel the mention lands in is `#random`, which is not the one on
+    // screen, so it is worth saying something about.
+    let channel = crate::discord::snowflake::ChannelId(
+        mention["channel_id"].as_str().unwrap().parse().unwrap(),
+    );
+    let message =
+        crate::discord::snowflake::MessageId(mention["id"].as_str().unwrap().parse().unwrap());
+    assert_ne!(channel, CHANNEL);
+    app.apply(crate::discord::Event::Mention { channel, message });
+    let drawn = render(&mut app, 100, 30);
+    // A channel nobody has opened has no window for the message to be in --
+    // the store refuses to append below a gap it cannot show -- so the line
+    // names the place and says somebody, which is what the reader needs.
+    assert!(drawn.contains("mentioned you in #announcements"), "{drawn}");
+
+    // With the message held, it says who and what.
+    app.note = None;
+    let held = crate::discord::snowflake::MessageId(500000000000000105);
+    app.apply(crate::discord::Event::Mention {
+        channel: CHANNEL,
+        message: held,
+    });
+    app.set_terminal_focus(false);
+    app.note = None;
+    app.apply(crate::discord::Event::Mention {
+        channel: CHANNEL,
+        message: held,
+    });
+    let drawn = render(&mut app, 100, 30);
+    assert!(drawn.contains("@Jo in #general:"), "{drawn}");
+    app.set_terminal_focus(true);
+
+    // And nothing at all for the channel already on screen while the window
+    // is in front.
+    app.note = None;
+    app.apply(crate::discord::Event::Mention {
+        channel: CHANNEL,
+        message: held,
+    });
+    assert!(app.note.is_none(), "it interrupted about what is on screen");
+}

@@ -632,7 +632,7 @@
    "dispatch": "MESSAGE_CREATE",
    "data": {
     "id": "500000000000000310",
-    "channel_id": "200000000000000012",
+    "channel_id": "200000000000000013",
     "guild_id": "200000000000000001",
     "type": 0,
     "content": "<@100000000000000001> could you look at this?",
