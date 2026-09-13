@@ -235,11 +235,7 @@ impl Overlays {
     }
 
     /// A page of GIF results. True when it was one this overlay asked for.
-    pub fn gifs_arrived(
-        &mut self,
-        id: RequestId,
-        result: Result<Vec<GifResult>, String>,
-    ) -> bool {
+    pub fn gifs_arrived(&mut self, id: RequestId, result: Result<Vec<GifResult>, String>) -> bool {
         match &mut self.picker {
             Some(picker) => picker.gifs_arrived(id, result),
             None => false,
@@ -761,13 +757,8 @@ mod tests {
         let area = Rect::new(0, 0, 40, 10);
         let mut buf = Buffer::empty(area);
         let before = buf.clone();
-        let places = Overlays::default().render(
-            area,
-            &mut buf,
-            &t,
-            &Config::default(),
-            &MediaStore::new(),
-        );
+        let places =
+            Overlays::default().render(area, &mut buf, &t, &Config::default(), &MediaStore::new());
         assert_eq!(buf, before);
         assert!(places.is_empty());
     }
@@ -832,7 +823,12 @@ mod tests {
     fn only_the_asking_overlays_ask() {
         let mut o = Overlays::default();
         assert!(o.take_commands().is_empty());
-        o.open_picker(Picker::new(picker::Kind::Gif, Some(ChannelId(1)), Vec::new(), 2.0));
+        o.open_picker(Picker::new(
+            picker::Kind::Gif,
+            Some(ChannelId(1)),
+            Vec::new(),
+            2.0,
+        ));
         assert!(
             matches!(o.take_commands().first(), Some(Command::GifTrending { .. })),
             "opening the GIF grid asks what is trending"

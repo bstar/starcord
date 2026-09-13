@@ -23,6 +23,8 @@
 //! and writes what comes back — which is the file, byte for byte, signature
 //! and all.
 
+use std::path::PathBuf;
+
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
@@ -293,6 +295,42 @@ pub fn render(
         shape: Shape::Picture,
         alt: item.filename.clone(),
     }]
+}
+
+/// A name in `dir` that is not taken: `cat.png`, then `cat-1.png`.
+///
+/// A save that silently replaced a file would be the one destructive thing in
+/// the program, and the two pictures a conversation calls `image.png` are
+/// nearly always two different pictures.
+pub fn free_name(dir: &std::path::Path, filename: &str) -> PathBuf {
+    let filename = filename.trim();
+    let filename = if filename.is_empty() {
+        "attachment"
+    } else {
+        filename
+    };
+    // Only the last component, whatever the far end called it: a filename with
+    // a slash in it is somebody else's path traversal.
+    let filename = filename.rsplit(['/', '\\']).next().unwrap_or("attachment");
+    let stem = std::path::Path::new(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "attachment".into());
+    let extension = std::path::Path::new(filename)
+        .extension()
+        .map(|s| format!(".{}", s.to_string_lossy()))
+        .unwrap_or_default();
+    let first = dir.join(format!("{stem}{extension}"));
+    if !first.exists() {
+        return first;
+    }
+    for n in 1..1000 {
+        let next = dir.join(format!("{stem}-{n}{extension}"));
+        if !next.exists() {
+            return next;
+        }
+    }
+    first
 }
 
 #[cfg(test)]

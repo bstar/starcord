@@ -560,7 +560,10 @@ mod tests {
         );
 
         s.page(-1);
-        assert!(s.take_commands().is_empty(), "there is no page before the first");
+        assert!(
+            s.take_commands().is_empty(),
+            "there is no page before the first"
+        );
         s.page(1);
         match s.take_commands().first() {
             Some(Command::Search { query, .. }) => assert_eq!(query.offset, PAGE),
@@ -578,11 +581,7 @@ mod tests {
         typed(&mut s, "hello");
         s.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let id = ran(&mut s);
-        assert!(!s.arrived(
-            RequestId(id.0 + 500),
-            Ok(SearchPage::default()),
-            names
-        ));
+        assert!(!s.arrived(RequestId(id.0 + 500), Ok(SearchPage::default()), names));
         assert!(s.loading, "and it is still waiting for its own");
     }
 
@@ -648,7 +647,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("search #general"), "{text}");
-        assert!(text.contains("hello there"), "the markup is taken out: {text}");
+        assert!(
+            text.contains("hello there"),
+            "the markup is taken out: {text}"
+        );
         assert!(text.contains("alex"), "{text}");
     }
 }

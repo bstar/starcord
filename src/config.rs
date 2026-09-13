@@ -405,7 +405,13 @@ impl Config {
                 locale: self.gifs.locale.clone(),
             },
             notify: crate::discord::notify::NotifyConfig {
-                enabled: self.notify.enabled,
+                // The core's `enabled` is about the *desktop* notification,
+                // which is the only kind it delivers. `[notify] enabled` is
+                // about all of them, and the bell and the line in the status
+                // bar are the terminal's own: they are drawn here whatever the
+                // desktop is doing, which is why the two keys are anded rather
+                // than one of them carried across.
+                enabled: self.notify.enabled && self.notify.desktop,
                 only_when_unfocused: self.notify.only_when_unfocused,
                 dms_only: self.notify.dms_only,
             },
@@ -619,7 +625,8 @@ mod tests {
                 locale: "fr".into(),
             },
             notify: Notify {
-                enabled: false,
+                enabled: true,
+                desktop: true,
                 only_when_unfocused: false,
                 dms_only: true,
                 ..Notify::default()
@@ -636,9 +643,17 @@ mod tests {
         assert_eq!(core.gifs.media_format, "tinygif");
         assert_eq!(core.gifs.locale, "fr");
         assert_eq!(core.locale, "fr");
-        assert!(!core.notify.enabled);
+        assert!(core.notify.enabled, "[notify] desktop turns it on");
         assert!(!core.notify.only_when_unfocused);
         assert!(core.notify.dms_only);
+
+        // And the default, which is a client that beeps and writes a line but
+        // puts nothing on somebody else's screen.
+        let quiet = Config::default().core();
+        assert!(
+            !quiet.notify.enabled,
+            "[notify] desktop is off by default, so the core delivers nothing"
+        );
     }
 
     /// And the defaults agree, so a file that says nothing gets the same
@@ -656,7 +671,7 @@ mod tests {
         assert_eq!(core.gifs.name, theirs.gifs.name);
         assert_eq!(core.gifs.media_format, theirs.gifs.media_format);
         assert_eq!(core.gifs.locale, theirs.gifs.locale);
-        assert_eq!(core.notify.enabled, theirs.notify.enabled);
+        assert_eq!(core.notify.enabled, Config::default().notify.desktop);
         assert_eq!(
             core.notify.only_when_unfocused,
             theirs.notify.only_when_unfocused

@@ -380,7 +380,8 @@ pub fn paint(
         // A moving picture is only ever moving where it is allowed to be: the
         // marker over a video says the terminal will not play it, so it shows
         // one frame however many it has.
-        let moves = !matches!(place.shape, Shape::Play) && crate::ui::panels::chat::anim::delays_of(decoded).is_some();
+        let moves = !matches!(place.shape, Shape::Play)
+            && crate::ui::panels::chat::anim::delays_of(decoded).is_some();
         let frame = if moves { anim.frame_of(&place.key) } else { 0 };
         let Some(img) = frame_at(decoded, frame) else {
             fallback(place, rect, buf, theme, &MediaState::Failed);
@@ -740,7 +741,14 @@ mod tests {
             // Off the panel entirely: never asked for, never drawn.
             place(key(9), Rect::new(0, 40, 10, 4), clip),
         ];
-        let painted = paint(&places, &mut graphics, &mut store, &Animations::default(), &t, &mut buf);
+        let painted = paint(
+            &places,
+            &mut graphics,
+            &mut store,
+            &Animations::default(),
+            &t,
+            &mut buf,
+        );
         store.end_frame();
 
         // Half blocks are drawn by this side rather than by the terminal, so
@@ -787,7 +795,14 @@ mod tests {
             });
         }
         store.begin_frame();
-        let painted = paint(&places, &mut graphics, &mut store, &Animations::default(), &t, &mut buf);
+        let painted = paint(
+            &places,
+            &mut graphics,
+            &mut store,
+            &Animations::default(),
+            &t,
+            &mut buf,
+        );
         store.end_frame();
         assert_eq!(
             painted.emoji, EMOJI_PER_FRAME,

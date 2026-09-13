@@ -139,6 +139,25 @@ impl State {
             .unwrap_or(RelationshipKind::None)
     }
 
+    /// Everybody this account is friends with, by name.
+    ///
+    /// Only `Friend`: a blocked account, an unanswered request in either
+    /// direction and the implicit relationship Discord records for somebody
+    /// you have merely spoken to are all relationships and none of them is a
+    /// friend. Sorted by display name, because the only caller draws a list
+    /// and READY's own order for relationships is not one anybody would
+    /// recognise.
+    pub fn friends(&self) -> Vec<Arc<User>> {
+        let mut out: Vec<Arc<User>> = self
+            .relationships
+            .iter()
+            .filter(|(_, kind)| **kind == RelationshipKind::Friend)
+            .filter_map(|(id, _)| self.users.get(id).cloned())
+            .collect();
+        out.sort_by(|a, b| a.display_name().cmp(b.display_name()));
+        out
+    }
+
     /// Guilds in the order Discord sent them in READY.
     ///
     /// Not the order shown in the official client, which comes from guild
@@ -746,5 +765,44 @@ mod tests {
         let before = state.version();
         state.touch();
         assert_ne!(state.version(), before);
+    }
+
+    /// Only an actual friend is a friend. A blocked account, a request in
+    /// either direction and the implicit relationship Discord records for
+    /// somebody you have merely spoken to are all relationships.
+    #[test]
+    fn the_friends_list_is_the_friends_and_nobody_else() {
+        let mut state = State::new();
+        for (id, kind) in [
+            (1u64, RelationshipKind::Friend),
+            (2, RelationshipKind::Blocked),
+            (3, RelationshipKind::IncomingRequest),
+            (4, RelationshipKind::OutgoingRequest),
+            (5, RelationshipKind::Implicit),
+            (6, RelationshipKind::Friend),
+        ] {
+            state.relationships.insert(UserId(id), kind);
+            state.users.insert(
+                UserId(id),
+                Arc::new(User {
+                    id: UserId(id),
+                    username: format!("user{id}"),
+                    global_name: Some(format!("Name {}", 7 - id)),
+                    ..User::default()
+                }),
+            );
+        }
+        let friends = state.friends();
+        assert_eq!(friends.len(), 2, "{friends:?}");
+        // By display name, which is what the panel draws.
+        assert_eq!(friends[0].id, UserId(6));
+        assert_eq!(friends[1].id, UserId(1));
+
+        // Somebody the relationship names and no user object arrived for is
+        // not a row with nothing in it; they are simply not listed.
+        state
+            .relationships
+            .insert(UserId(9), RelationshipKind::Friend);
+        assert_eq!(state.friends().len(), 2);
     }
 }

@@ -847,12 +847,7 @@ fn gif_grid(
             } else {
                 Style::default().fg(rgb(t.dim))
             };
-            buf.set_string(
-                caption.x,
-                caption.y,
-                fit(&gif.title, caption.width),
-                style,
-            );
+            buf.set_string(caption.x, caption.y, fit(&gif.title, caption.width), style);
         }
     }
     places

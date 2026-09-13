@@ -1,72 +1,47 @@
 //! What the UI asks `State` that `State` does not answer in that shape.
 //!
-//! Two of these are shims with an owner on the core side who will delete them;
-//! the rest are the small translations every panel would otherwise write for
-//! itself, kept here so the two that ask the same question ask it once.
+//! One of these is a shim; the rest are the small translations every panel
+//! would otherwise write for itself, kept here so the two that ask the same
+//! question ask it once.
 //!
-//! 1. **[`friends`]** derives the friends list from the DM list. `State` knows
-//!    every relationship — READY carries them and `apply` stores them — but the
-//!    only way out is `State::relationship(id)`, which answers about somebody
-//!    you already know the id of. What the panel needs is
-//!    `State::friends() -> Vec<Arc<User>>`, or an ordered relationships query.
-//!    Until there is one, this walks the DM channels and keeps the recipients
-//!    who are friends, which is right for everybody you have ever messaged and
-//!    silently short for everybody you have not.
+//! **[`last_channel`]** reads `session.toml` directly. The core owns that file
+//! and sends `Event::SessionLoaded` with the whole of it, which is what the UI
+//! uses; this is the fallback for a run where no event arrived, and is three
+//! lines rather than a design. It reaches into nothing private: it is
+//! answering a question in the wrong place, not cheating.
 //!
-//! 2. **[`last_channel`]** reads `session.toml` directly. The core owns that
-//!    file and sends `Event::SessionLoaded` with the whole of it, which is
-//!    what the UI uses; this is the fallback for a run where no event arrived,
-//!    and is three lines rather than a design.
-//!
-//! Neither reaches into anything private. They are shims because they are
-//! answering a question in the wrong place, not because they are cheating.
-//!
-//! [`member_rows`] and [`custom_emoji`] were shims too and are not any more:
-//! the core grew `State::member_list` and `State::custom_emoji`, and what is
-//! left here is the turn from the core's shape into the panel's.
+//! [`friends`], [`member_rows`] and [`custom_emoji`] were shims too and are
+//! not any more: the core grew `State::friends`, `State::member_list` and
+//! `State::custom_emoji`, and what is left here is the turn from the core's
+//! shape into the panel's.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::discord::model::member_list::ListMember;
-use crate::discord::model::{PresenceStatus, Role, User};
-use crate::discord::snowflake::{ChannelId, EmojiId, GuildId, RoleId, UserId};
+use crate::discord::model::{PresenceStatus, Role};
+use crate::discord::snowflake::{ChannelId, EmojiId, GuildId, MessageId, RoleId, UserId};
 use crate::discord::state::members::MemberRow;
 use crate::discord::state::State;
 use crate::ui::panels::members;
 
-/// Everybody this account is friends with, as far as the DM list can say.
+/// Everybody this account is friends with, for the friends tab.
 ///
-/// Sorted by name so the grouping the panel does afterwards is stable, and
-/// deduplicated because somebody can be in a group DM and a one-to-one at
-/// once.
+/// The core answers with users; the panel wants a name and a presence beside
+/// each, and this is the turn from one into the other.
 pub fn friends(state: &State) -> Vec<(UserId, String, PresenceStatus)> {
-    let me = state.me().map(|u| u.id);
-    let mut out: BTreeMap<UserId, (String, PresenceStatus)> = BTreeMap::new();
-
-    for channel in state.dms_ordered() {
-        for id in channel.recipient_ids() {
-            if Some(id) == me || !state.relationship(id).can_dm() {
-                continue;
-            }
-            out.entry(id).or_insert_with(|| {
-                (
-                    state
-                        .user(id)
-                        .as_deref()
-                        .map(User::display_name)
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    state.presence(id),
-                )
-            });
-        }
-    }
-    let mut v: Vec<(UserId, String, PresenceStatus)> =
-        out.into_iter().map(|(id, (n, p))| (id, n, p)).collect();
-    v.sort_by(|a, b| a.1.cmp(&b.1));
-    v
+    state
+        .friends()
+        .into_iter()
+        .map(|user| {
+            (
+                user.id,
+                user.display_name().to_string(),
+                state.presence(user.id),
+            )
+        })
+        .collect()
 }
 
 /// What a DM row should say, and who it is with.
@@ -163,6 +138,117 @@ pub fn custom_emoji(state: &State) -> Vec<(String, EmojiId, bool)> {
         .into_iter()
         .filter_map(|emoji| Some((emoji.name.clone()?, emoji.id?, emoji.animated)))
         .collect()
+}
+
+/// Every picture in a channel, oldest first, for the media viewer.
+///
+/// The whole channel rather than one message's attachments: `h` and `l` walk a
+/// conversation's photographs, and a viewer that stopped at a message boundary
+/// would be one that has to be closed and reopened to see the next one.
+pub fn viewer_items(state: &State, channel: ChannelId) -> Vec<crate::ui::overlays::media::Item> {
+    state
+        .recent(channel, 500)
+        .iter()
+        .flat_map(|msg| {
+            msg.attachments
+                .iter()
+                .filter(|a| a.is_image())
+                .map(|a| crate::ui::overlays::media::Item {
+                    message: msg.id,
+                    key: crate::discord::media::MediaKey::Attachment {
+                        message: msg.id,
+                        id: a.id.0,
+                        url: a.url.clone(),
+                    },
+                    url: a.url.clone(),
+                    filename: a.filename.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// What a search is searching, in words, for the title.
+pub fn scope_name(state: &State, scope: crate::discord::handle::SearchScope) -> String {
+    match scope {
+        crate::discord::handle::SearchScope::Guild(guild) => state
+            .guild(guild)
+            .map(|g| g.name.clone())
+            .unwrap_or_else(|| "this server".into()),
+        crate::discord::handle::SearchScope::Channel(channel) => state
+            .channel(channel)
+            .and_then(|c| c.name().map(|n| format!("#{n}")))
+            .unwrap_or_else(|| state.dm_title(channel)),
+    }
+}
+
+/// The channels the unread hop walks, in the order they are listed.
+///
+/// A guild's text channels, or the direct messages when the rail is on the
+/// message home — which is the list that is on screen in each case, and the
+/// hop should visit what is on screen.
+pub fn unread_stops(state: &State, guild: Option<GuildId>) -> Vec<crate::ui::unread::Stop> {
+    let channels = match guild {
+        Some(guild) => state.channels_ordered(guild),
+        None => state.dms_ordered(),
+    };
+    channels
+        .iter()
+        .filter(|c| c.kind.is_text())
+        .map(|c| {
+            let unread = state.unread(c.id);
+            crate::ui::unread::Stop {
+                channel: c.id,
+                unread: unread.notable(),
+                mentions: unread.mentions,
+                muted: unread.muted,
+            }
+        })
+        .collect()
+}
+
+/// Who said what, and where, for the line a mention puts in the status bar.
+pub fn mention_line(state: &State, channel: ChannelId, message: MessageId) -> (bool, String) {
+    let muted = state.unread(channel).muted;
+    let Some(msg) = state.message(channel, message) else {
+        return (muted, String::new());
+    };
+    let guild = state.channel(channel).and_then(|c| c.guild_id);
+    let who = state.display_name(guild, msg.author.id);
+    let place = state
+        .channel(channel)
+        .and_then(|c| c.name().map(|n| format!("#{n}")))
+        .unwrap_or_else(|| state.dm_title(channel));
+    let what = crate::discord::markdown::parse(&msg.content).plain_text();
+    let one: String = what.lines().next().unwrap_or("").chars().take(60).collect();
+    (muted, format!("@{who} in {place}: {one}"))
+}
+
+/// The threads hanging off the messages in a window, by the message each was
+/// started from.
+///
+/// Discord gives a thread the id of that message, which is the only link
+/// between the two: the message payload says nothing about it at all.
+pub fn threads_of(
+    state: &State,
+    guild: Option<GuildId>,
+    messages: &[Arc<crate::discord::model::Message>],
+) -> HashMap<MessageId, (ChannelId, String)> {
+    let mut out = HashMap::new();
+    let Some(guild) = guild else { return out };
+    for channel in state.channels_of(guild) {
+        if !channel.kind.is_thread() {
+            continue;
+        }
+        let from = MessageId(channel.id.0);
+        if messages.iter().any(|m| m.id == from) {
+            out.insert(
+                from,
+                (channel.id, channel.name().unwrap_or("a thread").to_string()),
+            );
+        }
+    }
+    out
 }
 
 /// The channel that was open when the program last closed.

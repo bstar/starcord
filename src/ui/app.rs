@@ -377,13 +377,11 @@ impl App {
         // The animation clock, at the top of the frame and before anything is
         // measured: what moves is decided from what the last frame drew.
         self.chat.anim.set_policy(self.cfg.media.animate);
-        let focused = self.terminal_focused
-            && (self.layout.focus() == PanelId::Chat || self.over.open());
+        let focused =
+            self.terminal_focused && (self.layout.focus() == PanelId::Chat || self.over.open());
         let media = &self.chat.media;
         let moved = self.chat.anim.tick(now, focused, |key| {
-            media
-                .decoded(key)
-                .and_then(|d| chat::anim::delays_of(&d))
+            media.decoded(key).and_then(|d| chat::anim::delays_of(&d))
         });
         if moved {
             self.view.stale = true;
@@ -550,10 +548,7 @@ impl App {
                 self.view.stale = true;
             }
             Event::Gifs { id, result } => {
-                if self
-                    .over
-                    .gifs_arrived(id, result.map(|page| page.results))
-                {
+                if self.over.gifs_arrived(id, result.map(|page| page.results)) {
                     self.view.stale = true;
                 }
             }
@@ -590,25 +585,7 @@ impl App {
     /// doing neither would leave the client silent on a machine with no
     /// notification daemon, which is most of the ones it will run on.
     fn mentioned(&mut self, channel: ChannelId, message: MessageId) {
-        let (muted, who, what, place) = {
-            let state = self.core.state();
-            let muted = state.unread(channel).muted;
-            let msg = state.message(channel, message);
-            let guild = state.channel(channel).and_then(|c| c.guild_id);
-            let who = msg
-                .as_ref()
-                .map(|m| state.display_name(guild, m.author.id))
-                .unwrap_or_else(|| "somebody".into());
-            let what = msg
-                .as_ref()
-                .map(|m| crate::discord::markdown::parse(&m.content).plain_text())
-                .unwrap_or_default();
-            let place = state
-                .channel(channel)
-                .and_then(|c| c.name().map(|n| format!("#{n}")))
-                .unwrap_or_else(|| state.dm_title(channel));
-            (muted, who, what, place)
-        };
+        let (muted, line) = core_ext::mention_line(&self.core.state(), channel, message);
         let decision = unread::interrupt(
             unread::Where {
                 channel,
@@ -630,8 +607,7 @@ impl App {
             let _ = out.flush();
         }
         if decision.note {
-            let one: String = what.lines().next().unwrap_or("").chars().take(60).collect();
-            self.note(format!("@{who} in {place}: {one}"));
+            self.note(line);
         }
     }
 
@@ -1533,7 +1509,11 @@ impl App {
         }
         match clipboard::image() {
             Ok((bytes, dims)) => {
-                let limit = self.cfg.media.max_attachment_mib.saturating_mul(1024 * 1024);
+                let limit = self
+                    .cfg
+                    .media
+                    .max_attachment_mib
+                    .saturating_mul(1024 * 1024);
                 if limit > 0 && bytes.len() as u64 > limit {
                     self.note_at(
                         format!(
@@ -1558,14 +1538,12 @@ impl App {
         }
     }
 
-    /// `/` and `alt+/`.
+    /// `/` searches the channel, `alt+f` the whole server.
     fn open_search(&mut self, guild_wide: bool) {
-        let state = self.core.state();
         let scope = if guild_wide {
             match self.nav.guild {
                 Some(guild) => SearchScope::Guild(guild),
                 None => {
-                    drop(state);
                     self.note("direct messages are searched one at a time");
                     return;
                 }
@@ -1574,23 +1552,12 @@ impl App {
             match self.nav.channel {
                 Some(channel) => SearchScope::Channel(channel),
                 None => {
-                    drop(state);
                     self.note("no channel open");
                     return;
                 }
             }
         };
-        let where_ = match scope {
-            SearchScope::Guild(guild) => state
-                .guild(guild)
-                .map(|g| g.name.clone())
-                .unwrap_or_else(|| "this server".into()),
-            SearchScope::Channel(channel) => state
-                .channel(channel)
-                .and_then(|c| c.name().map(|n| format!("#{n}")))
-                .unwrap_or_else(|| state.dm_title(channel)),
-        };
-        drop(state);
+        let where_ = core_ext::scope_name(&self.core.state(), scope);
         self.over.open_search(Search::new(scope, where_));
     }
 
@@ -1600,28 +1567,7 @@ impl App {
             self.note("no channel open");
             return;
         };
-        let state = self.core.state();
-        let items: Vec<super::overlays::media::Item> = state
-            .recent(channel, 500)
-            .iter()
-            .flat_map(|msg| {
-                msg.attachments
-                    .iter()
-                    .filter(|a| a.is_image())
-                    .map(|a| super::overlays::media::Item {
-                        message: msg.id,
-                        key: crate::discord::media::MediaKey::Attachment {
-                            message: msg.id,
-                            id: a.id.0,
-                            url: a.url.clone(),
-                        },
-                        url: a.url.clone(),
-                        filename: a.filename.clone(),
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        drop(state);
+        let items = core_ext::viewer_items(&self.core.state(), channel);
         let on = self.chat.selected().map(|m| m.id);
         let aspect = self.look.graphics.cell_aspect().unwrap_or(2.0);
         match Viewer::new(items, on, aspect) {
@@ -1632,29 +1578,7 @@ impl App {
 
     /// `alt+up` and `alt+down`.
     fn hop_unread(&mut self, forward: bool) {
-        let stops = {
-            let state = self.core.state();
-            let channels: Vec<std::sync::Arc<crate::discord::model::Channel>> = match self.nav.guild
-            {
-                Some(guild) => state.channels_ordered(guild),
-                // The direct-message home walks the conversations instead,
-                // which is the list it is showing.
-                None => state.dms_ordered(),
-            };
-            channels
-                .iter()
-                .filter(|c| c.kind.is_text())
-                .map(|c| {
-                    let unread = state.unread(c.id);
-                    unread::Stop {
-                        channel: c.id,
-                        unread: unread.notable(),
-                        mentions: unread.mentions,
-                        muted: unread.muted,
-                    }
-                })
-                .collect::<Vec<_>>()
-        };
+        let stops = core_ext::unread_stops(&self.core.state(), self.nav.guild);
         match unread::hop(&stops, self.nav.channel, forward) {
             Some(channel) => self.open_channel(channel),
             None => self.note("nothing unread here"),
@@ -1757,13 +1681,16 @@ impl App {
     fn write_saved(&mut self, filename: &str, bytes: &[u8]) {
         let dir = self.cfg.save_dir();
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            self.note_at(format!("could not make {}: {e}", dir.display()), NoteLevel::Error);
+            self.note_at(
+                format!("could not make {}: {e}", dir.display()),
+                NoteLevel::Error,
+            );
             return;
         }
         // Never over something already there: a second `cat.png` is
         // `cat-1.png`, because a save that silently replaced a file would be
         // the one destructive thing in the program.
-        let path = free_name(&dir, filename);
+        let path = super::overlays::media::free_name(&dir, filename);
         match std::fs::write(&path, bytes) {
             Ok(()) => self.note(format!("saved {}", path.display())),
             Err(e) => self.note_at(format!("could not save: {e}"), NoteLevel::Error),
@@ -1798,7 +1725,8 @@ impl App {
         // the upload and leaves a message nobody receives, so it is asked
         // about first and in its own words.
         if self.uploading() > 0 {
-            self.over.ask(Confirm::quit_while_uploading(self.uploading()));
+            self.over
+                .ask(Confirm::quit_while_uploading(self.uploading()));
             return;
         }
         let unsent = self.composer.unsent();
@@ -2800,42 +2728,6 @@ fn first_link(msg: &crate::discord::model::Message) -> Option<String> {
         return Some(attachment.url.clone());
     }
     msg.embeds.iter().find_map(|e| e.url.clone())
-}
-
-/// A name in `dir` that is not taken: `cat.png`, then `cat-1.png`.
-///
-/// A save that silently replaced a file would be the one destructive thing in
-/// the program, and the two pictures a conversation calls `image.png` are
-/// nearly always two different pictures.
-fn free_name(dir: &std::path::Path, filename: &str) -> PathBuf {
-    let filename = filename.trim();
-    let filename = if filename.is_empty() {
-        "attachment"
-    } else {
-        filename
-    };
-    // Only the last component, whatever the far end called it: a filename with
-    // a slash in it is somebody else's path traversal.
-    let filename = filename.rsplit(['/', '\\']).next().unwrap_or("attachment");
-    let stem = std::path::Path::new(filename)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "attachment".into());
-    let extension = std::path::Path::new(filename)
-        .extension()
-        .map(|s| format!(".{}", s.to_string_lossy()))
-        .unwrap_or_default();
-    let first = dir.join(format!("{stem}{extension}"));
-    if !first.exists() {
-        return first;
-    }
-    for n in 1..1000 {
-        let next = dir.join(format!("{stem}-{n}{extension}"));
-        if !next.exists() {
-            return next;
-        }
-    }
-    first
 }
 
 /// The one line a terminal below the floor gets.

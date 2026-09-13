@@ -225,12 +225,7 @@ impl ChatState {
     }
 
     /// How far one message's files have got.
-    pub fn upload_progress(
-        &mut self,
-        nonce: crate::discord::handle::Nonce,
-        sent: u64,
-        total: u64,
-    ) {
+    pub fn upload_progress(&mut self, nonce: crate::discord::handle::Nonce, sent: u64, total: u64) {
         self.uploads.insert(nonce, (sent, total));
     }
 
@@ -290,7 +285,12 @@ impl ChatState {
         let visible = self.list.visible(body, get, self.rows.len());
         let first = visible.first().map(|v| v.index).unwrap_or(0);
         let skip = visible.first().map(|v| v.skip).unwrap_or(0);
-        let above: u32 = self.heights.iter().take(first).map(|h| u32::from(*h)).sum::<u32>()
+        let above: u32 = self
+            .heights
+            .iter()
+            .take(first)
+            .map(|h| u32::from(*h))
+            .sum::<u32>()
             + u32::from(skip);
         (above as f32 / room as f32).clamp(0.0, 1.0)
     }
@@ -427,6 +427,7 @@ impl ChatState {
 
         self.first_unread = first_unread(state, channel, &self.messages);
         self.names = names_for(state, channel, &self.messages);
+        self.names.threads = crate::ui::core_ext::threads_of(state, guild, &self.messages);
 
         self.rows = layout::rows(&Shape {
             messages: &self.messages,
@@ -874,11 +875,7 @@ impl ChatState {
                 }
                 Row::Pending { index } => {
                     let row = self.pending.get(*index).cloned().unwrap_or_default();
-                    let mark = if row.failed {
-                        "\u{2715} "
-                    } else {
-                        "\u{00b7} "
-                    };
+                    let mark = if row.failed { "\u{2715} " } else { "\u{00b7} " };
                     let style = if row.failed {
                         Style::default().fg(rgb(t.error))
                     } else {
