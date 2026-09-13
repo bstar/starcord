@@ -1,14 +1,14 @@
 # STAR/CORD documentation
 
+- [`account-safety.md`](account-safety.md) — what signing in as a user account
+  means, what this client deliberately cannot do, and why scanning a code beats
+  typing a password into a terminal. Read it first.
+- [`auth.md`](auth.md) — the two ways in, where the token is kept, and how to
+  get rid of it.
 - [`cli.md`](cli.md) — the command line, and `starcord probe` in particular.
 
 Not written yet, and listed here so it is obvious what is missing:
 
-- `account-safety.md` — what signing in as a user account means, what this
-  client does and deliberately does not do, and why QR login is preferred over
-  typing a password into a terminal. Arrives with the QR login it describes.
-- `auth.md` — the two ways in, where the token is kept, and how to get rid of
-  it.
 - `keys-and-mouse.md` — generated from the keymap table, with a test that greps
   this document for every key string. Arrives with the UI.
 - `themes.md` — deferred to STAR/KIT, which owns the theme engine both this and

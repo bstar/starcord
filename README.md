@@ -11,11 +11,12 @@ settings — all of that stays in Discord's own client, where it belongs.
 
 ## Status
 
-Early. The Discord core connects, identifies and holds a gateway session; the
-UI is not built yet. What works today is the headless probe:
+Early. The Discord core connects, identifies, holds a gateway session, reads
+and sends messages, and fetches and decodes pictures; the UI is not built yet.
+What works today is the headless probe:
 
 ```sh
-starcord probe --token-from-stdin < token.txt
+starcord probe --qr
 ```
 
 See [`docs/cli.md`](docs/cli.md).
@@ -34,9 +35,10 @@ system libraries to install.
 STAR/CORD signs in as a user account, the way discordo, endcord and Vesktop do,
 because there is no other way for a terminal client to read your DMs. It does
 only what a person at the keyboard does: no bulk requests, no scraping, no
-automation of anything you did not press a key for. Read
-`docs/account-safety.md` before you use it — it will be written alongside the
-QR login it describes.
+automation of anything you did not press a key for. Sign in by scanning a code
+with the phone app, so that your password is never typed into a terminal and
+the token is never displayed. Read
+[`docs/account-safety.md`](docs/account-safety.md) before you use it.
 
 ## Licence
 

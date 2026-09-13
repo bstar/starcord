@@ -2,7 +2,8 @@
 
 ```
 starcord [--verbose]
-starcord probe [--token-from-stdin] [--no-store] [--offline] [--timeout SECONDS]
+starcord probe [--qr [--qr-invert]] [--token-from-stdin]
+               [--no-store] [--offline] [--timeout SECONDS]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
                [--send TEXT [--reply-to ID [--ping]]]
@@ -55,6 +56,7 @@ that is up to date or muted with nothing addressed to you.
 
 | | |
 |---|---|
+| `--qr` | Draw a code, wait for the phone app to scan it, and store what comes back. The preferred way in; see [`auth.md`](auth.md). |
 | `--token-from-stdin` | Read the whole of standard input, trim it, use it. |
 | neither | Use the stored token — the OS keyring, or `credentials.toml`. |
 
@@ -74,6 +76,48 @@ want when checking somebody else's report against your own account.
 | `--offline` | Do not look up the current web-client build number; use the pinned one. Also what the tests use, because a test suite has no business making a request to a CDN. |
 | `--legacy-lazy-request` | Send op 14 rather than op 37 for member-list subscriptions. Same body either way. |
 | `--media URL` | Fetch and decode one picture and exit. See below. |
+| `--qr-invert` | Draw the login code for a light terminal background. |
+
+## Signing in by scanning
+
+```sh
+starcord probe --qr
+```
+
+```
+[  0.40s] scan this with the Discord app
+
+  ███████████████████████████████████
+  ██  ▄▄▄▄▄▄▄  ██ ▀▄█▀ ▄█  ▄▄▄▄▄▄▄ ██
+  …
+
+  https://discord.com/ra/DNn8ya4H4fMLuaytL9Dl70StgPcvf7b7ilLE1gPgQ98
+  waiting for a scan; it expires in 356s
+
+[ 21.80s] scanned by alex; confirm it on the phone
+[ 24.10s] LoggedIn as alex (alex), token in the system keyring
+[ 24.42s] identifying
+[ 25.90s] online
+```
+
+The token is never printed. `--no-store` uses it for the run and forgets it,
+which is what you want when checking somebody else's report.
+
+`--qr` does not use a stored token even if there is one: the point of asking
+for a code is to get a new session. It waits up to ten minutes rather than the
+`--timeout` that applies to READY, because those are different questions —
+`--timeout` is how long the gateway should take, and this one is how long
+somebody takes to find their phone.
+
+The code assumes a dark terminal background. `--qr-invert` draws it the other
+way for a light one; `auth.md` explains why either is necessary. The URL under
+the code is there for a terminal whose font makes the squares unreadable: any
+QR generator turns it into a code a phone can read.
+
+Everything up to the point the code appears happens with no account involved,
+so `--qr` is also the way to check that half of the handshake — the key
+exchange and the nonce proof — without signing in at all. Press ctrl-c once the
+code is on screen.
 
 ## Tailing a channel
 
