@@ -23,6 +23,7 @@ use crate::discord::handle::{
     AuthEvent, Command, Connection, DiscordConfig, Event, EventSink, Note,
 };
 use crate::discord::http::{Http, HttpError};
+use crate::discord::media::{self, cache::Cache};
 use crate::discord::model::PresenceStatus;
 use crate::discord::ops::{self, Ops};
 use crate::discord::props::{self, ClientProps};
@@ -92,6 +93,9 @@ struct Core {
     /// that outlive any one connection.
     control: Arc<ArcSwapOption<mpsc::Sender<Control>>>,
     ops: Ops,
+    /// The media task's end of its own queue. Built lazily, because it spawns a
+    /// task and `Core::new` is not inside the runtime.
+    media: Option<media::fetch::Media>,
     session: Arc<std::sync::Mutex<SessionStore>>,
     token: Option<Token>,
     presence: PresenceStatus,
@@ -137,6 +141,7 @@ impl Core {
             bridge,
             control,
             ops,
+            media: None,
             session: Arc::new(std::sync::Mutex::new(SessionStore::load(paths))),
             gateway: None,
             token: None,
@@ -150,6 +155,7 @@ impl Core {
         if self.config.discover_build {
             self.start_build_discovery();
         }
+        self.media = Some(self.start_media());
 
         // The session is on disk before anything connects, so a UI can restore
         // its drafts and its last channel while the gateway is still dialling.
@@ -188,6 +194,25 @@ impl Core {
             .unwrap_or_else(|e| e.into_inner())
             .save_if_dirty();
         self.disconnect().await;
+    }
+
+    /// Start the task that fetches and decodes pictures.
+    ///
+    /// It has its own queue and its own concurrency cap rather than sharing the
+    /// REST semaphore: a scroll asks for forty pictures at once, and a hundred
+    /// megabytes of CDN transfer must not be able to hold up the request that
+    /// sends a message.
+    fn start_media(&self) -> media::fetch::Media {
+        let dir = self
+            .paths
+            .media_cache_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        media::fetch::spawn(media::fetch::Context {
+            http: Arc::clone(&self.http),
+            cache: Arc::new(Cache::new(dir)),
+            config: Arc::new(self.config.media.clone()),
+            events: self.bridge.events.clone(),
+        })
     }
 
     /// The timer that carries everything nothing announces.
@@ -408,6 +433,22 @@ impl Core {
                 self.with_session(|session| session.update(|s| s.set_anchor(channel, message)));
             }
             Command::SaveSession => self.with_session(SessionStore::save_if_dirty),
+
+            Command::FetchMedia(request) => {
+                if let Some(media) = &self.media {
+                    media.fetch(request);
+                }
+            }
+            Command::CancelMedia(key) => {
+                if let Some(media) = &self.media {
+                    media.cancel(key);
+                }
+            }
+            Command::OpenExternal { url, kind } => {
+                if let Some(media) = &self.media {
+                    media.open_external(url, kind);
+                }
+            }
 
             other => {
                 let total = self.unhandled.fetch_add(1, Ordering::Relaxed) + 1;

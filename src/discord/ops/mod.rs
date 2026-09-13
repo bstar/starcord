@@ -184,7 +184,7 @@ pub(crate) mod testing {
     pub fn harness(base: &str) -> Harness {
         let (event_tx, event_rx) = crossbeam_channel::bounded(256);
         let (control_tx, control_rx) = mpsc::channel(64);
-        let sink = EventSink::for_tests(event_tx);
+        let sink = EventSink::detached(event_tx);
         let bridge = Bridge {
             state: Arc::new(RwLock::new(State::new())),
             events: sink,

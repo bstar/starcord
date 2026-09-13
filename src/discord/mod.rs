@@ -27,6 +27,7 @@ pub mod gateway;
 pub mod handle;
 pub mod http;
 pub mod markdown;
+pub mod media;
 pub mod model;
 pub mod ops;
 pub mod props;
