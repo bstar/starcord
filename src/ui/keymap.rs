@@ -162,7 +162,12 @@ pub enum Scope {
 }
 
 /// The list panels, which share their fold and unfold keys.
-const LISTS: &[Module] = &[Module::Guilds, Module::Channels, Module::Dms, Module::Members];
+const LISTS: &[Module] = &[
+    Module::Guilds,
+    Module::Channels,
+    Module::Dms,
+    Module::Members,
+];
 
 /// Every group in [`BINDINGS`], and where it applies.
 ///
@@ -1014,9 +1019,7 @@ mod tests {
                 let k = KeyEvent::new(s.code, s.mods);
                 match scope_of(b.group) {
                     Scope::Global => resolve(k) == Some(b.action),
-                    Scope::Modules(list) => {
-                        list.iter().any(|&m| module(m, k) == Some(b.action))
-                    }
+                    Scope::Modules(list) => list.iter().any(|&m| module(m, k) == Some(b.action)),
                 }
             });
             assert!(
@@ -1172,7 +1175,7 @@ mod tests {
         let claimed: Vec<KeySpec> = BINDINGS
             .iter()
             .filter(|b| scope_of(b.group) == Scope::Modules(&[Module::Composer]))
-            .flat_map(|b| specs(b))
+            .flat_map(specs)
             .filter(|s| s.mods.contains(KeyModifiers::ALT))
             .collect();
         for s in &claimed {
@@ -1231,7 +1234,10 @@ mod tests {
             module(Module::Chat, code(KeyCode::Enter)),
             Some(Action::OpenMedia)
         );
-        assert_ne!(module(Module::Chat, code(KeyCode::Enter)), Some(Action::Send));
+        assert_ne!(
+            module(Module::Chat, code(KeyCode::Enter)),
+            Some(Action::Send)
+        );
         assert_eq!(resolve(code(KeyCode::Enter)), Some(Action::Activate));
         assert_eq!(
             module(Module::Composer, code(KeyCode::Enter)),
@@ -1266,7 +1272,10 @@ mod tests {
 
         // ctrl+g is the GIF picker and must not start a sequence.
         assert_eq!(
-            g_prefix(&mut pending, with(KeyCode::Char('g'), KeyModifiers::CONTROL)),
+            g_prefix(
+                &mut pending,
+                with(KeyCode::Char('g'), KeyModifiers::CONTROL)
+            ),
             PrefixKey::None
         );
         assert!(!pending);
@@ -1313,7 +1322,10 @@ mod tests {
             for (k, want) in [
                 (plain('q'), Action::Quit),
                 (plain('?'), Action::Help),
-                (with(KeyCode::Char('c'), KeyModifiers::CONTROL), Action::Quit),
+                (
+                    with(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                    Action::Quit,
+                ),
             ] {
                 let got = module(m, k).or_else(|| resolve(k));
                 assert_eq!(got, Some(want), "{m:?} + {k:?}");

@@ -53,20 +53,15 @@ impl Default for Ui {
 }
 
 /// How the guild rail is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GuildsStyle {
     /// A narrow column of icons or initials.
+    #[default]
     Rail,
     /// A full-width list with names.
     List,
     Hidden,
-}
-
-impl Default for GuildsStyle {
-    fn default() -> Self {
-        Self::Rail
-    }
 }
 
 impl GuildsStyle {
@@ -111,20 +106,15 @@ impl Default for Layout {
 }
 
 /// How much of a timestamp a message header carries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Timestamps {
     Off,
     /// `14:32`.
+    #[default]
     Short,
     /// `2026-09-13 14:32`.
     Full,
-}
-
-impl Default for Timestamps {
-    fn default() -> Self {
-        Self::Short
-    }
 }
 
 impl Timestamps {
@@ -147,17 +137,12 @@ impl Timestamps {
 }
 
 /// Whether a spoiler is covered until asked for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Spoilers {
+    #[default]
     Hidden,
     Shown,
-}
-
-impl Default for Spoilers {
-    fn default() -> Self {
-        Self::Hidden
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -190,20 +175,15 @@ impl Default for Chat {
 }
 
 /// When an animated picture is allowed to move.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Animate {
     Always,
     /// Only in the focused panel, which is what keeps a scrollback of GIFs
     /// from costing a core.
+    #[default]
     Focused,
     Never,
-}
-
-impl Default for Animate {
-    fn default() -> Self {
-        Self::Focused
-    }
 }
 
 impl Animate {
@@ -271,17 +251,12 @@ impl Default for Notify {
 }
 
 /// Which key sends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SendKey {
+    #[default]
     Enter,
     CtrlEnter,
-}
-
-impl Default for SendKey {
-    fn default() -> Self {
-        Self::Enter
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -303,18 +278,13 @@ impl Default for Compose {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Channels {
-    /// Voice channels in the channel list. Off, because this client cannot
-    /// join one and a row that does nothing is worse than no row.
+    /// Voice channels in the channel list. Off -- the derived default -- because
+    /// this client cannot join one, and a row that does nothing when it is
+    /// activated is worse than no row at all.
     pub show_voice: bool,
-}
-
-impl Default for Channels {
-    fn default() -> Self {
-        Self { show_voice: false }
-    }
 }
 
 impl Config {

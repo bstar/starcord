@@ -183,12 +183,7 @@ impl LayoutState {
 
     /// The whole geometry of one frame, or `None` when the terminal is too
     /// small to draw anything honest in.
-    pub fn regions(
-        &mut self,
-        full: Rect,
-        composer_rows: u16,
-        pad: (u16, u16),
-    ) -> Option<&Regions> {
+    pub fn regions(&mut self, full: Rect, composer_rows: u16, pad: (u16, u16)) -> Option<&Regions> {
         let area = inset(full, pad);
         if area.width < MIN_COLS || area.height < MIN_ROWS {
             self.last = None;
@@ -218,7 +213,10 @@ impl LayoutState {
 
         let shape = Shape {
             left,
-            members: self.cfg.members_cols.clamp(MEMBERS_MIN_COLS, MEMBERS_MAX_COLS),
+            members: self
+                .cfg
+                .members_cols
+                .clamp(MEMBERS_MIN_COLS, MEMBERS_MAX_COLS),
             dms_share: self.cfg.dms_share.clamp(10, 90),
             composer_rows,
             hidden: self.hidden(),
@@ -523,10 +521,7 @@ mod tests {
                         for x in rect.x..rect.x + rect.width {
                             let i = usize::from(y - body.y) * usize::from(body.width)
                                 + usize::from(x - body.x);
-                            assert_eq!(
-                                seen[i], 0,
-                                "{width}x{height}: {id:?} overlaps at {x},{y}"
-                            );
+                            assert_eq!(seen[i], 0, "{width}x{height}: {id:?} overlaps at {x},{y}");
                             seen[i] = 1;
                         }
                     }
@@ -784,7 +779,10 @@ mod tests {
         let r = r.unwrap();
         assert!(!r.panels.contains_key(&PanelId::Dms));
         assert!(s.dms_folded(), "it folded rather than closed");
-        assert!(s.is_open(PanelId::Dms), "and the user's choice is untouched");
+        assert!(
+            s.is_open(PanelId::Dms),
+            "and the user's choice is untouched"
+        );
 
         // Closed by hand at the same width is closed, not folded: the channel
         // panel should not grow a tab for a list somebody put away.
@@ -815,6 +813,10 @@ mod tests {
                 Some(*id)
             );
         }
-        assert_eq!(r.hit(r.status.x, r.status.y), None, "the status is not a panel");
+        assert_eq!(
+            r.hit(r.status.x, r.status.y),
+            None,
+            "the status is not a panel"
+        );
     }
 }

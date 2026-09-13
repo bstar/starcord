@@ -230,7 +230,10 @@ mod tests {
         assert!(text.contains("next panel"), "{text}");
         // The list is longer than any terminal is tall, which is what the
         // scroll is for. The end of it is reachable rather than silently cut.
-        assert!(!text.contains("quit"), "the whole table fitted; nothing to scroll");
+        assert!(
+            !text.contains("quit"),
+            "the whole table fitted; nothing to scroll"
+        );
     }
 
     #[test]

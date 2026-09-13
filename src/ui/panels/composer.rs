@@ -32,7 +32,10 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
     let prompt = if v.channel.is_empty() {
         "open a channel to write in it".to_string()
     } else {
-        format!("message {} — sending arrives with the next milestone", v.channel)
+        format!(
+            "message {} — sending arrives with the next milestone",
+            v.channel
+        )
     };
     let text: String = prompt.chars().take(usize::from(body.width)).collect();
     buf.set_string(

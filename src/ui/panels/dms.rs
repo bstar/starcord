@@ -150,7 +150,9 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                     style = style.add_modifier(Modifier::BOLD);
                 }
                 if selected {
-                    style = style.fg(rgb(sel_fg(t, v.focused))).bg(rgb(sel_bg(t, v.focused)));
+                    style = style
+                        .fg(rgb(sel_fg(t, v.focused)))
+                        .bg(rgb(sel_bg(t, v.focused)));
                 }
                 // The dot keeps its own colour even on a selected row: it is
                 // the one thing on the line that means something by its
@@ -174,7 +176,9 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
             Row::Friend { name, presence, .. } => {
                 let mut style = Style::default().fg(rgb(t.row_fg));
                 if selected {
-                    style = style.fg(rgb(sel_fg(t, v.focused))).bg(rgb(sel_bg(t, v.focused)));
+                    style = style
+                        .fg(rgb(sel_fg(t, v.focused)))
+                        .bg(rgb(sel_bg(t, v.focused)));
                 }
                 let dot_style = Style::default()
                     .fg(rgb(presence_colour(t, *presence)))

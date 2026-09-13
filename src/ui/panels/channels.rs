@@ -157,7 +157,9 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
         let y = body.y + (index - v.scroll) as u16;
         let selected = index == v.cursor;
         let (text, mut style) = match row {
-            Row::Category { name, collapsed, .. } => {
+            Row::Category {
+                name, collapsed, ..
+            } => {
                 let arrow = if *collapsed { '\u{25b8}' } else { '\u{25be}' };
                 (
                     format!("{arrow} {}", name.to_uppercase()),
@@ -195,10 +197,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                 if *unread && !*muted {
                     style = style.add_modifier(Modifier::BOLD);
                 }
-                (
-                    format!("{indent}{} {name}{badge}", sigil(*kind)),
-                    style,
-                )
+                (format!("{indent}{} {name}{badge}", sigil(*kind)), style)
             }
         };
         if selected {
@@ -225,7 +224,12 @@ mod tests {
     use crate::discord::state::Unread;
     use std::sync::Arc;
 
-    fn channel(id: u64, name: &str, kind: ChannelKind, parent: Option<u64>) -> Arc<crate::discord::model::Channel> {
+    fn channel(
+        id: u64,
+        name: &str,
+        kind: ChannelKind,
+        parent: Option<u64>,
+    ) -> Arc<crate::discord::model::Channel> {
         Arc::new(crate::discord::model::Channel {
             id: ChannelId(id),
             kind,

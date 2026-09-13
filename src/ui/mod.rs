@@ -1,5 +1,18 @@
 //! The terminal interface.
+//!
+//! Layered the way STAR/AMP's is, and for the same reasons. [`keymap`] compiles
+//! with no reference to [`app`]; a panel is a widget over a view struct and
+//! owns none of what it draws; [`layout`] is the one place a rectangle is
+//! decided, and both the renderer and the pointer read its answer; and
+//! modality is checked first in `handle` *and* in `handle_mouse`.
+//!
+//! Nothing here reaches into `discord::state` — it talks to `Handle` and to the
+//! read-side queries on `State` — with one deliberate exception, [`fake`],
+//! which is a core rather than a consumer of one.
 
+pub mod app;
+pub mod core_ext;
+pub mod fake;
 pub mod keymap;
 pub mod layout;
 pub mod login;

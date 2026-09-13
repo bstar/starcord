@@ -83,13 +83,10 @@ impl View<'_> {
 /// connected, a hollow one is trying, a cross has given up.
 pub fn connection_word(c: &Connection) -> String {
     match c {
-        Connection::Ready { resumed, .. } => {
-            if *resumed {
-                "\u{25b2} online".into()
-            } else {
-                "\u{25b2} online".into()
-            }
-        }
+        // A resume and a fresh identify both end up online, and the
+        // difference between them is not the reader's business: it is worth a
+        // note when it happens and nothing at all afterwards.
+        Connection::Ready { .. } => "\u{25b2} online".into(),
         Connection::Connecting => "\u{25bd} connecting".into(),
         Connection::Identifying => "\u{25bd} identifying".into(),
         Connection::Resuming => "\u{25bd} resuming".into(),
@@ -192,12 +189,7 @@ pub fn render(area: Rect, buf: &mut Buffer, v: &View<'_>) {
                         .bg(rgb(t.hint_key_bg))
                         .add_modifier(Modifier::BOLD),
                 );
-                buf.set_string(
-                    rect.x + 1,
-                    rect.y,
-                    " help",
-                    base.fg(rgb(t.hint_desc_fg)),
-                );
+                buf.set_string(rect.x + 1, rect.y, " help", base.fg(rgb(t.hint_desc_fg)));
             }
             Hit::Location => {
                 let style = match level {
@@ -264,7 +256,12 @@ mod tests {
 
         let fresh = view(&t, &c, Some(&note), at + Duration::from_secs(1));
         assert_eq!(fresh.middle().0, "sent");
-        let stale = view(&t, &c, Some(&note), at + NOTE_FOR + Duration::from_millis(1));
+        let stale = view(
+            &t,
+            &c,
+            Some(&note),
+            at + NOTE_FOR + Duration::from_millis(1),
+        );
         assert_eq!(stale.middle().0, "#general · Some Guild");
     }
 

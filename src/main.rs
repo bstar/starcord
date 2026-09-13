@@ -31,11 +31,34 @@ fn main() -> Result<()> {
 
     match cli.command {
         Some(cli::Command::Probe(probe)) => run_probe(probe),
-        None => {
-            println!("TUI not built yet; use `starcord probe`");
-            Ok(())
-        }
+        None => run_tui(cli.replay),
     }
+}
+
+/// The client.
+fn run_tui(replay: Option<std::path::PathBuf>) -> Result<()> {
+    let config_path = PATHS.config_file()?;
+    // Written once, on a first run, so that there is something to edit and
+    // something to read about what can be edited.
+    match config::Config::write_template(&config_path) {
+        Ok(true) => tracing::info!("wrote a starting config to {}", config_path.display()),
+        Ok(false) => {}
+        Err(e) => tracing::warn!("could not write a starting config: {e}"),
+    }
+    let cfg = config::Config::load(&config_path)?;
+
+    let core = match &replay {
+        Some(path) => ui::fake::replay(path).context("starting the replay core")?,
+        None => {
+            Handle::spawn(DiscordConfig::default(), PATHS).context("starting the Discord core")?
+        }
+    };
+
+    // A replay must not touch the real session file: restoring a channel from
+    // one account into a fixture from another would be confusing at best.
+    let session = replay.is_none().then(|| PATHS.session_file()).transpose()?;
+
+    ui::app::App::run(core, cfg, config_path, session)
 }
 
 fn run_probe(options: cli::Probe) -> Result<()> {

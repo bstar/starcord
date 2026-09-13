@@ -172,7 +172,11 @@ pub struct Frame<'a> {
 /// [`header::body`], which is also what the mouse tests against.
 pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
     let t = f.theme;
-    let border = if f.focused { t.border_focused } else { t.border };
+    let border = if f.focused {
+        t.border_focused
+    } else {
+        t.border
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
