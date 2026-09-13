@@ -405,6 +405,30 @@ pub async fn refresh_attachment_urls(
     .await
 }
 
+/// `POST /users/@me/channels`.
+#[derive(Debug, Serialize)]
+struct CreateDm {
+    /// One id. Group DMs take several, and this client does not create them.
+    recipients: Vec<crate::discord::snowflake::UserId>,
+}
+
+/// Open a DM channel with one person.
+///
+/// The rule that makes this safe is not here: `ops::open::open_dm` refuses
+/// unless the other account is already a friend. This is the request.
+pub async fn create_dm(
+    http: &Http,
+    user: crate::discord::snowflake::UserId,
+) -> Result<crate::discord::model::Channel, HttpError> {
+    http.request(
+        Route::CreateDm,
+        Some(&CreateDm {
+            recipients: vec![user],
+        }),
+    )
+    .await
+}
+
 /// What a search came back with, before the groups are unpicked.
 ///
 /// Discord answers a search with an array of *groups*: each one is the message

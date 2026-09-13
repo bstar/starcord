@@ -12,6 +12,7 @@
 
 pub mod apply;
 pub mod channels;
+pub mod members;
 pub mod messages;
 pub mod read;
 pub mod typing;
@@ -19,12 +20,18 @@ pub mod typing;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::discord::model::member_list::MemberListUpdate;
 use crate::discord::model::{
-    Channel, ChannelKind, Message, Presence, PresenceStatus, ReadState, Relationship,
+    Channel, ChannelKind, Emoji, Message, Presence, PresenceStatus, ReadState, Relationship,
     RelationshipKind, Role, User, UserGuildSettings,
 };
 use crate::discord::snowflake::{ChannelId, GuildId, MessageId, RoleId, UserId};
 
+// `MemberRow` has no consumer until the members panel; it is re-exported here
+// with everything else the read side offers rather than being reached for
+// through two modules.
+#[allow(unused_imports)]
+pub use members::{MemberList, MemberRow};
 pub use messages::MessageStore;
 pub use read::Unread;
 pub use typing::Typing;
@@ -39,6 +46,8 @@ pub struct GuildState {
     /// Display order, computed once per change rather than once per frame.
     pub channels: Vec<ChannelId>,
     pub roles: HashMap<RoleId, Arc<Role>>,
+    /// The server's own emoji, for the picker and for rendering `<:name:id>`.
+    pub emojis: Vec<Arc<Emoji>>,
     pub member_count: Option<u64>,
     /// A Discord-side outage. The row stays, greyed.
     pub unavailable: bool,
@@ -81,6 +90,9 @@ pub struct State {
     /// The only thing they are read for is deciding whether a role mention was
     /// addressed to the reader.
     my_roles: HashMap<GuildId, Vec<RoleId>>,
+    /// One member list per guild — the window that was subscribed to, not the
+    /// whole membership, which is never sent.
+    member_lists: HashMap<GuildId, MemberList>,
 }
 
 impl State {
@@ -165,6 +177,19 @@ impl State {
             .unwrap_or_default()
     }
 
+    /// Every channel held for a guild, in no particular order.
+    ///
+    /// Unlike [`State::channels_ordered`] this includes the ones the channel
+    /// list does not draw — archived threads above all — because the thing that
+    /// needs it is deciding what to *remove*.
+    pub fn channels_of(&self, guild: GuildId) -> Vec<Arc<Channel>> {
+        self.channels
+            .values()
+            .filter(|c| c.guild_id == Some(guild))
+            .cloned()
+            .collect()
+    }
+
     /// DMs and group DMs, newest conversation first.
     pub fn dms_ordered(&self) -> Vec<Arc<Channel>> {
         self.dm_order
@@ -206,10 +231,23 @@ impl State {
 
     /// What to call somebody, in a guild or out of one.
     ///
-    /// Per-guild nicknames are a member field and members are not loaded in
-    /// M1, so this resolves the account's own display name. The signature
-    /// carries the guild already so that adding nicknames is a body change.
-    pub fn display_name(&self, _guild: Option<GuildId>, id: UserId) -> String {
+    /// A per-guild nickname wins where there is one, and the only place this
+    /// client learns nicknames is the member list — which is a window rather
+    /// than the whole membership, so somebody scrolled past is known by their
+    /// account name until their row arrives. That is the right way round: a
+    /// name that is merely less specific beats a blank.
+    pub fn display_name(&self, guild: Option<GuildId>, id: UserId) -> String {
+        if let Some(guild) = guild {
+            if let Some(nick) = self
+                .member_lists
+                .get(&guild)
+                .and_then(|list| list.member(id))
+                .and_then(|member| member.nick.clone())
+                .filter(|nick| !nick.is_empty())
+            {
+                return nick;
+            }
+        }
         self.users
             .get(&id)
             .map(|u| u.display_name().to_string())
@@ -270,6 +308,32 @@ impl State {
 
     pub(crate) fn typing_mut(&mut self) -> &mut Typing {
         &mut self.typing
+    }
+
+    /// A guild's member list, as far as it has been subscribed to.
+    ///
+    /// `None` until something asks: a member list is not sent with the guild,
+    /// it is subscribed to by index range and arrives as splices against that
+    /// window. See `state::members`.
+    pub fn member_list(&self, guild: GuildId) -> Option<&MemberList> {
+        self.member_lists.get(&guild)
+    }
+
+    /// Every custom emoji this account can use, across every guild it is in.
+    ///
+    /// Flattened rather than kept per guild because the picker is one list and
+    /// the markdown renderer resolves `<:name:id>` without knowing which server
+    /// the emoji came from.
+    pub fn custom_emoji(&self) -> Vec<Arc<Emoji>> {
+        let mut out: Vec<Arc<Emoji>> = self
+            .guild_order
+            .iter()
+            .filter_map(|id| self.guilds.get(id))
+            .flat_map(|guild| guild.emojis.iter().cloned())
+            .filter(|emoji| emoji.id.is_some())
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
     }
 
     /// This account's roles in a guild.
@@ -348,6 +412,60 @@ impl State {
     /// per guild in the same order as `guilds`.
     pub(crate) fn set_my_roles(&mut self, guild: GuildId, roles: Vec<RoleId>) {
         self.my_roles.insert(guild, roles);
+    }
+
+    /// Apply one GUILD_MEMBER_LIST_UPDATE, and say whether anything changed.
+    pub(crate) fn apply_member_list(&mut self, update: MemberListUpdate) -> bool {
+        let guild = update.guild_id;
+        // A member list is the one place presences arrive for people this
+        // account has no other reason to know about, so they are lifted out of
+        // it before the rows are spliced.
+        let mut seen = Vec::new();
+        for op in &update.ops {
+            match op {
+                crate::discord::model::MemberListOp::Sync { items, .. } => {
+                    for item in items {
+                        if let crate::discord::model::MemberListItem::Member(member) = item {
+                            seen.push((**member).clone());
+                        }
+                    }
+                }
+                crate::discord::model::MemberListOp::Insert { item, .. }
+                | crate::discord::model::MemberListOp::Update { item, .. } => {
+                    if let crate::discord::model::MemberListItem::Member(member) = item {
+                        seen.push((**member).clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        for member in seen {
+            if let Some(presence) = &member.presence {
+                self.presences.insert(member.user.id, presence.status);
+            }
+            self.users.insert(member.user.id, Arc::new(member.user));
+        }
+
+        self.member_lists.entry(guild).or_default().apply(update)
+    }
+
+    /// Replace a guild's emoji, from GUILD_EMOJIS_UPDATE.
+    pub(crate) fn set_emojis(&mut self, guild: GuildId, emojis: Vec<Emoji>) {
+        if let Some(state) = self.guilds.get_mut(&guild) {
+            state.emojis = emojis.into_iter().map(Arc::new).collect();
+        }
+    }
+
+    /// Record when a channel was last pinned to, from CHANNEL_PINS_UPDATE.
+    pub(crate) fn set_last_pin(&mut self, channel: ChannelId, at: Option<String>) {
+        let entry = self
+            .read_states
+            .entry(channel)
+            .or_insert_with(|| ReadState {
+                id: channel,
+                ..Default::default()
+            });
+        entry.last_pin_timestamp = at;
     }
 
     pub(crate) fn set_relationship(&mut self, relationship: &Relationship) {
@@ -446,6 +564,7 @@ impl State {
                 owner_id: guild.owner_id,
                 channels: Vec::new(),
                 roles,
+                emojis: guild.emojis.into_iter().map(Arc::new).collect(),
                 member_count: guild.member_count,
                 unavailable: false,
             },
@@ -465,6 +584,7 @@ impl State {
         self.channels.retain(|_, c| c.guild_id != Some(id));
         self.guild_order.retain(|g| *g != id);
         self.my_roles.remove(&id);
+        self.member_lists.remove(&id);
     }
 
     pub(crate) fn resort_guild(&mut self, guild: GuildId) {

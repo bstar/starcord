@@ -22,7 +22,7 @@ use std::time::Instant;
 use crate::discord::handle::{Event, MessagesChange, Note};
 use crate::discord::http::api;
 use crate::discord::http::route::History;
-use crate::discord::snowflake::{ChannelId, GuildId, MessageId};
+use crate::discord::snowflake::{ChannelId, GuildId, MessageId, UserId};
 use crate::discord::state::messages::PAGE;
 
 use super::Ops;
@@ -224,6 +224,93 @@ pub async fn jump_to(ops: &Ops, channel: ChannelId, message: MessageId) {
     }
 }
 
+/// `Command::RequestMembers`.
+///
+/// The members panel asks for the window it is showing as it scrolls. The
+/// ranges are clamped to what Discord will accept before anything is sent, and
+/// nothing is sent at all when they have not changed: an unchanged subscription
+/// is traffic that says nothing, and the panel may ask on every frame.
+pub fn request_members(ops: &Ops, guild: GuildId, channel: ChannelId, ranges: &[(u32, u32)]) {
+    let clamped = crate::discord::state::members::clamp_ranges(ranges);
+    let payload = ops
+        .shared()
+        .subscriptions
+        .set_ranges(guild, channel, &clamped);
+    let Some(payload) = payload else {
+        tracing::trace!("the member ranges for {channel} have not changed");
+        return;
+    };
+    if ops.to_gateway(payload) {
+        tracing::debug!("asked {guild} for member rows {clamped:?} of {channel}");
+    }
+}
+
+/// `Command::OpenDm`.
+///
+/// **Refused unless the other account is already a friend.** That is the whole
+/// point of this function existing rather than the route being called directly.
+/// Opening a DM channel with somebody who has not agreed to hear from you is
+/// the single most abusable thing a user-account client can do, and it is not
+/// something a person at a keyboard does by accident. A stranger reaches this
+/// client through a DM they already have, or not at all — see
+/// `docs/account-safety.md`.
+pub async fn open_dm(ops: &Ops, user: UserId) {
+    use crate::discord::model::RelationshipKind;
+
+    let (relationship, existing) = {
+        let state = ops.state();
+        let me = state.me().map(|me| me.id);
+        // A DM that already exists needs no request: it came in READY.
+        let existing = state.dms_ordered().into_iter().find(|channel| {
+            channel.kind == crate::discord::model::ChannelKind::Dm && {
+                let mut others = channel
+                    .recipient_ids()
+                    .into_iter()
+                    .filter(|id| Some(*id) != me);
+                others.next() == Some(user) && others.next().is_none()
+            }
+        });
+        (state.relationship(user), existing)
+    };
+
+    if let Some(channel) = existing {
+        ops.emit(Event::Channels(None));
+        open_channel(ops, channel.id).await;
+        return;
+    }
+
+    if relationship != RelationshipKind::Friend {
+        let who = ops.state().display_name(None, user);
+        tracing::info!("refused to open a dm with {user}: not a friend");
+        ops.note(Note::warning(
+            "dm-stranger",
+            format!("{who} is not on your friends list, so this client will not start a DM"),
+        ));
+        return;
+    }
+
+    let opened = ops.rest(api::create_dm(&ops.http, user)).await;
+    match opened {
+        Ok(channel) => {
+            let id = channel.id;
+            {
+                let mut state = ops.state_mut();
+                for user in channel.recipients.iter().cloned() {
+                    state.upsert_user(user);
+                }
+                state.upsert_channel(channel);
+                state.touch();
+            }
+            ops.emit(Event::Channels(None));
+            open_channel(ops, id).await;
+        }
+        Err(e) => {
+            tracing::warn!("could not open a dm with {user}: {e}");
+            ops.note(Note::warning("dm", format!("could not open that DM: {e}")));
+        }
+    }
+}
+
 /// Send any subscription whose grace period has run out.
 ///
 /// Called on a timer from `core`, which is the only way a lapse can happen:
@@ -275,6 +362,157 @@ mod tests {
         let channel: Channel =
             serde_json::from_str(r#"{"id":"7","type":0,"guild_id":"3","name":"general"}"#).unwrap();
         ops.state_mut().upsert_channel(channel);
+    }
+
+    /// Whatever went up the socket, as JSON.
+    fn sent(h: &mut super::super::testing::Harness) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        while let Ok(Control::Send(payload)) = h.sent.try_recv() {
+            out.push(serde_json::from_str(&payload).unwrap());
+        }
+        out
+    }
+
+    fn me_and_friend(ops: &Ops, kind: u8) {
+        ops.state_mut()
+            .set_me(serde_json::from_str(r#"{"id":"1","username":"sam"}"#).unwrap());
+        let relationship: crate::discord::model::Relationship = serde_json::from_str(&format!(
+            r#"{{"id":"2","type":{kind},
+                     "user":{{"id":"2","username":"alex","global_name":"Alex"}}}}"#
+        ))
+        .unwrap();
+        ops.state_mut().set_relationship(&relationship);
+    }
+
+    #[tokio::test]
+    async fn a_member_window_is_asked_for_once_and_clamped() {
+        let server = wiremock::MockServer::start().await;
+        let mut h = harness(&server.uri());
+        in_guild(&h.ops);
+
+        // Four windows, one of them five thousand rows wide. Discord takes
+        // three of a hundred and silently ignores a request for more.
+        request_members(
+            &h.ops,
+            GuildId(3),
+            CHANNEL,
+            &[(0, 5000), (100, 199), (200, 299), (300, 399)],
+        );
+
+        let payloads = sent(&mut h);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["op"], 37);
+        assert_eq!(
+            payloads[0]["d"]["channels"]["7"],
+            serde_json::json!([[0, 99], [100, 199], [200, 299]])
+        );
+
+        // Asking for the same window again says nothing new.
+        request_members(
+            &h.ops,
+            GuildId(3),
+            CHANNEL,
+            &[(0, 99), (100, 199), (200, 299)],
+        );
+        assert!(
+            sent(&mut h).is_empty(),
+            "an unchanged subscription is traffic that says nothing"
+        );
+
+        // Scrolling is a change.
+        request_members(&h.ops, GuildId(3), CHANNEL, &[(100, 199)]);
+        assert_eq!(sent(&mut h).len(), 1);
+    }
+
+    /// The rule this function exists for.
+    #[tokio::test]
+    async fn a_dm_with_somebody_who_is_not_a_friend_is_refused() {
+        let server = wiremock::MockServer::start().await;
+        let h = harness(&server.uri());
+        // A pending request in either direction is not a friendship.
+        me_and_friend(&h.ops, 3);
+
+        open_dm(&h.ops, crate::discord::snowflake::UserId(2)).await;
+
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "a DM to somebody who has not agreed to hear from you was opened"
+        );
+        let notes: Vec<String> = h
+            .events
+            .try_iter()
+            .filter_map(|e| match e {
+                Event::Note(note) => Some(note.text),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            notes.iter().any(|n| n.contains("friends list")),
+            "{notes:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dm_with_a_friend_is_opened_and_then_read() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+
+        let server = wiremock::MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/users/@me/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "400",
+                "type": 1,
+                "recipients": [{"id": "2", "username": "alex"}]
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/channels/400/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(page(500, 3)))
+            .mount(&server)
+            .await;
+
+        let h = harness(&server.uri());
+        me_and_friend(&h.ops, 1);
+
+        open_dm(&h.ops, crate::discord::snowflake::UserId(2)).await;
+
+        let opened = h.ops.state().channel(ChannelId(400));
+        assert!(opened.is_some(), "the dm never reached the state");
+        assert_eq!(h.ops.state().dm_count(), 1);
+
+        let body: serde_json::Value =
+            serde_json::from_slice(&server.received_requests().await.unwrap()[0].body).unwrap();
+        assert_eq!(body, serde_json::json!({"recipients": ["2"]}));
+    }
+
+    /// A DM that already exists is opened rather than asked for again: it came
+    /// in READY, and asking would be a request for something already held.
+    #[tokio::test]
+    async fn an_existing_dm_is_opened_without_asking_discord_for_one() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+
+        let server = wiremock::MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/400/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(page(500, 3)))
+            .mount(&server)
+            .await;
+
+        let h = harness(&server.uri());
+        // Not a friend, and it still opens: the conversation already exists.
+        me_and_friend(&h.ops, 0);
+        h.ops.state_mut().upsert_channel(
+            serde_json::from_str(r#"{"id":"400","type":1,"recipient_ids":["1","2"]}"#).unwrap(),
+        );
+
+        open_dm(&h.ops, crate::discord::snowflake::UserId(2)).await;
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1, "only the history fetch");
+        assert!(requests[0].url.path().ends_with("/channels/400/messages"));
     }
 
     #[tokio::test]

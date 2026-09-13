@@ -246,6 +246,10 @@ pub const UNSUBSCRIBE_GRACE: Duration = Duration::from_secs(30);
 pub struct Subscriptions {
     /// Channels open per guild, which is what the ranges are derived from.
     open: HashMap<GuildId, BTreeSet<ChannelId>>,
+    /// The member-list windows asked for, per channel. A channel with no entry
+    /// gets [`FIRST_RANGE`], which is what one open channel needs before
+    /// anybody has scrolled the list.
+    ranges: HashMap<ChannelId, Vec<[u32; 2]>>,
     /// What was last sent, per guild, so an unchanged request is not re-sent.
     sent: HashMap<GuildId, BTreeMap<String, Vec<[u32; 2]>>>,
     /// Guilds with nothing open, and when their grace runs out.
@@ -259,6 +263,7 @@ impl Subscriptions {
     pub fn new(legacy: bool) -> Self {
         Self {
             open: HashMap::new(),
+            ranges: HashMap::new(),
             sent: HashMap::new(),
             leaving: HashMap::new(),
             legacy,
@@ -290,10 +295,56 @@ impl Subscriptions {
             .map(|channels| {
                 channels
                     .iter()
-                    .map(|c| (c.to_string(), vec![FIRST_RANGE]))
+                    .map(|c| {
+                        let ranges = self
+                            .ranges
+                            .get(c)
+                            .cloned()
+                            .unwrap_or_else(|| vec![FIRST_RANGE]);
+                        (c.to_string(), ranges)
+                    })
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Ask for a different window of a channel's member list.
+    ///
+    /// `Command::RequestMembers`, which the members panel sends as it scrolls.
+    /// Nothing goes out unless the ranges actually changed: the panel may call
+    /// it on every frame, and re-sending the same subscription is traffic that
+    /// says nothing.
+    ///
+    /// The ranges are clamped before they get here — three windows of a
+    /// hundred, which is Discord's limit — because asking for more is not
+    /// refused, it is ignored, and an ignored subscription looks exactly like
+    /// one that was accepted and then never delivered.
+    pub fn set_ranges(
+        &mut self,
+        guild: GuildId,
+        channel: ChannelId,
+        ranges: &[(u32, u32)],
+    ) -> Option<String> {
+        let wanted: Vec<[u32; 2]> = if ranges.is_empty() {
+            vec![FIRST_RANGE]
+        } else {
+            ranges.iter().map(|&(a, b)| [a, b]).collect()
+        };
+
+        if self.ranges.get(&channel) == Some(&wanted) {
+            return None;
+        }
+        self.ranges.insert(channel, wanted);
+        // Asking for a member list is also opening the channel as far as the
+        // subscription is concerned: there is no window without one.
+        self.leaving.remove(&guild);
+        self.open.entry(guild).or_default().insert(channel);
+        self.sync(guild)
+    }
+
+    /// What was last asked for, for a test and for a report.
+    pub fn ranges_of(&self, channel: ChannelId) -> Option<&[[u32; 2]]> {
+        self.ranges.get(&channel).map(Vec::as_slice)
     }
 
     /// Send the guild's current subscription, if it differs from the last one.
@@ -331,6 +382,7 @@ impl Subscriptions {
         }
         self.open.remove(&guild);
         self.leaving.insert(guild, now + UNSUBSCRIBE_GRACE);
+        self.ranges.remove(&channel);
         None
     }
 

@@ -9,7 +9,6 @@
 //! thread. A runtime sized to the machine would spend most of a laptop's cores
 //! parked in `epoll`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -120,10 +119,6 @@ struct Core {
     token: Option<Token>,
     presence: PresenceStatus,
     rest: Arc<Semaphore>,
-    /// Commands that arrived before the milestone that handles them. Counted
-    /// rather than silently dropped, so "nothing happens when I press that" has
-    /// a number behind it.
-    unhandled: AtomicU64,
 }
 
 impl Core {
@@ -177,7 +172,6 @@ impl Core {
             token: None,
             presence: PresenceStatus::Online,
             rest,
-            unhandled: AtomicU64::new(0),
         })
     }
 
@@ -505,6 +499,17 @@ impl Core {
             }
             Command::SaveSession => self.with_session(SessionStore::save_if_dirty),
 
+            Command::OpenDm(user) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::open_dm(&ops, user).await });
+            }
+
+            Command::RequestMembers {
+                guild,
+                channel,
+                ranges,
+            } => ops::open::request_members(&self.ops, guild, channel, &ranges),
+
             Command::Search { id, scope, query } => {
                 let ops = self.ops.clone();
                 tokio::spawn(async move { ops::search::search(&ops, id, scope, query).await });
@@ -531,14 +536,6 @@ impl Core {
             Command::GifTrending { id } => self.ask_gifs(id, Ask::Trending),
             Command::GifSearch { id, query } => self.ask_gifs(id, Ask::Search(query)),
             Command::GifSuggest { id, prefix } => self.ask_gifs(id, Ask::Suggest(prefix)),
-
-            other => {
-                let total = self.unhandled.fetch_add(1, Ordering::Relaxed) + 1;
-                tracing::debug!(
-                    "{} is not implemented yet ({total} unhandled commands so far)",
-                    other.name()
-                );
-            }
         }
     }
 

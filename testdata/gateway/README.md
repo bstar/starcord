@@ -12,6 +12,22 @@ build from.
 
 Synthetic, like the READY beside it, and made up in the same id ranges.
 
+## `guild_member_list_update.json`
+
+One GUILD_MEMBER_LIST_UPDATE carrying a SYNC of the first window: a hoisted
+role heading with two people under it, an `online` heading with one, and an
+empty `offline` heading, plus the `groups` list for the whole list and the
+member and online counts. One of the members has a per-server nickname and one
+does not, and each carries the presence that only a member list delivers.
+
+It is what `state::members` is tested against — the splice operations are
+applied to it, including the ones whose indices fall outside the window — and
+what the guild ids in `ready.json` are shared with, so the two can be applied to
+one `State`.
+
+Synthetic, in the same id ranges as everything else here
+(`300000000000000NN` for roles).
+
 ## `ready.json` is synthetic
 
 It was written by hand from the field lists in the userdoccers reference

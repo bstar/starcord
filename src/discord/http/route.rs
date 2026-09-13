@@ -116,6 +116,13 @@ pub enum Route {
     AddReaction(ChannelId, MessageId, EmojiRef),
     /// Take it off again.
     RemoveReaction(ChannelId, MessageId, EmojiRef),
+    /// Open a DM with somebody.
+    ///
+    /// Reachable only through `ops::open::open_dm`, which refuses unless the
+    /// other account is already a friend. The gate is there rather than here
+    /// because a route is data and a rule is not.
+    CreateDm,
+
     /// Search a server's messages, or one channel's.
     ///
     /// The query is in the path rather than in a body: it is a `GET`, and the
@@ -238,6 +245,7 @@ impl Route {
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
             | Route::CreateAttachments(_)
+            | Route::CreateDm
             | Route::Typing(_)
             | Route::Ack(_, _)
             | Route::RefreshAttachmentUrls => reqwest::Method::POST,
@@ -283,6 +291,7 @@ impl Route {
                 "/channels/{channel}/messages/{message}/reactions/{}/@me",
                 escape(&emoji.key())
             )),
+            Route::CreateDm => Cow::Borrowed("/users/@me/channels"),
             Route::Search { scope, query } => Cow::Owned(match scope {
                 SearchIn::Guild(guild) => {
                     format!(
@@ -368,6 +377,7 @@ impl Route {
             Route::RemoveReaction(channel, _, _) => {
                 Cow::Owned(format!("DELETE /channels/{channel}/messages/:id/reactions"))
             }
+            Route::CreateDm => Cow::Borrowed("POST /users/@me/channels"),
             // The major parameter is the guild or the channel; the words are
             // not part of the allowance, or every different search would be a
             // fresh empty one.

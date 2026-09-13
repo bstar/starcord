@@ -1,0 +1,84 @@
+{
+  "t": "GUILD_MEMBER_LIST_UPDATE",
+  "s": 12,
+  "op": 0,
+  "d": {
+    "guild_id": "200000000000000001",
+    "id": "everyone",
+    "member_count": 42,
+    "online_count": 7,
+    "groups": [
+      { "id": "300000000000000001", "count": 2 },
+      { "id": "online", "count": 2 },
+      { "id": "offline", "count": 1 }
+    ],
+    "ops": [
+      {
+        "op": "SYNC",
+        "range": [0, 99],
+        "items": [
+          { "group": { "id": "300000000000000001", "count": 2 } },
+          {
+            "member": {
+              "user": {
+                "id": "100000000000000002",
+                "username": "alex",
+                "global_name": "Alex",
+                "discriminator": "0"
+              },
+              "nick": "Mod Alex",
+              "roles": ["300000000000000001"],
+              "joined_at": "2024-02-01T09:00:00+00:00",
+              "presence": {
+                "user": { "id": "100000000000000002" },
+                "status": "online",
+                "client_status": { "desktop": "online" },
+                "activities": []
+              }
+            }
+          },
+          {
+            "member": {
+              "user": {
+                "id": "100000000000000003",
+                "username": "jordan",
+                "global_name": "Jordan",
+                "discriminator": "0"
+              },
+              "nick": null,
+              "roles": ["300000000000000001"],
+              "joined_at": "2024-03-14T18:30:00+00:00",
+              "presence": {
+                "user": { "id": "100000000000000003" },
+                "status": "idle",
+                "client_status": { "mobile": "idle" },
+                "activities": []
+              }
+            }
+          },
+          { "group": { "id": "online", "count": 2 } },
+          {
+            "member": {
+              "user": {
+                "id": "100000000000000001",
+                "username": "sam",
+                "global_name": "Sam",
+                "discriminator": "0"
+              },
+              "nick": null,
+              "roles": [],
+              "joined_at": "2023-11-05T12:00:00+00:00",
+              "presence": {
+                "user": { "id": "100000000000000001" },
+                "status": "online",
+                "client_status": { "desktop": "online" },
+                "activities": []
+              }
+            }
+          },
+          { "group": { "id": "offline", "count": 1 } }
+        ]
+      }
+    ]
+  }
+}

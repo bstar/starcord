@@ -161,6 +161,76 @@ fn apply_inner(state: &mut State, dispatch: Dispatch) -> Events {
             smallvec![Event::Channels(guild)]
         }
 
+        Dispatch::ChannelPinsUpdate {
+            channel_id,
+            last_pin_timestamp,
+        } => {
+            state.set_last_pin(channel_id, last_pin_timestamp);
+            smallvec![Event::ReadState(channel_id)]
+        }
+
+        // A thread is an ordinary channel of type 10, 11 or 12, and the channel
+        // list puts it under its parent. Nothing else here has to know.
+        Dispatch::ThreadCreate(channel) | Dispatch::ThreadUpdate(channel) => {
+            let guild = channel.guild_id;
+            state.upsert_channel(*channel);
+            smallvec![Event::Channels(guild)]
+        }
+
+        Dispatch::ThreadDelete {
+            id,
+            guild_id,
+            parent_id: _,
+        } => {
+            state.remove_channel(id);
+            smallvec![Event::Channels(guild_id)]
+        }
+
+        Dispatch::ThreadListSync {
+            guild_id,
+            channel_ids,
+            threads,
+        } => {
+            // Authoritative for the channels it names, so a thread that was
+            // archived while this client was away has to go. `channel_ids`
+            // empty means the whole guild, which is Discord's own convention
+            // rather than a missing field.
+            if let Some(guild) = guild_id {
+                let arrived: std::collections::HashSet<_> = threads.iter().map(|t| t.id).collect();
+                let stale: Vec<_> = state
+                    .channels_of(guild)
+                    .into_iter()
+                    .filter(|c| c.kind.is_thread() && !arrived.contains(&c.id))
+                    .filter(|c| {
+                        channel_ids.is_empty()
+                            || c.parent_id.is_some_and(|p| channel_ids.contains(&p))
+                    })
+                    .map(|c| c.id)
+                    .collect();
+                for id in stale {
+                    state.remove_channel(id);
+                }
+            }
+            for thread in threads {
+                state.upsert_channel(thread);
+            }
+            smallvec![Event::Channels(guild_id)]
+        }
+
+        Dispatch::GuildEmojisUpdate { guild_id, emojis } => {
+            state.set_emojis(guild_id, emojis);
+            smallvec![Event::Guilds]
+        }
+
+        Dispatch::GuildMemberListUpdate(update) => {
+            let guild = update.guild_id;
+            if state.apply_member_list(*update) {
+                smallvec![Event::Members(guild)]
+            } else {
+                Events::new()
+            }
+        }
+
         Dispatch::PresenceUpdate(presence) => {
             let id = presence.user.id;
             state.apply_presence(&presence);
@@ -1128,5 +1198,289 @@ mod tests {
 
         state.bump_last_message(older, MessageId(999_999_999_999_999_999));
         assert_eq!(state.dms_ordered()[0].id, older);
+    }
+
+    // -- threads, members, pins, emoji ------------------------------------
+
+    const GUILD: GuildId = GuildId(200000000000000001);
+    /// `#general`, from the READY fixture.
+    const GENERAL: ChannelId = ChannelId(200000000000000011);
+
+    fn thread_json(id: u64, parent: u64, archived: bool) -> String {
+        format!(
+            r#"{{"id":"{id}","type":11,"guild_id":"200000000000000001",
+                 "parent_id":"{parent}","name":"a thread",
+                 "thread_metadata":{{"archived":{archived}}}}}"#
+        )
+    }
+
+    fn channel_ids(state: &State) -> Vec<ChannelId> {
+        state
+            .channels_ordered(GUILD)
+            .into_iter()
+            .map(|c| c.id)
+            .collect()
+    }
+
+    #[test]
+    fn a_thread_appears_under_its_channel_and_leaves_when_it_is_deleted() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let before = channel_ids(&state);
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "THREAD_CREATE",
+                &thread_json(600000000000000001, 200000000000000011, false),
+            ),
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::Channels(Some(g)) if *g == GUILD)));
+
+        let after = channel_ids(&state);
+        let at = after
+            .iter()
+            .position(|id| *id == ChannelId(600000000000000001))
+            .expect("the thread is not in the list");
+        assert_eq!(
+            after[at - 1],
+            GENERAL,
+            "a thread belongs under the channel it was started in"
+        );
+
+        apply(
+            &mut state,
+            dispatch(
+                "THREAD_DELETE",
+                r#"{"id":"600000000000000001","guild_id":"200000000000000001",
+                    "parent_id":"200000000000000011","type":11}"#,
+            ),
+        );
+        assert_eq!(channel_ids(&state), before);
+    }
+
+    /// Archiving is how a thread ends, and an archived one is not a row.
+    #[test]
+    fn archiving_a_thread_takes_it_out_of_the_list() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        apply(
+            &mut state,
+            dispatch(
+                "THREAD_CREATE",
+                &thread_json(600000000000000002, 200000000000000011, false),
+            ),
+        );
+        assert!(channel_ids(&state).contains(&ChannelId(600000000000000002)));
+
+        apply(
+            &mut state,
+            dispatch(
+                "THREAD_UPDATE",
+                &thread_json(600000000000000002, 200000000000000011, true),
+            ),
+        );
+        assert!(!channel_ids(&state).contains(&ChannelId(600000000000000002)));
+        assert!(
+            state.channel(ChannelId(600000000000000002)).is_some(),
+            "it is archived, not deleted: opening it by id still works"
+        );
+    }
+
+    /// A LIST_SYNC is authoritative for the channels it names, so a thread that
+    /// was archived while this client was away has to go.
+    #[test]
+    fn a_list_sync_removes_the_threads_it_does_not_mention() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        for id in [600000000000000003u64, 600000000000000004] {
+            apply(
+                &mut state,
+                dispatch("THREAD_CREATE", &thread_json(id, 200000000000000011, false)),
+            );
+        }
+
+        apply(
+            &mut state,
+            dispatch(
+                "THREAD_LIST_SYNC",
+                &format!(
+                    r#"{{"guild_id":"200000000000000001",
+                         "channel_ids":["200000000000000011"],
+                         "threads":[{}]}}"#,
+                    thread_json(600000000000000004, 200000000000000011, false)
+                ),
+            ),
+        );
+
+        let ids = channel_ids(&state);
+        assert!(!ids.contains(&ChannelId(600000000000000003)));
+        assert!(ids.contains(&ChannelId(600000000000000004)));
+    }
+
+    #[test]
+    fn a_member_list_update_becomes_rows_and_presences() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+
+        let text = include_str!("../../../testdata/gateway/guild_member_list_update.json");
+        let envelope: serde_json::Value = serde_json::from_str(text).unwrap();
+        let payload = serde_json::to_string(&envelope["d"]).unwrap();
+        let events = apply(
+            &mut state,
+            decode(
+                "GUILD_MEMBER_LIST_UPDATE",
+                Some(&RawValue::from_string(payload).unwrap()),
+            ),
+        );
+
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::Members(g) if *g == GUILD)));
+
+        let list = state.member_list(GUILD).expect("no member list");
+        assert_eq!(list.len(), 6);
+        assert_eq!(list.members().len(), 3);
+        assert_eq!(list.member_count, 42);
+
+        // The presences in a member list are the only ones this account ever
+        // sees for these people.
+        assert_eq!(
+            state.presence(UserId(100000000000000003)),
+            crate::discord::model::PresenceStatus::Idle
+        );
+        // And the nickname is what the guild calls them.
+        assert_eq!(
+            state.display_name(Some(GUILD), UserId(100000000000000002)),
+            "Mod Alex"
+        );
+        assert_eq!(
+            state.display_name(None, UserId(100000000000000002)),
+            "Alex",
+            "outside the guild the nickname does not apply"
+        );
+    }
+
+    /// READY_SUPPLEMENTAL is where a friend's presence comes from; nothing else
+    /// sends one before they next change status.
+    #[test]
+    fn merged_presences_from_the_supplemental_reach_the_state() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        assert_eq!(
+            state.presence(UserId(100000000000000002)),
+            crate::discord::model::PresenceStatus::Offline
+        );
+
+        apply(
+            &mut state,
+            dispatch(
+                "READY_SUPPLEMENTAL",
+                r#"{"merged_presences":{
+                      "friends":[{"user":{"id":"100000000000000002"},"status":"dnd"}],
+                      "guilds":[[{"user":{"id":"100000000000000003"},"status":"idle"}]]}}"#,
+            ),
+        );
+
+        assert_eq!(
+            state.presence(UserId(100000000000000002)),
+            crate::discord::model::PresenceStatus::Dnd
+        );
+        assert_eq!(
+            state.presence(UserId(100000000000000003)),
+            crate::discord::model::PresenceStatus::Idle,
+            "a guild member's presence arrives in the same payload"
+        );
+    }
+
+    #[test]
+    fn a_pin_records_when_and_a_guilds_emoji_can_be_replaced() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "CHANNEL_PINS_UPDATE",
+                r#"{"channel_id":"200000000000000011",
+                    "guild_id":"200000000000000001",
+                    "last_pin_timestamp":"2026-09-13T10:00:00+00:00"}"#,
+            ),
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::ReadState(c) if *c == GENERAL)));
+        assert_eq!(
+            state
+                .read_state(GENERAL)
+                .and_then(|r| r.last_pin_timestamp.as_deref()),
+            Some("2026-09-13T10:00:00+00:00")
+        );
+
+        assert!(state.custom_emoji().is_empty());
+        apply(
+            &mut state,
+            dispatch(
+                "GUILD_EMOJIS_UPDATE",
+                r#"{"guild_id":"200000000000000001","emojis":[
+                     {"id":"700000000000000002","name":"zebra","animated":false},
+                     {"id":"700000000000000001","name":"aardvark","animated":true}]}"#,
+            ),
+        );
+        let emoji = state.custom_emoji();
+        assert_eq!(emoji.len(), 2);
+        assert_eq!(
+            emoji
+                .iter()
+                .filter_map(|e| e.name.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["aardvark", "zebra"],
+            "the picker wants them in a stable order"
+        );
+    }
+
+    /// A relationship that arrives after READY is applied the same way, and
+    /// `RELATIONSHIP_UPDATE` is the same payload as an add.
+    #[test]
+    fn relationships_can_be_added_changed_and_taken_away() {
+        use crate::discord::model::RelationshipKind;
+
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let stranger = UserId(100000000000000009);
+        assert_eq!(state.relationship(stranger), RelationshipKind::None);
+
+        apply(
+            &mut state,
+            dispatch(
+                "RELATIONSHIP_ADD",
+                r#"{"id":"100000000000000009","type":3,
+                    "user":{"id":"100000000000000009","username":"robin"}}"#,
+            ),
+        );
+        assert_eq!(
+            state.relationship(stranger),
+            RelationshipKind::IncomingRequest
+        );
+        assert_eq!(state.display_name(None, stranger), "robin");
+
+        // Accepting it arrives as an update with the same shape.
+        let events = apply(
+            &mut state,
+            dispatch(
+                "RELATIONSHIP_UPDATE",
+                r#"{"id":"100000000000000009","type":1}"#,
+            ),
+        );
+        assert!(events.iter().any(|e| matches!(e, Event::Relationships)));
+        assert_eq!(state.relationship(stranger), RelationshipKind::Friend);
+
+        apply(
+            &mut state,
+            dispatch("RELATIONSHIP_REMOVE", r#"{"id":"100000000000000009"}"#),
+        );
+        assert_eq!(state.relationship(stranger), RelationshipKind::None);
     }
 }
