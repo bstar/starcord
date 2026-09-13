@@ -45,7 +45,8 @@
         "owner_id": "100000000000000001",
         "member_count": 3,
         "roles": [
-          { "id": "200000000000000001", "name": "@everyone", "color": 0, "position": 0, "permissions": "104189505" }
+          { "id": "200000000000000001", "name": "@everyone", "color": 0, "position": 0, "permissions": "104189505" },
+          { "id": "200000000000000002", "name": "Regulars", "color": 3447003, "position": 1, "permissions": "104189505" }
         ],
         "emojis": [],
         "channels": [
@@ -208,7 +209,7 @@
       ]
     },
     "merged_members": [
-      [{ "user_id": "100000000000000001", "nick": null, "roles": [], "joined_at": "2024-01-01T00:00:00.000000+00:00" }],
+      [{ "user_id": "100000000000000001", "nick": null, "roles": ["200000000000000002"], "joined_at": "2024-01-01T00:00:00.000000+00:00" }],
       [{ "user_id": "100000000000000001", "nick": null, "roles": [], "joined_at": "2024-06-01T00:00:00.000000+00:00" }]
     ],
     "sessions": [

@@ -19,7 +19,9 @@ use serde_json::value::RawValue;
 
 use crate::discord::model::guild::Guild;
 use crate::discord::model::ready::{Ready, ReadySupplemental, Relationship};
-use crate::discord::model::{Channel, Collection, Presence, ReadState, User, UserGuildSettings};
+use crate::discord::model::{
+    Channel, Collection, Message, PartialEmoji, Presence, ReadState, User, UserGuildSettings,
+};
 use crate::discord::snowflake::{ChannelId, GuildId, MessageId, UserId};
 
 /// Gateway opcodes, of which this client uses six.
@@ -140,6 +142,53 @@ pub enum Dispatch {
         guild_id: Option<GuildId>,
         channel_unread_updates: Vec<ReadState>,
     },
+
+    MessageCreate(Box<Message>),
+    /// A partial message: the id, the channel, and whichever fields changed.
+    /// The payload is kept as JSON rather than parsed into a `Message`, because
+    /// what matters is *which keys are present* -- an absent `content` means
+    /// unchanged, and a `Message` with `#[serde(default)]` everywhere cannot
+    /// tell that from an empty one.
+    MessageUpdate {
+        id: MessageId,
+        channel_id: ChannelId,
+        payload: serde_json::Value,
+    },
+    MessageDelete {
+        id: MessageId,
+        channel_id: ChannelId,
+        guild_id: Option<GuildId>,
+    },
+    MessageDeleteBulk {
+        ids: Vec<MessageId>,
+        channel_id: ChannelId,
+        guild_id: Option<GuildId>,
+    },
+    MessageReactionAdd {
+        channel_id: ChannelId,
+        message_id: MessageId,
+        user_id: UserId,
+        emoji: PartialEmoji,
+    },
+    MessageReactionRemove {
+        channel_id: ChannelId,
+        message_id: MessageId,
+        user_id: UserId,
+        emoji: PartialEmoji,
+    },
+    MessageReactionRemoveAll {
+        channel_id: ChannelId,
+        message_id: MessageId,
+    },
+    MessageReactionRemoveEmoji {
+        channel_id: ChannelId,
+        message_id: MessageId,
+        emoji: PartialEmoji,
+    },
+    TypingStart {
+        channel_id: ChannelId,
+        user_id: UserId,
+    },
     /// A wholesale replacement of the read states, sent after a bulk ack.
     SessionsReplace,
     /// Known name, unparseable payload. Logged and dropped.
@@ -172,6 +221,15 @@ impl Dispatch {
             Dispatch::UserGuildSettingsUpdate(_) => "USER_GUILD_SETTINGS_UPDATE",
             Dispatch::MessageAck { .. } => "MESSAGE_ACK",
             Dispatch::ChannelUnreadUpdate { .. } => "CHANNEL_UNREAD_UPDATE",
+            Dispatch::MessageCreate(_) => "MESSAGE_CREATE",
+            Dispatch::MessageUpdate { .. } => "MESSAGE_UPDATE",
+            Dispatch::MessageDelete { .. } => "MESSAGE_DELETE",
+            Dispatch::MessageDeleteBulk { .. } => "MESSAGE_DELETE_BULK",
+            Dispatch::MessageReactionAdd { .. } => "MESSAGE_REACTION_ADD",
+            Dispatch::MessageReactionRemove { .. } => "MESSAGE_REACTION_REMOVE",
+            Dispatch::MessageReactionRemoveAll { .. } => "MESSAGE_REACTION_REMOVE_ALL",
+            Dispatch::MessageReactionRemoveEmoji { .. } => "MESSAGE_REACTION_REMOVE_EMOJI",
+            Dispatch::TypingStart { .. } => "TYPING_START",
             Dispatch::SessionsReplace => "SESSIONS_REPLACE",
             Dispatch::Malformed { event } | Dispatch::Unknown { event } => event,
         }
@@ -197,6 +255,56 @@ struct MessageAckPayload {
     message_id: Option<MessageId>,
     #[serde(default)]
     mention_count: Option<u32>,
+}
+
+/// MESSAGE_UPDATE's envelope, read for its ids while the body stays JSON.
+#[derive(Debug, Deserialize)]
+struct MessageUpdatePayload {
+    id: MessageId,
+    #[serde(default)]
+    channel_id: ChannelId,
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageDeletePayload {
+    id: MessageId,
+    channel_id: ChannelId,
+    #[serde(default)]
+    guild_id: Option<GuildId>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageDeleteBulkPayload {
+    #[serde(default)]
+    ids: Vec<MessageId>,
+    channel_id: ChannelId,
+    #[serde(default)]
+    guild_id: Option<GuildId>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReactionPayload {
+    channel_id: ChannelId,
+    message_id: MessageId,
+    #[serde(default)]
+    user_id: UserId,
+    #[serde(default)]
+    emoji: PartialEmoji,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReactionClearPayload {
+    channel_id: ChannelId,
+    message_id: MessageId,
+    #[serde(default)]
+    emoji: PartialEmoji,
+}
+
+#[derive(Debug, Deserialize)]
+struct TypingStartPayload {
+    channel_id: ChannelId,
+    #[serde(default)]
+    user_id: UserId,
 }
 
 #[derive(Debug, Deserialize)]
@@ -291,6 +399,85 @@ pub fn decode(event: &str, payload: Option<&RawValue>) -> Dispatch {
                 }
             )
         }
+        "MESSAGE_CREATE" => parse!(Message, |v| Dispatch::MessageCreate(Box::new(v))),
+        "MESSAGE_UPDATE" => {
+            // Parsed twice on purpose: once for the ids, once as a value the
+            // store merges field by field.
+            match payload.map(|p| {
+                serde_json::from_str::<MessageUpdatePayload>(p.get())
+                    .and_then(|ids| serde_json::from_str(p.get()).map(|body| (ids, body)))
+            }) {
+                Some(Ok((ids, payload))) => Dispatch::MessageUpdate {
+                    id: ids.id,
+                    channel_id: ids.channel_id,
+                    payload,
+                },
+                Some(Err(e)) => {
+                    tracing::warn!("MESSAGE_UPDATE did not parse: {e}");
+                    Dispatch::Malformed {
+                        event: event.to_string(),
+                    }
+                }
+                None => Dispatch::Malformed {
+                    event: event.to_string(),
+                },
+            }
+        }
+        "MESSAGE_DELETE" => parse!(MessageDeletePayload, |v: MessageDeletePayload| {
+            Dispatch::MessageDelete {
+                id: v.id,
+                channel_id: v.channel_id,
+                guild_id: v.guild_id,
+            }
+        }),
+        "MESSAGE_DELETE_BULK" => {
+            parse!(MessageDeleteBulkPayload, |v: MessageDeleteBulkPayload| {
+                Dispatch::MessageDeleteBulk {
+                    ids: v.ids,
+                    channel_id: v.channel_id,
+                    guild_id: v.guild_id,
+                }
+            })
+        }
+        "MESSAGE_REACTION_ADD" => parse!(ReactionPayload, |v: ReactionPayload| {
+            Dispatch::MessageReactionAdd {
+                channel_id: v.channel_id,
+                message_id: v.message_id,
+                user_id: v.user_id,
+                emoji: v.emoji,
+            }
+        }),
+        "MESSAGE_REACTION_REMOVE" => parse!(ReactionPayload, |v: ReactionPayload| {
+            Dispatch::MessageReactionRemove {
+                channel_id: v.channel_id,
+                message_id: v.message_id,
+                user_id: v.user_id,
+                emoji: v.emoji,
+            }
+        }),
+        "MESSAGE_REACTION_REMOVE_ALL" => {
+            parse!(ReactionClearPayload, |v: ReactionClearPayload| {
+                Dispatch::MessageReactionRemoveAll {
+                    channel_id: v.channel_id,
+                    message_id: v.message_id,
+                }
+            })
+        }
+        "MESSAGE_REACTION_REMOVE_EMOJI" => {
+            parse!(ReactionClearPayload, |v: ReactionClearPayload| {
+                Dispatch::MessageReactionRemoveEmoji {
+                    channel_id: v.channel_id,
+                    message_id: v.message_id,
+                    emoji: v.emoji,
+                }
+            })
+        }
+        "TYPING_START" => parse!(TypingStartPayload, |v: TypingStartPayload| {
+            Dispatch::TypingStart {
+                channel_id: v.channel_id,
+                user_id: v.user_id,
+            }
+        }),
         "SESSIONS_REPLACE" => Dispatch::SessionsReplace,
         other => {
             tracing::trace!("ignoring {other}");

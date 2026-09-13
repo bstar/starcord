@@ -11,8 +11,8 @@
 use smallvec::{smallvec, SmallVec};
 
 use crate::discord::gateway::payload::Dispatch;
-use crate::discord::handle::Event;
-use crate::discord::state::{SessionInfo, State};
+use crate::discord::handle::{Event, MessagesChange};
+use crate::discord::state::{messages, SessionInfo, State};
 
 /// How many events one dispatch usually produces. Two covers everything except
 /// READY, which produces four.
@@ -48,7 +48,23 @@ fn apply_inner(state: &mut State, dispatch: Dispatch) -> Events {
                 state.upsert_user(user);
             }
 
+            // `merged_members` is this account's own membership in each guild,
+            // one list per guild in the same order as `guilds`. The roles in it
+            // are the only thing that can answer "was that role mention
+            // addressed to me", so they are picked out before the guilds are
+            // consumed.
+            let mut my_memberships = ready.merged_members.into_iter();
             for guild in ready.guilds {
+                let id = guild.id;
+                if let Some(members) = my_memberships.next() {
+                    let me = state.me().map(|me| me.id);
+                    if let Some(mine) = members
+                        .into_iter()
+                        .find(|m| me.is_none() || m.user_id() == me)
+                    {
+                        state.set_my_roles(id, mine.roles);
+                    }
+                }
                 state.upsert_guild(guild);
             }
 
@@ -222,6 +238,171 @@ fn apply_inner(state: &mut State, dispatch: Dispatch) -> Events {
                 events.push(Event::Channels(guild_id));
             }
             events
+        }
+
+        Dispatch::MessageCreate(message) => {
+            let message = *message;
+            let channel = message.channel_id;
+            let id = message.id;
+            let author = message.author.id;
+            let mut events = Events::new();
+
+            // The channel row and the DM order both follow the newest message,
+            // whether or not anybody has the channel open.
+            state.bump_last_message(channel, id);
+            let mentioned = state.mentions_me(&message);
+            let is_dm = state.channel(channel).is_some_and(|c| c.kind.is_private());
+
+            // Somebody who just sent a message has stopped typing, and waiting
+            // out the ten-second lease to admit it looks like a stuck client.
+            if state.typing_mut().stopped(channel, author) {
+                events.push(Event::Typing(channel));
+            }
+
+            let received = state.messages_mut(channel).receive(message);
+            if received != messages::Received::Duplicate {
+                events.push(Event::Messages(channel, MessagesChange::Appended(id)));
+            }
+            events.push(Event::ReadState(channel));
+            if is_dm {
+                // A DM moves to the top of its list.
+                events.push(Event::Channels(None));
+            }
+            if mentioned {
+                events.push(Event::Mention {
+                    channel,
+                    message: id,
+                });
+            }
+            events
+        }
+
+        Dispatch::MessageUpdate {
+            id,
+            channel_id,
+            payload,
+        } => {
+            if state.messages_mut(channel_id).update(id, &payload) {
+                smallvec![Event::Messages(channel_id, MessagesChange::Updated(id))]
+            } else {
+                // An edit to something that scrolled out of the window changes
+                // nothing here.
+                Events::new()
+            }
+        }
+
+        Dispatch::MessageDelete {
+            id,
+            channel_id,
+            guild_id: _,
+        } => {
+            if state.messages_mut(channel_id).remove(id) {
+                smallvec![Event::Messages(channel_id, MessagesChange::Removed(id))]
+            } else {
+                Events::new()
+            }
+        }
+
+        Dispatch::MessageDeleteBulk {
+            ids,
+            channel_id,
+            guild_id: _,
+        } => {
+            if state.messages_mut(channel_id).remove_many(&ids) > 0 {
+                // One coarse event: a bulk delete takes out a moderation-sized
+                // run of rows and every cached height above them moves.
+                smallvec![Event::Messages(channel_id, MessagesChange::Replaced)]
+            } else {
+                Events::new()
+            }
+        }
+
+        Dispatch::MessageReactionAdd {
+            channel_id,
+            message_id,
+            user_id,
+            emoji,
+        } => {
+            let me = state.me().is_some_and(|me| me.id == user_id);
+            if state
+                .messages_mut(channel_id)
+                .add_reaction(message_id, &emoji, me)
+            {
+                smallvec![Event::Messages(
+                    channel_id,
+                    MessagesChange::Reactions(message_id)
+                )]
+            } else {
+                Events::new()
+            }
+        }
+
+        Dispatch::MessageReactionRemove {
+            channel_id,
+            message_id,
+            user_id,
+            emoji,
+        } => {
+            let me = state.me().is_some_and(|me| me.id == user_id);
+            if state
+                .messages_mut(channel_id)
+                .remove_reaction(message_id, &emoji, me)
+            {
+                smallvec![Event::Messages(
+                    channel_id,
+                    MessagesChange::Reactions(message_id)
+                )]
+            } else {
+                Events::new()
+            }
+        }
+
+        Dispatch::MessageReactionRemoveAll {
+            channel_id,
+            message_id,
+        } => {
+            if state.messages_mut(channel_id).clear_reactions(message_id) {
+                smallvec![Event::Messages(
+                    channel_id,
+                    MessagesChange::Reactions(message_id)
+                )]
+            } else {
+                Events::new()
+            }
+        }
+
+        Dispatch::MessageReactionRemoveEmoji {
+            channel_id,
+            message_id,
+            emoji,
+        } => {
+            if state
+                .messages_mut(channel_id)
+                .clear_emoji(message_id, &emoji)
+            {
+                smallvec![Event::Messages(
+                    channel_id,
+                    MessagesChange::Reactions(message_id)
+                )]
+            } else {
+                Events::new()
+            }
+        }
+
+        Dispatch::TypingStart {
+            channel_id,
+            user_id,
+        } => {
+            // Only a set that changed is worth a redraw: somebody typing a long
+            // message re-sends this every eight seconds.
+            if state
+                .typing_mut()
+                .started(channel_id, user_id, std::time::Instant::now())
+            {
+                smallvec![Event::Typing(channel_id)]
+            } else {
+                Events::new()
+            }
         }
 
         // Sent when the account's sessions change, which this client shows
@@ -524,6 +705,418 @@ mod tests {
             dispatch("RELATIONSHIP_REMOVE", &format!(r#"{{"id":"{friend}"}}"#)),
         );
         assert!(!state.relationship(friend).can_dm());
+    }
+
+    /// The channel READY says has messages in it, with a store the reader has
+    /// opened.
+    fn opened(state: &mut State, channel: ChannelId) {
+        let store = state.messages_mut(channel);
+        store.set_open(true);
+        store.set_at_latest(true);
+    }
+
+    fn message_json(id: u64, channel: u64, author: u64, extra: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","channel_id":"{channel}","author":{{"id":"{author}","username":"a"}}{extra}}}"#
+        )
+    }
+
+    #[test]
+    fn a_live_message_lands_in_its_channel_and_marks_it_unread() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000999,
+                    200000000000000011,
+                    100000000000000002,
+                    r#","content":"hello""#,
+                ),
+            ),
+        );
+
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::Messages(c, MessagesChange::Appended(m))
+                if *c == channel && *m == MessageId(500000000000000999)
+        )));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::ReadState(c) if *c == channel)));
+
+        let store = state.messages(channel).expect("the store is there");
+        assert_eq!(store.len(), 1);
+        assert_eq!(
+            state.channel(channel).unwrap().last_message_id,
+            Some(MessageId(500000000000000999)),
+            "the channel row did not follow the message"
+        );
+    }
+
+    #[test]
+    fn a_message_naming_this_account_is_a_mention() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000998,
+                    200000000000000011,
+                    100000000000000002,
+                    r#","mentions":[{"id":"100000000000000001","username":"sam"}]"#,
+                ),
+            ),
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, Event::Mention { .. })),
+            "a message that said this account's name was not a mention"
+        );
+    }
+
+    #[test]
+    fn a_message_this_account_sent_is_never_a_mention_of_itself() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000997,
+                    200000000000000011,
+                    100000000000000001,
+                    r#","mention_everyone":true"#,
+                ),
+            ),
+        );
+        assert!(!events.iter().any(|e| matches!(e, Event::Mention { .. })));
+    }
+
+    #[test]
+    fn everything_in_a_dm_is_addressed_to_the_reader() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let dm = ChannelId(400000000000000001);
+        opened(&mut state, dm);
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000001000,
+                    400000000000000001,
+                    100000000000000002,
+                    "",
+                ),
+            ),
+        );
+        assert!(events.iter().any(|e| matches!(e, Event::Mention { .. })));
+        assert!(
+            events.iter().any(|e| matches!(e, Event::Channels(None))),
+            "a DM with a new message did not move in the list"
+        );
+    }
+
+    #[test]
+    fn a_suppressed_message_pings_nobody() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let dm = ChannelId(400000000000000001);
+        opened(&mut state, dm);
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000001001,
+                    400000000000000001,
+                    100000000000000002,
+                    r#","flags":4096"#,
+                ),
+            ),
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::Mention { .. })),
+            "the suppress-notifications flag was ignored"
+        );
+    }
+
+    #[test]
+    fn an_edit_changes_the_message_and_a_deletion_removes_it() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+        apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000996,
+                    200000000000000011,
+                    100000000000000002,
+                    r#","content":"before""#,
+                ),
+            ),
+        );
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_UPDATE",
+                r#"{"id":"500000000000000996","channel_id":"200000000000000011","content":"after"}"#,
+            ),
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Messages(_, MessagesChange::Updated(_))]
+        ));
+        assert_eq!(
+            state
+                .message(channel, MessageId(500000000000000996))
+                .unwrap()
+                .content,
+            "after"
+        );
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_DELETE",
+                r#"{"id":"500000000000000996","channel_id":"200000000000000011"}"#,
+            ),
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Messages(_, MessagesChange::Removed(_))]
+        ));
+        assert!(state.messages(channel).unwrap().is_empty());
+
+        // Deleting it again changes nothing.
+        assert!(apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_DELETE",
+                r#"{"id":"500000000000000996","channel_id":"200000000000000011"}"#,
+            ),
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_bulk_delete_takes_out_what_it_holds() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+        for id in [
+            500000000000000990u64,
+            500000000000000991,
+            500000000000000992,
+        ] {
+            apply(
+                &mut state,
+                dispatch(
+                    "MESSAGE_CREATE",
+                    &message_json(id, 200000000000000011, 100000000000000002, ""),
+                ),
+            );
+        }
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_DELETE_BULK",
+                r#"{"channel_id":"200000000000000011","ids":["500000000000000990","500000000000000992"]}"#,
+            ),
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Messages(_, MessagesChange::Replaced)]
+        ));
+        assert_eq!(state.messages(channel).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn every_reaction_dispatch_reaches_the_chip() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+        apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000980,
+                    200000000000000011,
+                    100000000000000002,
+                    "",
+                ),
+            ),
+        );
+        let id = MessageId(500000000000000980);
+
+        let add = r#"{"channel_id":"200000000000000011","message_id":"500000000000000980","user_id":"100000000000000001","emoji":{"id":null,"name":"👍"}}"#;
+        let events = apply(&mut state, dispatch("MESSAGE_REACTION_ADD", add));
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Messages(_, MessagesChange::Reactions(_))]
+        ));
+        let message = state.message(channel, id).unwrap();
+        assert_eq!(message.reactions.len(), 1);
+        assert!(message.reactions[0].me, "this account's own reaction");
+
+        apply(&mut state, dispatch("MESSAGE_REACTION_REMOVE", add));
+        assert!(state.message(channel, id).unwrap().reactions.is_empty());
+
+        apply(&mut state, dispatch("MESSAGE_REACTION_ADD", add));
+        apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_REACTION_REMOVE_EMOJI",
+                r#"{"channel_id":"200000000000000011","message_id":"500000000000000980","emoji":{"id":null,"name":"👍"}}"#,
+            ),
+        );
+        assert!(state.message(channel, id).unwrap().reactions.is_empty());
+
+        apply(&mut state, dispatch("MESSAGE_REACTION_ADD", add));
+        apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_REACTION_REMOVE_ALL",
+                r#"{"channel_id":"200000000000000011","message_id":"500000000000000980"}"#,
+            ),
+        );
+        assert!(state.message(channel, id).unwrap().reactions.is_empty());
+    }
+
+    #[test]
+    fn typing_starts_once_and_stops_when_the_message_arrives() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+
+        let start = r#"{"channel_id":"200000000000000011","user_id":"100000000000000002"}"#;
+        let events = apply(&mut state, dispatch("TYPING_START", start));
+        assert!(matches!(events.as_slice(), [Event::Typing(c)] if *c == channel));
+        assert_eq!(state.typing(channel), vec![UserId(100000000000000002)]);
+
+        assert!(
+            apply(&mut state, dispatch("TYPING_START", start)).is_empty(),
+            "a renewed lease is a redraw a second for as long as anybody types"
+        );
+
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000970,
+                    200000000000000011,
+                    100000000000000002,
+                    "",
+                ),
+            ),
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::Typing(c) if *c == channel)));
+        assert!(state.typing(channel).is_empty());
+    }
+
+    #[test]
+    fn a_message_arriving_while_scrolled_up_is_counted_rather_than_appended() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+        state.messages_mut(channel).set_at_latest(false);
+
+        apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000960,
+                    200000000000000011,
+                    100000000000000002,
+                    "",
+                ),
+            ),
+        );
+        let store = state.messages(channel).unwrap();
+        assert!(store.is_empty());
+        assert_eq!(store.newer_hidden(), 1);
+    }
+
+    /// The roles READY hands over are what decides whether a role mention was
+    /// aimed at the reader.
+    #[test]
+    fn a_role_mention_is_only_a_mention_of_a_role_this_account_holds() {
+        let mut state = State::new();
+        apply(&mut state, ready_fixture());
+        let channel = ChannelId(200000000000000011);
+        opened(&mut state, channel);
+
+        let held = state.my_roles(GuildId(200000000000000001)).to_vec();
+        assert!(
+            !held.is_empty(),
+            "READY's merged_members did not reach the state"
+        );
+
+        let mine = format!(
+            r#","mention_roles":["{}"],"guild_id":"200000000000000001""#,
+            held[0]
+        );
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000950,
+                    200000000000000011,
+                    100000000000000002,
+                    &mine,
+                ),
+            ),
+        );
+        assert!(events.iter().any(|e| matches!(e, Event::Mention { .. })));
+
+        let theirs = r#","mention_roles":["999999999999999999"],"guild_id":"200000000000000001""#;
+        let events = apply(
+            &mut state,
+            dispatch(
+                "MESSAGE_CREATE",
+                &message_json(
+                    500000000000000951,
+                    200000000000000011,
+                    100000000000000002,
+                    theirs,
+                ),
+            ),
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::Mention { .. })),
+            "a role nobody here holds was treated as a mention"
+        );
     }
 
     #[test]

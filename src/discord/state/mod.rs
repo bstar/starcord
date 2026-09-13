@@ -12,18 +12,22 @@
 
 pub mod apply;
 pub mod channels;
+pub mod messages;
 pub mod read;
+pub mod typing;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::discord::model::{
-    Channel, ChannelKind, Presence, PresenceStatus, ReadState, Relationship, RelationshipKind,
-    Role, User, UserGuildSettings,
+    Channel, ChannelKind, Message, Presence, PresenceStatus, ReadState, Relationship,
+    RelationshipKind, Role, User, UserGuildSettings,
 };
 use crate::discord::snowflake::{ChannelId, GuildId, MessageId, RoleId, UserId};
 
+pub use messages::MessageStore;
 pub use read::Unread;
+pub use typing::Typing;
 
 /// One guild, flattened into what a sidebar needs.
 #[derive(Debug, Clone, Default)]
@@ -67,6 +71,16 @@ pub struct State {
     read_states: HashMap<ChannelId, ReadState>,
     /// Keyed by guild, with `None` for the entry that covers every DM.
     settings: HashMap<Option<GuildId>, Arc<UserGuildSettings>>,
+
+    /// One store per channel that has ever been opened. Channels are dropped
+    /// only on a logout: a closed one costs fifty messages, and keeping them is
+    /// what makes reopening draw a frame before the fetch returns.
+    messages: HashMap<ChannelId, MessageStore>,
+    typing: Typing,
+    /// This account's own roles, per guild, out of READY's `merged_members`.
+    /// The only thing they are read for is deciding whether a role mention was
+    /// addressed to the reader.
+    my_roles: HashMap<GuildId, Vec<RoleId>>,
 }
 
 impl State {
@@ -225,6 +239,87 @@ impl State {
         }
     }
 
+    // -- messages ----------------------------------------------------------
+
+    pub fn messages(&self, channel: ChannelId) -> Option<&MessageStore> {
+        self.messages.get(&channel)
+    }
+
+    /// The store for a channel, created if this is the first time it is asked
+    /// for. Only `apply` and `ops` reach this.
+    pub(crate) fn messages_mut(&mut self, channel: ChannelId) -> &mut MessageStore {
+        self.messages.entry(channel).or_default()
+    }
+
+    /// The newest `count` messages, which is what a channel opens on.
+    pub fn recent(&self, channel: ChannelId, count: usize) -> Vec<Arc<Message>> {
+        self.messages
+            .get(&channel)
+            .map(|store| store.latest(count))
+            .unwrap_or_default()
+    }
+
+    pub fn message(&self, channel: ChannelId, id: MessageId) -> Option<Arc<Message>> {
+        self.messages.get(&channel).and_then(|store| store.get(id))
+    }
+
+    /// Who is typing in a channel, right now.
+    pub fn typing(&self, channel: ChannelId) -> Vec<UserId> {
+        self.typing.users(channel, std::time::Instant::now())
+    }
+
+    pub(crate) fn typing_mut(&mut self) -> &mut Typing {
+        &mut self.typing
+    }
+
+    /// This account's roles in a guild.
+    pub fn my_roles(&self, guild: GuildId) -> &[RoleId] {
+        self.my_roles.get(&guild).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Whether a message is addressed to the reader.
+    ///
+    /// This is the whole of the notification rule, in one place, because it is
+    /// the sort of thing that is easy to write twice and get subtly different.
+    /// A direct mention, a mention of a role the reader holds, an `@everyone`,
+    /// or any message in a DM — minus the two suppressions and minus anything
+    /// the reader wrote themselves.
+    pub fn mentions_me(&self, message: &Message) -> bool {
+        let Some(me) = self.me.as_ref() else {
+            return false;
+        };
+        if message.author.id == me.id {
+            return false;
+        }
+        // The flag an author sets to send something without pinging anybody.
+        if message.notifications_suppressed() {
+            return false;
+        }
+
+        let channel = self.channels.get(&message.channel_id);
+        // Everything in a DM is addressed to the reader; that is what a DM is.
+        if channel.is_some_and(|c| c.kind.is_private()) {
+            return true;
+        }
+        if message.mentions_user(me.id) {
+            return true;
+        }
+
+        let guild = message
+            .guild_id
+            .or_else(|| channel.and_then(|c| c.guild_id));
+        let settings = self.settings.get(&guild);
+
+        if let Some(guild) = guild {
+            let suppressed = settings.is_some_and(|s| s.suppress_roles);
+            if !suppressed && message.mentions_any_role(self.my_roles(guild)) {
+                return true;
+            }
+        }
+
+        message.mention_everyone && !settings.is_some_and(|s| s.suppress_everyone)
+    }
+
     // -- mutation, used only by `apply` ------------------------------------
 
     pub(crate) fn set_me(&mut self, user: User) {
@@ -247,6 +342,12 @@ impl State {
 
     pub(crate) fn apply_presence(&mut self, presence: &Presence) {
         self.presences.insert(presence.user.id, presence.status);
+    }
+
+    /// Record this account's own memberships, which READY sends as one list
+    /// per guild in the same order as `guilds`.
+    pub(crate) fn set_my_roles(&mut self, guild: GuildId, roles: Vec<RoleId>) {
+        self.my_roles.insert(guild, roles);
     }
 
     pub(crate) fn set_relationship(&mut self, relationship: &Relationship) {
@@ -289,6 +390,8 @@ impl State {
     }
 
     pub(crate) fn remove_channel(&mut self, id: ChannelId) {
+        self.messages.remove(&id);
+        self.typing.forget(id);
         let guild = self.channels.remove(&id).and_then(|c| c.guild_id);
         match guild {
             Some(guild) => self.resort_guild(guild),
@@ -361,6 +464,7 @@ impl State {
         }
         self.channels.retain(|_, c| c.guild_id != Some(id));
         self.guild_order.retain(|g| *g != id);
+        self.my_roles.remove(&id);
     }
 
     pub(crate) fn resort_guild(&mut self, guild: GuildId) {
