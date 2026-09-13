@@ -168,9 +168,16 @@ impl Core {
                     .await;
 
             match found {
-                Some(build) if build != props.build_number() => {
-                    tracing::info!("client build number is {build}");
-                    http.set_props(Arc::new(props.with_build_number(build)));
+                Some(build) => {
+                    if build == props.build_number() {
+                        tracing::debug!("the build number in use is current");
+                    } else {
+                        tracing::info!("client build number is {build}");
+                        http.set_props(Arc::new(props.with_build_number(build)));
+                    }
+                    // Cached whether or not it changed. A number that matched
+                    // is still a number that was confirmed today, and not
+                    // writing it means rediscovering it on every start.
                     props::store_cache(
                         &paths,
                         &props::BuildCache {
@@ -180,7 +187,6 @@ impl Core {
                         },
                     );
                 }
-                Some(_) => tracing::debug!("the cached build number is current"),
                 None => tracing::debug!(
                     "could not discover a build number; using {}",
                     props.build_number()
