@@ -139,3 +139,36 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 - **`probe --gifs`, `--send-file`, `--react`, `--unreact` and `--search`**, so
   that every one of those paths can be run against a real account with no
   terminal UI in the way.
+- **A conversation you can read.** Messages by the same person within
+  `[chat] group_window_secs` are drawn as one block with a single name and
+  time; a reply, a system message or a change of author breaks it. Day
+  dividers, a `new messages` marker at the first thing you have not seen,
+  reactions as chips with the ones you added marked, link previews as a card,
+  a gifv as a chip that opens elsewhere, and a typing line at the bottom. The
+  list is anchored at the end rather than scrolled from the top, which is why
+  a message arriving does not move what you are reading and a page of history
+  arriving above does not either.
+- **One measurement per message, and everything built from it.** The renderer
+  produces the rows and the height together, a cache keyed by the message, the
+  width, the theme, the reactions, the revealed spoilers and the timestamp
+  setting sits in front of it, and the virtual list stacks exactly those
+  heights. The wrapping is done cluster by cluster rather than with ratatui's
+  paragraph wrapper, because the panel has to know where it put things: which
+  cell a link starts at so a click opens it, which run of cells covers a
+  spoiler so `space` uncovers one and only one, and which rows a picture was
+  given before its bytes have arrived.
+- **Writing, with the sentence kept.** A draft per channel, restored when you
+  come back to it and written to `session.toml` as you type. Reply and edit
+  modes with a banner saying which. `@`, `#` and `:` completion over the
+  channel's recent authors, the server's channels, and unicode and custom
+  emoji. `esc` undoes one thing at a time — the popup, then the mode, then
+  focus — and `up` on an empty box opens your last message for editing.
+- **`Ctrl+K`, the quick switcher**, over every server, channel, conversation
+  and friend, ranked by a fuzzy matcher rather than by a substring test so
+  that `gen` finds `#general` before it finds `#gardening-notes`.
+- **Draggable seams.** Both column borders and the one between the channel and
+  message lists; the numbers land in `[layout]` in `config.toml` a second after
+  the pointer stops, written a line at a time so the comments in the file
+  survive. The settings overlay writes the same way.
+- **`docs/keys-and-mouse.md`**, generated from the key table rather than
+  written beside it, with a test that fails when the two disagree.

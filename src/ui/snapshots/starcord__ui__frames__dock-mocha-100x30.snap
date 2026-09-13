@@ -4,20 +4,20 @@ expression: "render(&mut app, 100, 30)"
 ---
 ┌──────┐┌═ First Guild ═─────────┐┌═ chat ═────────────────────────────────┐┌═ members ═───────────┐
 │      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│@    1││# rules                 ││                                        ││                      │
-│FG   2││▾ TEXT CHANNELS         ││                                        ││                      │
-│SG   •││  # general (2)         ││                                        ││                      │
-│··    ││  # random              ││                                        ││                      │
-│      ││  ! announcements       ││                                        ││                      │
-│      ││▾ ARCHIVE               ││                                        ││                      │
-│      ││  # old-decisions       ││                                        ││                      │
+│@    1││# rules                 ││                                        ││REGULARS — 2          │
+│FG   2││▾ TEXT CHANNELS         ││                                        ││● Alex                │
+│SG   •││  # general (2)         ││                                        ││● Jo                  │
+│··    ││  # random              ││                                        ││ONLINE — 1            │
+│      ││  ! announcements       ││                                        ││● Sam                 │
+│      ││▾ ARCHIVE               ││                                        ││OFFLINE — 1           │
+│      ││  # old-decisions       ││                                        ││● Robin               │
 │      ││                        ││                                        ││                      │
 │      ││                        ││                                        ││                      │
 │      ││                        ││                                        ││                      │
 │      ││                        ││                                        ││                      │
 │      ││                        ││            choose a channel            ││                      │
 │      ││                        ││                                        ││                      │
-│      ││                        ││                                        ││  members not loaded  │
+│      ││                        ││                                        ││                      │
 │      │└────────────────────────┘│                                        ││                      │
 │      │┌═ messages ═────────────┐│                                        ││                      │
 │      ││         friends  close ││                                        ││                      │

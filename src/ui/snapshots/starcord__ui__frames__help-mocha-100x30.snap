@@ -17,7 +17,7 @@ expression: "render(&mut app, 100, 30)"
 │      ││ ║  shift+up/K    up ten               click a category     fold or unfold it   ║         │
 │      ││ ║  shift+down/J  down ten             composer                                 ║         │
 │      ││ ║  pgup          page up              click                place the caret     ║         │
-│      ││ ║  pgdn          page down            click a chip's ×     drop the attachment ║ loaded  │
+│      ││ ║  pgdn          page down            click a chip's ×     drop the attachment ║         │
 │      │└─║  home / gg     to the top           panels                                   ║         │
 │      │┌═║  end / G       to the bottom        drag a seam          resize two panels   ║         │
 │      ││ ║  enter         open                 click a header word  what the word says  ║         │

@@ -50,7 +50,10 @@ const EMBED_BAR: &str = "\u{2502}";
 /// What a hidden spoiler is covered with.
 const SPOILER_FILL: char = '\u{2592}';
 /// The corner and arrow of a reply preview.
-const REPLY_LEAD: &str = "\u{256d} \u{21a9} ";
+///
+/// Indented by one, because the first column of every row belongs to the
+/// cursor bar and a corner drawn under it is a corner nobody sees.
+const REPLY_LEAD: &str = " \u{256d} \u{21a9} ";
 /// What marks a video or a gifv that this terminal will not play.
 const PLAY: &str = " \u{25b6} ";
 
@@ -143,6 +146,14 @@ pub struct Names {
     pub users: HashMap<UserId, String>,
     pub channels: HashMap<ChannelId, String>,
     pub roles: HashMap<RoleId, String>,
+    /// Who said what, for the messages in the window, so a reply can preview
+    /// what it answers even when the payload did not carry it.
+    ///
+    /// Discord sends `referenced_message` on a reply it fetched and omits it
+    /// on the gateway echo of one this client just sent. Looking the target up
+    /// here is what stops a reply reading "the original is not loaded" one
+    /// second after it was written.
+    pub replies: HashMap<MessageId, (String, String)>,
 }
 
 impl Names {

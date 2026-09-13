@@ -4,23 +4,23 @@ expression: "render(&mut app, 100, 30)"
 ---
 ┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
 │      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│@    1││# rules                 ││↑ older messages                        ▐│                      │
-│FG   2││▾ TEXT CHANNELS         ││───── Saturday, 12 September 2026 ──────▐│                      │
-│SG   •││  # general (2)         ││▕ Alex  10:00                           ▐│                      │
-│··    ││  # random              ││▕ the first thing anybody said          ▐│                      │
-│      ││  ! announcements       ││  and the second, half a minute later   ▐│                      │
-│      ││▾ ARCHIVE               ││  and the third, which makes a group of ▐│                      │
-│      ││  # old-decisions       ││  three                                 ▐│                      │
+│@    1││# rules                 ││↑ older messages                        ▐│REGULARS — 2          │
+│FG   2││▾ TEXT CHANNELS         ││───── Saturday, 12 September 2026 ──────▐│● Alex                │
+│SG   •││  # general (2)         ││▕ Alex  10:00                           ▐│● Jo                  │
+│··    ││  # random              ││▕ the first thing anybody said          ▐│ONLINE — 1            │
+│      ││  ! announcements       ││  and the second, half a minute later   ▐│● Sam                 │
+│      ││▾ ARCHIVE               ││  and the third, which makes a group of ▐│OFFLINE — 1           │
+│      ││  # old-decisions       ││  three                                 ▐│● Robin               │
 │      ││                        ││  Robin joined                          ▐│                      │
 │      ││                        ││  Jordan  10:10                         ▐│                      │
 │      ││                        ││  here is the thing I meant             ▐│                      │
 │      ││                        ││  ▏ rust                                ▐│                      │
 │      ││                        ││  ▏ fn main() {                         ▐│                      │
 │      ││                        ││  ▏     println!("hello");              ▐│                      │
-│      ││                        ││  ▏ }                                   ││  members not loaded  │
+│      ││                        ││  ▏ }                                   ││                      │
 │      │└────────────────────────┘│────── Sunday, 13 September 2026 ───────││                      │
 │      │┌═ messages ═────────────┐│───────────── new messages ─────────────││                      │
-│      ││         friends  close ││╭ ↩ @Alex: the first thing anybody said ││                      │
+│      ││         friends  close ││ ╭ ↩ @Alex: the first thing anybody sa… ││                      │
 │      ││○ Wren of the Long Displ││  Alex  09:00                           ││                      │
 │      ││○ Alex, Jordan [3]      ││  yes, that one                         ││                      │
 │      ││● Alex (1)              ││  [👍  3] [:pepe: 1]                     ││                      │

@@ -485,11 +485,15 @@ impl App {
                 self.refresh_now();
                 self.chat.prepended(count);
             }
-            MessagesChange::Updated(id)
-            | MessagesChange::Removed(id)
-            | MessagesChange::Reactions(id) => {
+            MessagesChange::Removed(id) | MessagesChange::Reactions(id) => {
                 self.chat.cache.forget(id);
             }
+            // An edit can change more than the message it happened to: a
+            // reply's preview is a copy of what it answers. Forgetting the
+            // whole cache is a few hundred measurements on a key nobody
+            // presses often, and the alternative is a reverse index from
+            // every message to everything that quotes it.
+            MessagesChange::Updated(_) => self.chat.cache.clear(),
             MessagesChange::Appended(_)
             | MessagesChange::Replaced
             | MessagesChange::Pending(_)
@@ -1042,6 +1046,15 @@ impl App {
                 }
                 composer::Outcome::EditLast => {
                     self.edit_last();
+                    return;
+                }
+                composer::Outcome::Wants(what) => {
+                    self.handle(match what {
+                        composer::Action::EmojiPicker => Action::EmojiPicker,
+                        composer::Action::GifPicker => Action::GifPicker,
+                        composer::Action::Attach => Action::Attach,
+                        composer::Action::PasteImage => Action::PasteImage,
+                    });
                     return;
                 }
                 composer::Outcome::Ignored => {}

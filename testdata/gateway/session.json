@@ -380,6 +380,96 @@
       }
     },
     {
+      "at_ms": 400,
+      "dispatch": "GUILD_MEMBER_LIST_UPDATE",
+      "data": {
+        "guild_id": "200000000000000001",
+        "id": "everyone",
+        "member_count": 4,
+        "online_count": 2,
+        "groups": [
+          { "id": "200000000000000002", "count": 2 },
+          { "id": "online", "count": 1 },
+          { "id": "offline", "count": 1 }
+        ],
+        "ops": [
+          {
+            "op": "SYNC",
+            "range": [0, 5],
+            "items": [
+              { "group": { "id": "200000000000000002", "count": 2 } },
+              {
+                "member": {
+                  "user": {
+                    "id": "100000000000000002",
+                    "username": "alex",
+                    "global_name": "Alex",
+                    "discriminator": "0"
+                  },
+                  "nick": null,
+                  "roles": ["200000000000000002"],
+                  "presence": {
+                    "user": { "id": "100000000000000002" },
+                    "status": "online"
+                  }
+                }
+              },
+              {
+                "member": {
+                  "user": {
+                    "id": "100000000000000003",
+                    "username": "jordan",
+                    "global_name": "Jordan",
+                    "discriminator": "0"
+                  },
+                  "nick": "Jo",
+                  "roles": ["200000000000000002"],
+                  "presence": {
+                    "user": { "id": "100000000000000003" },
+                    "status": "idle"
+                  }
+                }
+              },
+              { "group": { "id": "online", "count": 1 } },
+              {
+                "member": {
+                  "user": {
+                    "id": "100000000000000001",
+                    "username": "sam",
+                    "global_name": "Sam",
+                    "discriminator": "0"
+                  },
+                  "nick": null,
+                  "roles": [],
+                  "presence": {
+                    "user": { "id": "100000000000000001" },
+                    "status": "online"
+                  }
+                }
+              },
+              { "group": { "id": "offline", "count": 1 } },
+              {
+                "member": {
+                  "user": {
+                    "id": "100000000000000004",
+                    "username": "robin",
+                    "global_name": "Robin",
+                    "discriminator": "0"
+                  },
+                  "nick": null,
+                  "roles": [],
+                  "presence": {
+                    "user": { "id": "100000000000000004" },
+                    "status": "offline"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "at_ms": 8000,
       "dispatch": "TYPING_START",
       "data": {

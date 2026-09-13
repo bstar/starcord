@@ -155,10 +155,17 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, confirm: &Confirm) {
         Style::default().fg(rgb(t.fg)),
     );
     if inner.height > 2 {
+        // What the consequence actually is. A quit that says "this cannot be
+        // undone" over a draft that is about to be written to the session file
+        // is a warning about something that is not true.
+        let consequence = match confirm.on_yes {
+            Pending::DeleteMessage { .. } => "this cannot be undone",
+            Pending::Quit => "what is written is kept for next time",
+        };
         buf.set_string(
             inner.x,
             inner.y + 2,
-            fit("this cannot be undone", inner.width),
+            fit(consequence, inner.width),
             Style::default().fg(rgb(t.dim)),
         );
     }

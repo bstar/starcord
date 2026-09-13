@@ -147,6 +147,20 @@ pub enum Outcome {
     EditLast,
     /// The text changed, so the draft and the typing indicator both move.
     Changed,
+    /// One of the things the composer offers and does not own yet: the emoji
+    /// picker, the GIF picker, attaching a file, pasting a picture. Named here
+    /// rather than left to fall through the key table, so that the panel and
+    /// the line `keymap::composer_eats` draws say the same thing.
+    Wants(Action),
+}
+
+/// What the composer can ask the application for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    EmojiPicker,
+    GifPicker,
+    Attach,
+    PasteImage,
 }
 
 pub struct Composer {
@@ -309,7 +323,12 @@ impl Composer {
         (text + banner + popup + 3).clamp(MIN_ROWS, cfg.max_rows.max(MIN_ROWS))
     }
 
-    /// One key, while the composer has focus.
+    /// One key, of the ones the key table hands to the composer.
+    ///
+    /// Which those are is [`keymap::composer_eats`](crate::ui::keymap::composer_eats)
+    /// and the dispatcher asks it before calling this, so `esc` and `tab` never
+    /// arrive here: they are the ways out, and the way out of a text field
+    /// cannot be a key the text field might want.
     pub fn handle(&mut self, key: KeyEvent, cfg: &Compose, sources: &Sources) -> Outcome {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
@@ -324,17 +343,13 @@ impl Composer {
                     self.step_complete(delta);
                     return Outcome::Taken;
                 }
-                KeyCode::Tab => {
-                    self.accept_complete();
-                    return Outcome::Changed;
-                }
+                // `enter` accepts, and only `enter`. `tab` is one of the two
+                // ways out of the composer and the key table never lets it
+                // this far, which is the rule that keeps a text field from
+                // owning the key somebody uses to leave it.
                 KeyCode::Enter if !shift && !alt => {
                     self.accept_complete();
                     return Outcome::Changed;
-                }
-                KeyCode::Esc => {
-                    self.complete = None;
-                    return Outcome::Taken;
                 }
                 _ => {}
             }
@@ -377,6 +392,22 @@ impl Composer {
             self.input.clear();
             self.complete = None;
             return Outcome::Changed;
+        }
+
+        // The four the composer offers and the pickers milestone will fill in.
+        // `ctrl+e` is the emoji picker rather than end-of-line: the key table
+        // says so, the help prints it, and a panel that quietly meant
+        // something else would make the table a lie.
+        if ctrl {
+            match key.code {
+                KeyCode::Char('e') => return Outcome::Wants(Action::EmojiPicker),
+                KeyCode::Char('g') => return Outcome::Wants(Action::GifPicker),
+                KeyCode::Char('v') => return Outcome::Wants(Action::PasteImage),
+                _ => {}
+            }
+        }
+        if alt && key.code == KeyCode::Char('a') {
+            return Outcome::Wants(Action::Attach);
         }
 
         match self.input.handle(key) {
@@ -918,7 +949,7 @@ mod tests {
 
         typed(&mut c, "@ale", &s);
         assert_eq!(c.complete.as_ref().map(|a| a.kind), Some(Completing::User));
-        c.handle(code(KeyCode::Tab), &cfg(), &s);
+        c.handle(code(KeyCode::Enter), &cfg(), &s);
         assert_eq!(c.text(), "<@2> ");
 
         c.input.clear();
@@ -927,13 +958,13 @@ mod tests {
             c.complete.as_ref().map(|a| a.kind),
             Some(Completing::Channel)
         );
-        c.handle(code(KeyCode::Tab), &cfg(), &s);
+        c.handle(code(KeyCode::Enter), &cfg(), &s);
         assert_eq!(c.text(), "<#11> ");
 
         c.input.clear();
         typed(&mut c, ":pep", &s);
         assert_eq!(c.complete.as_ref().map(|a| a.kind), Some(Completing::Emoji));
-        c.handle(code(KeyCode::Tab), &cfg(), &s);
+        c.handle(code(KeyCode::Enter), &cfg(), &s);
         assert_eq!(c.text(), "<:pepe:99> ");
     }
 
@@ -952,7 +983,7 @@ mod tests {
             "{:?}",
             complete.items
         );
-        c.handle(code(KeyCode::Tab), &cfg(), &Sources::default());
+        c.handle(code(KeyCode::Enter), &cfg(), &Sources::default());
         assert!(
             c.text().starts_with('\u{1f914}'),
             "the character, not the code: {:?}",
@@ -1031,5 +1062,66 @@ mod tests {
         c.open(ChannelId(1));
         c.paste(&"y".repeat(MAX_CHARS + 100), &Sources::default());
         assert_eq!(c.text().chars().count(), MAX_CHARS);
+    }
+
+    /// Every key the table hands to the composer is one the composer uses.
+    ///
+    /// The two are written apart on purpose -- the key table compiles with no
+    /// reference to the panels -- and the cost of that is that they could
+    /// disagree. A key eaten here and handled by nobody is worse than an
+    /// unbound key: it does nothing, it cannot be rebound to anything that
+    /// would, and there is no way to tell from the outside which it is. The
+    /// other direction is asserted in `app.rs`, where the dispatch order that
+    /// makes it true actually lives.
+    #[test]
+    fn the_composer_takes_exactly_what_the_key_table_gives_it() {
+        use crate::ui::keymap::composer_eats;
+
+        let mut keys: Vec<KeyEvent> = Vec::new();
+        for c in ('a'..='z')
+            .chain('A'..='Z')
+            .chain('0'..='9')
+            .chain([' ', '.', ':', '@', '#'])
+        {
+            keys.push(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+            keys.push(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL));
+            keys.push(KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT));
+        }
+        for code in [
+            KeyCode::Enter,
+            KeyCode::Backspace,
+            KeyCode::Delete,
+            KeyCode::Left,
+            KeyCode::Right,
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Home,
+            KeyCode::End,
+            KeyCode::Tab,
+            KeyCode::Esc,
+            KeyCode::PageUp,
+            KeyCode::F(1),
+        ] {
+            for mods in [KeyModifiers::NONE, KeyModifiers::CONTROL, KeyModifiers::ALT] {
+                keys.push(KeyEvent::new(code, mods));
+            }
+        }
+
+        for key in keys {
+            // The dispatcher only ever calls `handle` for the keys the table
+            // hands over, so those are the ones this is about.
+            if !composer_eats(key) {
+                continue;
+            }
+            let mut c = Composer::new();
+            c.open(ChannelId(1));
+            c.input.set_text("some words");
+            assert_ne!(
+                c.handle(key, &cfg(), &Sources::default()),
+                Outcome::Ignored,
+                "{key:?} is given to the composer and the composer does nothing \
+                 with it, so it is a key that is swallowed and lost"
+            );
+        }
     }
 }

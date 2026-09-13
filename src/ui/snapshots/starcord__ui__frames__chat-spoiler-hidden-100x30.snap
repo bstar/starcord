@@ -4,20 +4,20 @@ expression: hidden.clone()
 ---
 ┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
 │      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│@    1││# rules                 ││───────────── new messages ─────────────││                      │
-│FG   2││▾ TEXT CHANNELS         ││╭ ↩ @Alex: the first thing anybody said ││                      │
-│SG   •││  # general (2)         ││  Alex  09:00                           ││                      │
-│··    ││  # random              ││  yes, that one                         ││                      │
-│      ││  ! announcements       ││  [👍  3] [:pepe: 1]                     ││                      │
-│      ││▾ ARCHIVE               ││▕ Jordan  09:05                         ││                      │
-│      ││  # old-decisions       ││▕ @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││                      │
+│@    1││# rules                 ││───────────── new messages ─────────────││REGULARS — 2          │
+│FG   2││▾ TEXT CHANNELS         ││ ╭ ↩ @Alex: the first thing anybody sa… ││● Alex                │
+│SG   •││  # general (2)         ││  Alex  09:00                           ││● Jo                  │
+│··    ││  # random              ││  yes, that one                         ││ONLINE — 1            │
+│      ││  ! announcements       ││  [👍  3] [:pepe: 1]                     ││● Sam                 │
+│      ││▾ ARCHIVE               ││▕ Jordan  09:05                         ││OFFLINE — 1           │
+│      ││  # old-decisions       ││▕ @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││● Robin               │
 │      ││                        ││▕ want it                               ││                      │
 │      ││                        ││  Alex  09:10                           ││                      │
 │      ││                        ││  the picture I took                    ▐│                      │
 │      ││                        ││  [image 1024x768 harbour.png]          ▐│                      │
 │      ││                        ││  Jordan  09:15                         ▐│                      │
 │      ││                        ││  https://example.invalid/page          ▐│                      │
-│      ││                        ││  │ A page title                        ▐│  members not loaded  │
+│      ││                        ││  │ A page title                        ▐│                      │
 │      │└────────────────────────┘│  │ Two sentences of description, as a  ▐│                      │
 │      │┌═ messages ═────────────┐│  │ link unfurl carries. The second is  ▐│                      │
 │      ││         friends  close ││  │ there so the wrapping has something ▐│                      │

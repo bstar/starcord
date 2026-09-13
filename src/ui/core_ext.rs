@@ -29,6 +29,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::discord::model::member_list::ListMember;
 use crate::discord::model::{PresenceStatus, Role, User};
 use crate::discord::snowflake::{ChannelId, EmojiId, GuildId, RoleId, UserId};
 use crate::discord::state::members::MemberRow;
@@ -98,34 +99,70 @@ pub fn avatar_hash(state: &State, id: UserId) -> Option<Arc<str>> {
     state.user(id).and_then(|u| u.avatar.clone()).map(Arc::from)
 }
 
-/// The member list for a guild, which the core does not keep yet.
+/// The member list for a guild, as rows the panel draws.
 ///
-/// `State` has no `member_list(guild)`: the lazy subscription that fills one
-/// — op 37, then `GUILD_MEMBER_LIST_UPDATE` with SYNC, INSERT, UPDATE, DELETE
-/// and INVALIDATE against a range — is core work in the milestone beside this
-/// one. `None` here is "the server has not told us", which the panel draws as
-/// *members not loaded*; an empty `Vec` would be "this server has nobody in
-/// it", and those are not the same statement.
+/// `None` is "the server has not told us", which the panel draws as *members
+/// not loaded*; an empty `Vec` would be "this server has nobody in it", and
+/// those are not the same statement. The subscription that fills the list is
+/// the core's; what is here is the turn from its shape into the panel's.
 ///
-/// What the core should grow:
-/// `State::member_list(&self, guild: GuildId) -> Option<&MemberList>`, with
-/// `MemberList` carrying the groups Discord sent, in Discord's order.
-pub fn member_rows(
-    _state: &State,
-    _guild: GuildId,
-) -> Option<Vec<crate::ui::panels::members::Row>> {
-    None
+/// Group headings arrive as a role id or the words `online` and `offline`, so
+/// the role name is resolved against the guild — which is the one thing the
+/// payload cannot carry and the panel should not have to look up.
+pub fn member_rows(state: &State, guild: GuildId) -> Option<Vec<members::Row>> {
+    let list = state.member_list(guild)?;
+    let roles = state.guild(guild).map(|g| &g.roles);
+    Some(
+        list.rows()
+            .iter()
+            .map(|row| match row {
+                MemberRow::Group(group) => members::Row::Group {
+                    label: group
+                        .role()
+                        .and_then(|id| roles.and_then(|r| r.get(&id)))
+                        .map(|role| role.name.clone())
+                        .unwrap_or_else(|| group.label().to_string()),
+                    count: group.count as usize,
+                },
+                MemberRow::Member(member) => members::Row::Member {
+                    name: member.display_name().to_string(),
+                    presence: member
+                        .presence
+                        .as_ref()
+                        .map(|p| p.status)
+                        .unwrap_or(PresenceStatus::Offline),
+                    colour: top_colour(member, roles),
+                    bot: member.user.bot,
+                },
+            })
+            .collect(),
+    )
 }
 
-/// Custom emoji this account can write, by name.
+/// The colour of somebody's highest coloured role, packed `0xRRGGBB`.
 ///
-/// `State` keeps guilds flattened to what a sidebar needs and drops the
-/// `emojis` array READY carries with each one, so there is nothing to read.
-/// The composer's `:` popup therefore offers unicode emoji and, once the core
-/// grows `State::custom_emoji(&self) -> Vec<Arc<CustomEmoji>>`, whatever this
-/// returns instead.
-pub fn custom_emoji(_state: &State) -> Vec<(String, crate::discord::snowflake::EmojiId, bool)> {
-    Vec::new()
+/// Zero means "no colour", not black: Discord uses it for a role that has not
+/// been given one, and a member whose roles are all uncoloured is drawn in the
+/// ordinary text colour.
+fn top_colour(member: &ListMember, roles: Option<&HashMap<RoleId, Arc<Role>>>) -> u32 {
+    let Some(roles) = roles else { return 0 };
+    member
+        .roles
+        .iter()
+        .filter_map(|id| roles.get(id))
+        .filter(|role| role.color != 0)
+        .max_by_key(|role| role.position)
+        .map(|role| role.color)
+        .unwrap_or(0)
+}
+
+/// Custom emoji this account can write, by name, for the composer's `:` popup.
+pub fn custom_emoji(state: &State) -> Vec<(String, EmojiId, bool)> {
+    state
+        .custom_emoji()
+        .into_iter()
+        .filter_map(|emoji| Some((emoji.name.clone()?, emoji.id?, emoji.animated)))
+        .collect()
 }
 
 /// The channel that was open when the program last closed.

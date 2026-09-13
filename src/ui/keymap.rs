@@ -896,16 +896,18 @@ pub fn composer_eats(k: KeyEvent) -> bool {
         return matches!(k.code, KeyCode::Enter | KeyCode::Char('a'));
     }
     if ctrl {
-        // Line editing, the pickers, the clipboard. `ctrl+c` is deliberately
-        // absent: quitting works from inside the composer as it does from
-        // everywhere else.
+        // Line editing, the pickers, the clipboard, and nothing else.
+        //
+        // The list is exactly what the composer acts on, which is a test next
+        // door rather than an intention: a key eaten here and handled by
+        // nobody is a key that does nothing and cannot be rebound to anything
+        // that would. `ctrl+c` is deliberately absent -- quitting works from
+        // inside the composer as it does from everywhere else -- and so are
+        // the readline motions the text field has no implementation for.
         return matches!(
             k.code,
             KeyCode::Char('a')
-                | KeyCode::Char('b')
-                | KeyCode::Char('d')
                 | KeyCode::Char('e')
-                | KeyCode::Char('f')
                 | KeyCode::Char('g')
                 | KeyCode::Char('k')
                 | KeyCode::Char('u')
@@ -926,6 +928,69 @@ pub fn composer_eats(k: KeyEvent) -> bool {
             | KeyCode::End
             | KeyCode::Enter
     )
+}
+
+/// What `docs/keys-and-mouse.md` says before the tables.
+const HEADER: &str = "\
+# Keys and the mouse
+
+Every key STAR/CORD knows, in the order the `?` overlay prints them. This file
+is generated from the table in `src/ui/keymap.rs`, and a test fails if the two
+disagree.
+
+A key is offered to the focused panel first and to the global table second, so
+a binding under a panel heading works while that panel has focus and the global
+ones work from everywhere. The composer is the exception: while it has focus it
+takes raw keys, because `d` in a sentence is a letter. Every `alt+\u{2026}`
+falls through it, which is what keeps the panel keys working mid-word, and no
+plain letter is needed to leave it, so nothing you type can strand you.
+";
+
+/// The key table as `docs/keys-and-mouse.md`.
+///
+/// Generated rather than written, because a document that repeats a table is a
+/// document that drifts from it. The test below compares this to the committed
+/// file; `STARCORD_UPDATE_DOCS=1 cargo test` rewrites it.
+pub fn document() -> String {
+    let mut out = String::new();
+    out.push_str(HEADER);
+
+    let mut group = "";
+    for b in BINDINGS {
+        if b.group != group {
+            group = b.group;
+            let scope = match scope_of(group) {
+                Scope::Global => "everywhere".to_string(),
+                Scope::Modules(list) => {
+                    let names: Vec<&str> = list.iter().map(|m| module_name(*m)).collect();
+                    format!("in {}", names.join(", "))
+                }
+            };
+            out.push_str(&format!("\n## {group}\n\n_{scope}_\n\n"));
+            out.push_str("| key | what it does |\n|---|---|\n");
+        }
+        out.push_str(&format!("| `{}` | {} |\n", b.keys, b.label));
+    }
+
+    out.push_str("\n## the mouse\n\n| where | gesture | what it does |\n|---|---|---|\n");
+    for m in MOUSE {
+        out.push_str(&format!("| {} | {} | {} |\n", m.group, m.gesture, m.label));
+    }
+    out
+}
+
+/// What a module is called in prose.
+fn module_name(m: Module) -> &'static str {
+    match m {
+        Module::Guilds => "the server rail",
+        Module::Channels => "the channel list",
+        Module::Dms => "the message list",
+        Module::Chat => "the conversation",
+        Module::Composer => "the composer",
+        Module::Members => "the member list",
+        Module::Media => "the media viewer",
+        Module::Picker => "a picker",
+    }
 }
 
 #[cfg(test)]
@@ -1355,6 +1420,67 @@ mod tests {
                 let got = module(m, k).or_else(|| resolve(k));
                 assert_eq!(got, Some(want), "{m:?} + {k:?}");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod doc_tests {
+    use super::*;
+
+    fn path() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/keys-and-mouse.md")
+    }
+
+    /// The document and the table say the same thing.
+    ///
+    /// The failure this prevents is the ordinary one: a key is changed, the
+    /// program is right, and the documentation quietly describes the version
+    /// before it. Run with `STARCORD_UPDATE_DOCS=1` to rewrite the file.
+    #[test]
+    fn the_document_is_the_table() {
+        let want = document();
+        let path = path();
+        if std::env::var_os("STARCORD_UPDATE_DOCS").is_some() {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir).expect("the docs directory");
+            }
+            std::fs::write(&path, &want).expect("writing the document");
+            return;
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_eq!(
+            have, want,
+            "docs/keys-and-mouse.md is out of step with the key table; \
+             run STARCORD_UPDATE_DOCS=1 cargo test to rewrite it"
+        );
+    }
+
+    /// And the weaker property the stronger one implies, stated on its own so
+    /// that a change to the document's shape does not lose it: every key and
+    /// every gesture appears somewhere in the file.
+    #[test]
+    fn every_key_and_gesture_is_in_the_document() {
+        let text = std::fs::read_to_string(path()).unwrap_or_default();
+        for b in BINDINGS {
+            assert!(text.contains(b.keys), "{:?} is not in the document", b.keys);
+            assert!(
+                text.contains(b.label),
+                "{:?} is not in the document",
+                b.label
+            );
+        }
+        for m in MOUSE {
+            assert!(
+                text.contains(m.gesture),
+                "{:?} is not in the document",
+                m.gesture
+            );
+            assert!(
+                text.contains(m.label),
+                "{:?} is not in the document",
+                m.label
+            );
         }
     }
 }
