@@ -170,10 +170,8 @@ pub struct Composer {
     /// What was typed and not sent, per channel.
     drafts: HashMap<ChannelId, String>,
     channel: Option<ChannelId>,
-    /// Rows the last draw needed, so the dock can be told before it solves.
-    rows: u16,
-    /// A note where the attachment and picker words would act, until the
-    /// milestone that gives them something to do.
+    /// A line under the field: what the attach and picker words would do, or
+    /// why a send did not go. Cleared by whatever set it.
     pub note: Option<String>,
 }
 
@@ -191,7 +189,6 @@ impl Composer {
             complete: None,
             drafts: HashMap::new(),
             channel: None,
-            rows: MIN_ROWS,
             note: None,
         }
     }
