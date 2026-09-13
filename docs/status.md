@@ -40,7 +40,7 @@ partly built.
 | --- | --- |
 | Pictures in the chat | avatars, inline attachments and custom emoji. The pipeline that decodes them is done; nothing draws them yet |
 | The QR login screen | the handshake works headlessly; drawing the code in the window is next |
-| Animated GIFs, the pickers, attachments from the clipboard, the media viewer | |
+| Animated GIFs, the emoji and GIF pickers, attaching a file, pasting a picture, the media viewer | every one of them works in the core already |
 | Search, threads, unread hopping and desktop notifications in the window | the core does all four; none of them has a key yet |
 
 ## What is still only read, not seen
