@@ -6,6 +6,7 @@ starcord probe [--token-from-stdin] [--no-store] [--offline] [--timeout SECONDS]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
                [--send TEXT [--reply-to ID [--ping]]]
+               [--media URL]
 ```
 
 `--verbose` raises the log level to debug. It goes to the log file at
@@ -72,6 +73,7 @@ want when checking somebody else's report against your own account.
 | `--follow` | Stay connected after READY and keep printing until the timeout. Use it to watch a reconnect: pull the network cable and see the backoff. With `--channel` it tails that channel. |
 | `--offline` | Do not look up the current web-client build number; use the pinned one. Also what the tests use, because a test suite has no business making a request to a CDN. |
 | `--legacy-lazy-request` | Send op 14 rather than op 37 for member-list subscriptions. Same body either way. |
+| `--media URL` | Fetch and decode one picture and exit. See below. |
 
 ## Tailing a channel
 
@@ -142,6 +144,39 @@ rejected, when READY did not arrive within the timeout, or when the core could
 not start. The last status the connection reached is included in the timeout
 message, so "no READY within 45s; the last status was reconnecting" is a
 different problem from "…was identifying".
+
+## Fetching one picture
+
+```sh
+starcord probe --media https://cdn.discordapp.com/embed/avatars/0.png
+```
+
+```
+url    https://cdn.discordapp.com/embed/avatars/0.png
+cache  ~/.local/starcord/cache/media/79cb793022796e0cf825bed15fe489f5.*
+       not fetched yet
+
+1268 bytes in 0.16s
+a still picture, 256x256
+```
+
+No account, no gateway, no keyring: media comes off a CDN and never carries a
+token, which is exactly why it is worth being able to check on its own. The URL
+goes through the same fetch, the same cache and the same decoder the client
+uses, so running it twice on one URL is also how the cache is checked — the
+second run says `already there` and takes no time at all. The `*` in the cache
+line is the extension, which is decided by what the server says the bytes are.
+
+An animation reports its frames:
+
+```
+an animation, 400x400, 44 frames over 3.96s, looping
+frame delays 90ms to 90ms
+```
+
+Anything the decoder had to do differently is printed after the answer rather
+than hidden — an animation past the three-hundred-frame cap comes back as its
+first frame and says so.
 
 ### Recording fixtures
 

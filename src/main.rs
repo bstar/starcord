@@ -41,6 +41,13 @@ fn main() -> Result<()> {
 }
 
 fn run_probe(options: cli::Probe) -> Result<()> {
+    // Media needs no account: it comes off a CDN and carries no token. Checked
+    // before anything else so that `probe --media` neither reads the keyring
+    // nor opens a socket to the gateway.
+    if let Some(url) = options.media.as_deref() {
+        return probe_media(url);
+    }
+
     let record_gateway = std::env::var_os(RECORD_ENV).map(std::path::PathBuf::from);
     if let Some(dir) = record_gateway.as_deref() {
         eprintln!(
@@ -153,6 +160,115 @@ fn run_probe(options: cli::Probe) -> Result<()> {
         println!("{dropped} events were dropped on the way to this report");
     }
     Ok(())
+}
+
+/// Fetch one picture and say what came back.
+///
+/// Standalone: its own runtime, no gateway, no token. The cache is the real
+/// one, so running this twice on the same URL is also how the cache is checked.
+fn probe_media(url: &str) -> Result<()> {
+    use discord::media::fetch::{fetch_one, Context};
+    use discord::media::{cache::Cache, MediaConfig, MediaKey, MediaRequest};
+    use std::sync::Arc;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("starting a runtime for the fetch")?;
+
+    runtime.block_on(async move {
+        let props = Arc::new(discord::props::ClientProps::new(
+            "en-US",
+            discord::props::PINNED_BUILD_NUMBER,
+        ));
+        let http = Arc::new(discord::http::Http::new(props).context("building an http client")?);
+        let cache = Arc::new(Cache::new(PATHS.media_cache_dir()?));
+        let (tx, events) = crossbeam_channel::bounded(16);
+
+        // An embed key rather than an attachment: nothing here has a message to
+        // refresh a signature against, and the embed cap is the one that
+        // applies to a URL somebody pasted.
+        let key = MediaKey::EmbedImage {
+            url: url.to_string(),
+        };
+        let parsed = key.url().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let cached = cache.find(&parsed).is_some();
+
+        println!("url    {parsed}");
+        println!("cache  {}", cache.path(&parsed, "*").display());
+        println!(
+            "       {}",
+            if cached {
+                "already there"
+            } else {
+                "not fetched yet"
+            }
+        );
+
+        let context = Context {
+            http,
+            cache: Arc::clone(&cache),
+            config: Arc::new(MediaConfig::default()),
+            events: discord::handle::EventSink::detached(tx),
+        };
+
+        let started = Instant::now();
+        let decoded = fetch_one(&context, MediaRequest::visible(key, 0, 0, 1))
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let elapsed = started.elapsed();
+
+        let bytes = cache
+            .find(&parsed)
+            .and_then(|path| std::fs::metadata(path).ok())
+            .map(|meta| meta.len());
+
+        println!();
+        match bytes {
+            Some(bytes) => println!("{bytes} bytes in {:.2}s", elapsed.as_secs_f32()),
+            None => println!("fetched in {:.2}s, not cached", elapsed.as_secs_f32()),
+        }
+
+        match &*decoded {
+            discord::handle::Decoded::Bytes(raw) => println!("{} bytes, not decoded", raw.len()),
+            discord::handle::Decoded::Still(image) => {
+                println!("a still picture, {}x{}", image.width(), image.height())
+            }
+            discord::handle::Decoded::Animated {
+                frames,
+                delays,
+                looped,
+            } => {
+                let (w, h) = frames
+                    .first()
+                    .map(|f| (f.width(), f.height()))
+                    .unwrap_or((0, 0));
+                let total: std::time::Duration = delays.iter().sum();
+                println!(
+                    "an animation, {w}x{h}, {} frames over {:.2}s{}",
+                    frames.len(),
+                    total.as_secs_f32(),
+                    if *looped { ", looping" } else { "" }
+                );
+                let shortest = delays.iter().min().copied().unwrap_or_default();
+                let longest = delays.iter().max().copied().unwrap_or_default();
+                println!(
+                    "frame delays {}ms to {}ms",
+                    shortest.as_millis(),
+                    longest.as_millis()
+                );
+            }
+        }
+
+        // Anything the decoder wanted to say — an animation truncated, most
+        // likely — arrives as a note rather than as part of the answer.
+        for event in events.try_iter() {
+            if let Event::Note(note) = event {
+                println!("{:?}: {}", note.level, note.text);
+            }
+        }
+        Ok(())
+    })
 }
 
 /// Open a channel, wait for its history, and print it.

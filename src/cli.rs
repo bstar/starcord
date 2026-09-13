@@ -82,6 +82,15 @@ pub struct Probe {
     #[arg(long, requires = "reply_to")]
     pub ping: bool,
 
+    /// Fetch one picture, decode it, and print what it is.
+    ///
+    /// No account and no gateway: media comes off a CDN and carries no token,
+    /// which is exactly why it is worth being able to check on its own. The URL
+    /// is fetched under the embed cap, cached like any other picture, and the
+    /// result is reported as a size, a format and a frame count.
+    #[arg(long, value_name = "URL")]
+    pub media: Option<String>,
+
     /// Subscribe to member lists with op 14 rather than op 37.
     ///
     /// Which opcode a user-account session is expected to send is one of the
