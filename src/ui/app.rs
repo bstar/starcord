@@ -128,6 +128,9 @@ pub struct App {
     cfg: Config,
     cfg_path: PathBuf,
     session_path: Option<PathBuf>,
+    /// What the core read out of `session.toml` before connecting. Preferred
+    /// over the file itself, which is only read when no event arrived.
+    session_channel: Option<ChannelId>,
     pub look: Look,
     pub layout: LayoutState,
     pub nav: Nav,
@@ -184,6 +187,7 @@ impl App {
             cfg,
             cfg_path,
             session_path,
+            session_channel: None,
         }
     }
 
@@ -300,13 +304,16 @@ impl App {
                     }
                 }
                 AuthEvent::QrReady {
-                    url, expires_in, ..
+                    url,
+                    expires_in,
+                    matrix,
+                    ..
                 } => {
                     if let Some(screen) = &mut self.login {
                         screen.stage = Stage::Qr {
                             url,
                             expires: Instant::now() + expires_in,
-                            matrix: Vec::new(),
+                            matrix,
                         };
                     }
                 }
@@ -314,6 +321,9 @@ impl App {
                     self.note(format!("scanned by {username}"));
                 }
             },
+            Event::SessionLoaded(session) => {
+                self.session_channel = session.last_channel;
+            }
             Event::Ready => {
                 self.login = None;
                 self.view.stale = true;
@@ -486,11 +496,17 @@ impl App {
     /// that opens on nothing, which is the state it opens on for a new
     /// account anyway.
     fn restore_session(&mut self) {
-        let Some(path) = self.session_path.clone() else {
-            return;
-        };
-        let Some(channel) = core_ext::last_channel(&path) else {
-            return;
+        let channel = match self.session_channel {
+            Some(channel) => channel,
+            None => {
+                let Some(path) = self.session_path.clone() else {
+                    return;
+                };
+                let Some(channel) = core_ext::last_channel(&path) else {
+                    return;
+                };
+                channel
+            }
         };
         if self.core.state().channel(channel).is_some() {
             self.open_channel(channel);
