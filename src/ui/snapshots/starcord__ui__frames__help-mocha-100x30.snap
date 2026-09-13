@@ -11,24 +11,24 @@ expression: "render(&mut app, 100, 30)"
 │      ││ ║  alt+3         focus messages       click a link         open it             ║         │
 │      ││▾║  alt+4         focus chat           click the ↩ line     go to the quoted    ║         │
 │      ││ ║  alt+5 / i     write a message      click ↓ n new        jump to the newest  ║         │
-│      ││ ║  alt+6         focus members        lists                                    ║         │
-│      ││ ║  up / k        up one               click, wheel         choose one          ║         │
-│      ││ ║  down / j      down one             double-click         open a channel      ║         │
-│      ││ ║  shift+up/K    up ten               click a category     fold or unfold it   ║         │
-│      ││ ║  shift+down/J  down ten             composer                                 ║         │
-│      ││ ║  pgup          page up              click                place the caret     ║         │
-│      ││ ║  pgdn          page down            click a chip's ×     drop the attachment ║         │
-│      │└─║  home / gg     to the top           panels                                   ║         │
-│      │┌═║  end / G       to the bottom        drag a seam          resize two panels   ║         │
-│      ││ ║  enter         open                 click a header word  what the word says  ║         │
-│      ││○║  esc           back, or mark read   status                                   ║         │
-│      ││○║  [             previous server      click ? help         open this list      ║         │
-│      ││●║  ]             next server          click the channel    jump to anything    ║         │
-│      ││ ║  alt+up        previous unread      click the state      reconnect now       ║         │
-│      ││ ║  alt+down      next unread                                                   ║         │
-│      ││ ║  ctrl+k        jump to anything                                              ║         │
-│      ││ ║  ctrl+f / /    search                                                        ║         │
+│      ││ ║  alt+6         focus members        right-click          what can be done    ║         │
+│      ││ ║  up / k        up one               drag the scrollbar   scroll to anywhere  ║         │
+│      ││ ║  down / j      down one             lists                                    ║         │
+│      ││ ║  shift+up/K    up ten               click, wheel         choose one          ║         │
+│      ││ ║  shift+down/J  down ten             double-click         open a channel      ║         │
+│      ││ ║  pgup          page up              click a category     fold or unfold it   ║         │
+│      ││ ║  pgdn          page down            composer                                 ║         │
+│      │└─║  home / gg     to the top           click                place the caret     ║         │
+│      │┌═║  end / G       to the bottom        click a chip's ×     drop the attachment ║         │
+│      ││ ║  enter         open                 panels                                   ║         │
+│      ││○║  esc           back, or mark read   drag a seam          resize two panels   ║         │
+│      ││○║  [             previous server      click a header word  what the word says  ║         │
+│      ││●║  ]             next server          status                                   ║         │
+│      ││ ║  alt+up        previous unread      click ? help         open this list      ║         │
+│      ││ ║  alt+down      next unread          click the channel    jump to anything    ║         │
+│      ││ ║  ctrl+k        jump to anything     click the state      reconnect now       ║         │
+│      ││ ║  ctrl+f / /    search here                                                   ║         │
+│      ││ ║  alt+f         search the server                                             ║         │
 │      ││ ║  lists                                                                       ║         │
-│      ││ ║  h / l         fold, unfold                                                  ║         │
-└──────┘└─║  chat                                                                        ║─────────┘
+└──────┘└─║  h / l         fold, unfold                                                  ║─────────┘
 ? help    ╚══════════════════════════════════════════════════════════════════════════════╝nline  off

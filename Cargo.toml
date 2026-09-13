@@ -217,11 +217,13 @@ webbrowser = "1"
 # The system clipboard, for `y` and `Y`. `wayland-data-control` is what makes a
 # copy survive the program exiting under a Wayland compositor: without it the
 # clipboard is owned by a process that has gone away, and the paste lands
-# nowhere. The default features are off because the ones that matter here are
-# text, and `image-data` pulls a second decoder in beside the one the media
-# core already has.
+# nowhere. `image-data` is what `ctrl+v` on a picture needs: without it the
+# clipboard is text only and a pasted screenshot would be silently nothing. It
+# brings no decoder with it -- the bytes arrive as raw RGBA and are encoded to
+# PNG with the `image` crate that is already here.
 arboard = { version = "3.6", default-features = false, features = [
     "wayland-data-control",
+    "image-data",
 ] }
 
 # The quick switcher's ranking. The same matcher Helix and nucleo's own picker

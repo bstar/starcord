@@ -50,6 +50,24 @@ impl Confirm {
         }
     }
 
+    /// Quitting while a file is halfway up the wire.
+    ///
+    /// Its own question rather than the draft one, because the consequence is
+    /// different: a draft is written to the session file and comes back, and
+    /// an upload that is abandoned is a message nobody receives.
+    pub fn quit_while_uploading(files: usize) -> Self {
+        let what = if files == 1 {
+            "a file is".to_string()
+        } else {
+            format!("{files} files are")
+        };
+        Self {
+            title: "quit".into(),
+            body: format!("{what} still being sent"),
+            on_yes: Pending::Quit,
+        }
+    }
+
     pub fn quit_with_draft(channels: usize) -> Self {
         let what = if channels == 1 {
             "one unsent message".to_string()

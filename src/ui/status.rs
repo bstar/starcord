@@ -33,6 +33,10 @@ pub enum Hit {
     /// The connection word: reconnects now rather than waiting out the
     /// backoff.
     Connection,
+    /// `↓ 3 new`: goes to the newest message. The one part of the right-hand
+    /// field that is a call to act rather than a fact to glance at, so it is
+    /// the one part of it besides the connection that can be pressed.
+    NewBelow,
 }
 
 pub struct View<'a> {
@@ -138,6 +142,26 @@ pub fn fields(area: Rect, v: &View<'_>) -> Vec<(Hit, Rect)> {
 
     let right = v.right();
     let right_w = width_of(&right).min(area.width.saturating_sub(help_w + 2));
+    if right_w > 0 && v.new_below > 0 {
+        // The counter is first in the right-hand field after the mode word, so
+        // its box is found by measuring what is in front of it.
+        let lead = format!("{}  ", v.mode);
+        let counter = format!("\u{2193} {} new", v.new_below);
+        let start = width_of(&lead);
+        let w = width_of(&counter);
+        let x = area.x + area.width - right_w + start;
+        if start + w <= right_w {
+            out.push((
+                Hit::NewBelow,
+                Rect {
+                    x,
+                    y: area.y,
+                    width: w,
+                    height: 1,
+                },
+            ));
+        }
+    }
     if right_w > 0 {
         // Only the connection half of the right field is clickable: the unread
         // count is a fact rather than a button.
@@ -219,6 +243,9 @@ pub fn render(area: Rect, buf: &mut Buffer, v: &View<'_>) {
                     style,
                 );
             }
+            // The counter is drawn as part of the right-hand field; its box
+            // exists so it can be pressed, not so it can be drawn twice.
+            Hit::NewBelow => {}
             Hit::Connection => {
                 // The whole right-hand field is drawn from its own left edge,
                 // which is where the unread count lives; the clickable part is

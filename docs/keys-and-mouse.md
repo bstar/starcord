@@ -40,7 +40,8 @@ _everywhere_
 | `alt+up`       | previous unread |
 | `alt+down`     | next unread |
 | `ctrl+k`       | jump to anything |
-| `ctrl+f / /`   | search |
+| `ctrl+f / /`   | search here |
+| `alt+f`        | search the server |
 
 ## lists
 
@@ -66,7 +67,7 @@ _in the conversation_
 | `ctrl+y`       | copy a jump link |
 | `o`            | open elsewhere |
 | `enter`        | view attachment |
-| `space`        | reveal a spoiler |
+| `space`        | reveal, or a thread |
 | `u`            | go to the quoted |
 | `p`            | pin, unpin |
 | `m`            | mark read |
@@ -96,6 +97,7 @@ _in a picker_
 
 | key | what it does |
 |---|---|
+| `enter`        | use this one |
 | `ctrl+g`       | emoji to GIFs |
 | `esc`          | close |
 
@@ -109,6 +111,9 @@ _in the media viewer_
 | `l`            | next |
 | `s`            | save it |
 | `z`            | fit, actual size |
+| `o`            | open elsewhere |
+| `y`            | copy its link |
+| `esc`          | close |
 
 ## panels
 
@@ -144,6 +149,7 @@ _everywhere_
 |---|---|
 | `? / F1`       | this list |
 | `ctrl+r`       | reconnect now |
+| `ctrl+l`       | redraw the screen |
 | `q / ctrl+c`   | quit |
 
 ## the mouse
@@ -157,6 +163,8 @@ _everywhere_
 | chat     | click a link          | open it |
 | chat     | click the ↩ line      | go to the quoted |
 | chat     | click ↓ n new         | jump to the newest |
+| chat     | right-click           | what can be done |
+| chat     | drag the scrollbar    | scroll to anywhere |
 | lists    | click, wheel          | choose one |
 | lists    | double-click          | open a channel |
 | lists    | click a category      | fold or unfold it |

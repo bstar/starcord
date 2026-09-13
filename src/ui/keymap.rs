@@ -27,6 +27,10 @@
 //! each one is a test at the bottom of this file:
 //!
 //! - a bare arrow moves one, a shifted one moves ten;
+//! - every key in the table can be *spelled* in the table: the key column
+//!   separates alternatives on `/`, so `alt+/` has no spelling here and the
+//!   server-wide search is `alt+f` beside the `ctrl+f` that searches one
+//!   channel;
 //! - `hjkl` navigates and never adjusts a value;
 //! - `esc` never quits;
 //! - a label is at most 19 characters, or the help overlay wraps it;
@@ -76,6 +80,7 @@ pub enum Action {
     PrevUnread,
     QuickSwitch,
     Search,
+    SearchGuild,
     ToggleCollapse,
     JumpToReply,
 
@@ -131,6 +136,7 @@ pub enum Action {
     ToggleAvatars,
     CycleAnimate,
     Reconnect,
+    Redraw,
     CloseOverlay,
 }
 
@@ -331,7 +337,13 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         action: Action::Search,
         keys: "ctrl+f / /",
-        label: "search",
+        label: "search here",
+        group: "navigation",
+    },
+    Binding {
+        action: Action::SearchGuild,
+        keys: "alt+f",
+        label: "search the server",
         group: "navigation",
     },
     // -- lists -------------------------------------------------------------
@@ -405,7 +417,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         action: Action::RevealSpoiler,
         keys: "space",
-        label: "reveal a spoiler",
+        label: "reveal, or a thread",
         group: "chat",
     },
     Binding {
@@ -501,6 +513,12 @@ pub const BINDINGS: &[Binding] = &[
     },
     // -- pickers -----------------------------------------------------------
     Binding {
+        action: Action::Activate,
+        keys: "enter",
+        label: "use this one",
+        group: "pickers",
+    },
+    Binding {
         action: Action::GifPicker,
         keys: "ctrl+g",
         label: "emoji to GIFs",
@@ -535,6 +553,24 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::MediaZoom,
         keys: "z",
         label: "fit, actual size",
+        group: "media viewer",
+    },
+    Binding {
+        action: Action::OpenExternal,
+        keys: "o",
+        label: "open elsewhere",
+        group: "media viewer",
+    },
+    Binding {
+        action: Action::Yank,
+        keys: "y",
+        label: "copy its link",
+        group: "media viewer",
+    },
+    Binding {
+        action: Action::CloseOverlay,
+        keys: "esc",
+        label: "close",
         group: "media viewer",
     },
     // -- panels ------------------------------------------------------------
@@ -625,6 +661,12 @@ pub const BINDINGS: &[Binding] = &[
         group: "application",
     },
     Binding {
+        action: Action::Redraw,
+        keys: "ctrl+l",
+        label: "redraw the screen",
+        group: "application",
+    },
+    Binding {
         action: Action::Quit,
         keys: "q / ctrl+c",
         label: "quit",
@@ -668,6 +710,16 @@ pub const MOUSE: &[MouseHelp] = &[
     MouseHelp {
         gesture: "click ↓ n new",
         label: "jump to the newest",
+        group: "chat",
+    },
+    MouseHelp {
+        gesture: "right-click",
+        label: "what can be done",
+        group: "chat",
+    },
+    MouseHelp {
+        gesture: "drag the scrollbar",
+        label: "scroll to anywhere",
         group: "chat",
     },
     MouseHelp {

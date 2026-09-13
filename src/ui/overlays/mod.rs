@@ -6,18 +6,40 @@
 //! and does not take that panel's keys is a dialogue you can type through,
 //! which is the bug this arrangement makes impossible to write.
 //!
-//! Four of them so far: the help, the confirmation, the quick switcher and the
-//! settings list. The media viewer, the pickers and the search land with the
-//! milestones that give them something to do, and each is a field on this
-//! struct and an arm in the two functions below.
+//! Eight of them: the help, the confirmation, the quick switcher, the panel
+//! settings, the emoji and GIF picker, the media viewer, the search, the
+//! attach-a-file box and the message menu. Each is a field on this struct and
+//! an arm in the functions below.
 //!
 //! Only one is ever open. Stacking them would mean deciding what `esc` closes,
 //! and the answer "the innermost one" is a stack somebody has to keep in their
 //! head; the answer "the one that is open" is not.
+//!
+//! ## Two things flow out of here besides keys
+//!
+//! An overlay that has to *ask the core something* — the GIF grid, the search
+//! box — pushes a [`Command`] into its own queue, and [`Overlays::take_commands`]
+//! is drained once a frame. That keeps a request that is made repeatedly, with
+//! a debounce and an id to match answers against, inside the overlay that owns
+//! it rather than spread across the dispatcher.
+//!
+//! An overlay that draws a *picture* — the GIF tiles, the media viewer, the
+//! custom emoji in the grid — returns [`Placement`]s from `render`, and the
+//! application paints them after the chrome is down. It cannot paint them with
+//! the panels' pictures: an overlay clears the cells it covers, and a protocol
+//! image whose cell has been cleared is one the terminal is never told about.
 
+pub mod attach;
 pub mod confirm;
+pub mod media;
+pub mod menu;
+pub mod picker;
 pub mod quick;
+pub mod search;
 pub mod settings;
+
+use std::path::PathBuf;
+use std::time::Instant;
 
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::keymap::HelpView;
@@ -25,11 +47,21 @@ use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::widgets::Widget;
 
+use self::attach::Attach;
 use self::confirm::{Confirm, Pending};
+use self::media::Viewer;
+use self::menu::{Choice, Menu};
+use self::picker::Picker;
 use self::quick::{Quick, Target};
+use self::search::Search;
 use self::settings::{Setting, Settings};
 use crate::config::Config;
-use crate::ui::keymap::{BINDINGS, MOUSE};
+use crate::discord::handle::{RequestId, SearchPage};
+use crate::discord::model::{GifResult, Message};
+use crate::discord::snowflake::{ChannelId, MessageId};
+use crate::discord::Command;
+use crate::ui::keymap::{Module, BINDINGS, MOUSE};
+use crate::ui::panels::chat::media::{MediaStore, Placement};
 use crate::ui::panels::PanelId;
 use crate::ui::theme::Theme;
 
@@ -46,8 +78,26 @@ pub enum Key {
     Confirmed(Pending),
     /// The switcher chose somewhere to go.
     Jump(Target),
+    /// The search chose a message to go to.
+    JumpToMessage {
+        channel: ChannelId,
+        message: MessageId,
+    },
     /// A settings row was changed; `true` steps forward.
     Setting(Setting, bool),
+    /// Put this text into the composer at the caret.
+    Insert(String),
+    /// One of the things the message menu offers, for the message it was
+    /// opened on.
+    Menu(Choice, MessageId),
+    /// A file that exists and is small enough, to be made a chip of.
+    Attach(PathBuf),
+    /// Hand this to whatever the system opens things with.
+    Open(String),
+    /// Put this on the clipboard.
+    Copy(String),
+    /// Write what the media viewer is showing to `[media] save_dir`.
+    SaveMedia,
 }
 
 /// Everything modal, and whether any of it is up.
@@ -58,6 +108,11 @@ pub struct Overlays {
     pub confirm: Option<Confirm>,
     pub quick: Option<Quick>,
     pub settings: Option<Settings>,
+    pub picker: Option<Picker>,
+    pub viewer: Option<Viewer>,
+    pub search: Option<Search>,
+    pub attach: Option<Attach>,
+    pub menu: Option<Menu>,
 }
 
 impl Overlays {
@@ -66,12 +121,35 @@ impl Overlays {
     /// Checked first in both `handle` and `handle_mouse`, so that a key or a
     /// click reaches the overlay rather than the panel under it.
     pub fn open(&self) -> bool {
-        self.help || self.confirm.is_some() || self.quick.is_some() || self.settings.is_some()
+        self.help
+            || self.confirm.is_some()
+            || self.quick.is_some()
+            || self.settings.is_some()
+            || self.picker.is_some()
+            || self.viewer.is_some()
+            || self.search.is_some()
+            || self.attach.is_some()
+            || self.menu.is_some()
+    }
+
+    /// Which half of the key table the open overlay reads first, for the help
+    /// heading and for nothing else: every one of them takes raw keys.
+    pub fn module(&self) -> Option<Module> {
+        if self.viewer.is_some() {
+            Some(Module::Media)
+        } else if self.picker.is_some() {
+            Some(Module::Picker)
+        } else {
+            None
+        }
     }
 
     /// Whether the open overlay is a text field, so bracketed paste goes to it.
     pub fn takes_paste(&self) -> bool {
         self.quick.is_some()
+            || self.picker.is_some()
+            || self.search.is_some()
+            || self.attach.is_some()
     }
 
     pub fn close(&mut self) {
@@ -80,6 +158,11 @@ impl Overlays {
         self.confirm = None;
         self.quick = None;
         self.settings = None;
+        self.picker = None;
+        self.viewer = None;
+        self.search = None;
+        self.attach = None;
+        self.menu = None;
     }
 
     pub fn toggle_help(&mut self) {
@@ -105,6 +188,75 @@ impl Overlays {
     pub fn open_settings(&mut self, panel: PanelId) {
         self.close();
         self.settings = Some(Settings::new(panel));
+    }
+
+    pub fn open_picker(&mut self, picker: Picker) {
+        self.close();
+        self.picker = Some(picker);
+    }
+
+    pub fn open_viewer(&mut self, viewer: Viewer) {
+        self.close();
+        self.viewer = Some(viewer);
+    }
+
+    pub fn open_search(&mut self, search: Search) {
+        self.close();
+        self.search = Some(search);
+    }
+
+    pub fn open_attach(&mut self, attach: Attach) {
+        self.close();
+        self.attach = Some(attach);
+    }
+
+    pub fn open_menu(&mut self, menu: Menu) {
+        self.close();
+        self.menu = Some(menu);
+    }
+
+    /// The debounce, and anything else an overlay does on a clock.
+    pub fn tick(&mut self, now: Instant) {
+        if let Some(picker) = &mut self.picker {
+            picker.tick(now);
+        }
+    }
+
+    /// What the open overlay wants asked of the core.
+    pub fn take_commands(&mut self) -> Vec<Command> {
+        let mut out = Vec::new();
+        if let Some(picker) = &mut self.picker {
+            out.extend(picker.take_commands());
+        }
+        if let Some(search) = &mut self.search {
+            out.extend(search.take_commands());
+        }
+        out
+    }
+
+    /// A page of GIF results. True when it was one this overlay asked for.
+    pub fn gifs_arrived(
+        &mut self,
+        id: RequestId,
+        result: Result<Vec<GifResult>, String>,
+    ) -> bool {
+        match &mut self.picker {
+            Some(picker) => picker.gifs_arrived(id, result),
+            None => false,
+        }
+    }
+
+    /// A page of search results.
+    pub fn search_arrived(
+        &mut self,
+        id: RequestId,
+        result: Result<SearchPage, String>,
+        name_of: impl Fn(&Message) -> (String, String),
+    ) -> bool {
+        match &mut self.search {
+            Some(search) => search.arrived(id, result, name_of),
+            None => false,
+        }
     }
 
     /// Keys, while something is open.
@@ -141,6 +293,85 @@ impl Overlays {
                     Key::Jump(target)
                 }
                 quick::Action::Quit => Key::Quit,
+            };
+        }
+
+        if let Some(picker) = &mut self.picker {
+            return match picker.handle(key) {
+                picker::Action::Taken => Key::Taken,
+                picker::Action::Close => {
+                    self.picker = None;
+                    Key::Taken
+                }
+                picker::Action::Insert(text) => {
+                    self.picker = None;
+                    Key::Insert(text)
+                }
+                picker::Action::ToGif => {
+                    picker.to_gif();
+                    Key::Taken
+                }
+                picker::Action::Quit => Key::Quit,
+            };
+        }
+
+        if let Some(viewer) = &mut self.viewer {
+            return match viewer.handle(key) {
+                media::Action::Taken => Key::Taken,
+                media::Action::Close => {
+                    self.viewer = None;
+                    Key::Taken
+                }
+                media::Action::Open(url) => Key::Open(url),
+                media::Action::Copy(url) => Key::Copy(url),
+                media::Action::Save => Key::SaveMedia,
+                media::Action::Quit => Key::Quit,
+            };
+        }
+
+        if let Some(search) = &mut self.search {
+            return match search.handle(key) {
+                search::Action::Taken => Key::Taken,
+                search::Action::Close => {
+                    self.search = None;
+                    Key::Taken
+                }
+                search::Action::Jump { channel, message } => {
+                    self.search = None;
+                    Key::JumpToMessage { channel, message }
+                }
+                search::Action::Quit => Key::Quit,
+            };
+        }
+
+        if let Some(attach) = &mut self.attach {
+            return match attach.handle(key) {
+                attach::Action::Taken => Key::Taken,
+                attach::Action::Close => {
+                    self.attach = None;
+                    Key::Taken
+                }
+                attach::Action::Attach(path) => {
+                    self.attach = None;
+                    Key::Attach(path)
+                }
+                attach::Action::Quit => Key::Quit,
+            };
+        }
+
+        if let Some(menu) = &mut self.menu {
+            let message = menu.message;
+            return match menu.handle(key) {
+                menu::Action::Taken => Key::Taken,
+                menu::Action::Close => {
+                    self.menu = None;
+                    Key::Taken
+                }
+                menu::Action::Chose(choice) => {
+                    self.menu = None;
+                    Key::Menu(choice, message)
+                }
+                menu::Action::Quit => Key::Quit,
             };
         }
 
@@ -186,25 +417,88 @@ impl Overlays {
         if let Some(quick) = &mut self.quick {
             quick.paste(text);
         }
+        if let Some(picker) = &mut self.picker {
+            picker.paste(text);
+        }
+        if let Some(search) = &mut self.search {
+            search.paste(text);
+        }
+        if let Some(attach) = &mut self.attach {
+            attach.paste(text);
+        }
     }
 
     /// A click, while something is open.
     ///
-    /// Only the settings list has anything to click; everything else closes,
-    /// which is what a click outside a dialogue has always meant.
+    /// The ones with something to click take the click; everything else
+    /// closes, which is what a click outside a dialogue has always meant.
     pub fn click(&mut self, area: Rect, x: u16, y: u16) -> Key {
-        let Some(settings) = &mut self.settings else {
-            self.close();
-            return Key::Taken;
-        };
-        match settings.click(area, x, y) {
-            settings::Action::Change(setting, forward) => Key::Setting(setting, forward),
-            settings::Action::Close => {
-                self.settings = None;
-                Key::Taken
-            }
-            _ => Key::Taken,
+        if let Some(settings) = &mut self.settings {
+            return match settings.click(area, x, y) {
+                settings::Action::Change(setting, forward) => Key::Setting(setting, forward),
+                settings::Action::Close => {
+                    self.settings = None;
+                    Key::Taken
+                }
+                _ => Key::Taken,
+            };
         }
+        if let Some(menu) = &mut self.menu {
+            let message = menu.message;
+            return match menu.click(area, x, y) {
+                menu::Action::Chose(choice) => {
+                    self.menu = None;
+                    Key::Menu(choice, message)
+                }
+                _ => {
+                    self.menu = None;
+                    Key::Taken
+                }
+            };
+        }
+        if let Some(picker) = &mut self.picker {
+            let r = picker::rect(area, picker.is_gif());
+            if let Some(index) = picker.hit(r, x, y) {
+                picker.cursor = index;
+                return match picker.choose() {
+                    picker::Action::Insert(text) => {
+                        self.picker = None;
+                        Key::Insert(text)
+                    }
+                    picker::Action::Close => {
+                        self.picker = None;
+                        Key::Taken
+                    }
+                    _ => Key::Taken,
+                };
+            }
+            self.picker = None;
+            return Key::Taken;
+        }
+        if let Some(viewer) = &mut self.viewer {
+            let r = media::rect(area);
+            if x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height {
+                viewer.click(r, x, y);
+                return Key::Taken;
+            }
+            self.viewer = None;
+            return Key::Taken;
+        }
+        if let Some(search) = &mut self.search {
+            if let Some(index) = search.hit_at(area, x, y) {
+                search.cursor = index;
+                if let Some(hit) = search.selected() {
+                    let (channel, message) = (hit.channel, hit.message);
+                    self.search = None;
+                    return Key::JumpToMessage { channel, message };
+                }
+                return Key::Taken;
+            }
+            self.search = None;
+            return Key::Taken;
+        }
+        self.close();
+        Key::Taken
     }
 
     /// The wheel, while something is open.
@@ -218,23 +512,61 @@ impl Overlays {
         if let Some(settings) = &mut self.settings {
             settings.scroll_by(delta);
         }
+        if let Some(picker) = &mut self.picker {
+            picker.scroll_by(delta);
+        }
+        if let Some(viewer) = &mut self.viewer {
+            viewer.step(delta.signum() as isize);
+        }
+        if let Some(search) = &mut self.search {
+            search.scroll_by(delta);
+        }
+        if let Some(menu) = &mut self.menu {
+            menu.scroll_by(delta);
+        }
     }
 
-    pub fn render(&mut self, area: Rect, buf: &mut Buffer, theme: &Theme, cfg: &Config) {
+    /// Draw whatever is open, and hand back the pictures it placed.
+    pub fn render(
+        &mut self,
+        area: Rect,
+        buf: &mut Buffer,
+        theme: &Theme,
+        cfg: &Config,
+        store: &MediaStore,
+    ) -> Vec<Placement> {
         if let Some(confirm) = &self.confirm {
             confirm::render(area, buf, theme, confirm);
-            return;
+            return Vec::new();
         }
         if let Some(quick) = &mut self.quick {
             quick::render(area, buf, theme, quick);
-            return;
+            return Vec::new();
+        }
+        if let Some(picker) = &mut self.picker {
+            return picker::render(area, buf, theme, picker);
+        }
+        if let Some(viewer) = &self.viewer {
+            return media::render(area, buf, theme, viewer, store);
+        }
+        if let Some(search) = &mut self.search {
+            search::render(area, buf, theme, search);
+            return Vec::new();
+        }
+        if let Some(attach) = &mut self.attach {
+            attach::render(area, buf, theme, attach);
+            return Vec::new();
+        }
+        if let Some(menu) = &self.menu {
+            menu.render(area, buf, theme);
+            return Vec::new();
         }
         if let Some(settings) = &self.settings {
             settings.render(area, buf, theme, cfg);
-            return;
+            return Vec::new();
         }
         if !self.help {
-            return;
+            return Vec::new();
         }
         HelpView {
             theme,
@@ -244,6 +576,7 @@ impl Overlays {
             title: "keys",
         }
         .render(area, buf);
+        Vec::new()
     }
 }
 
@@ -255,6 +588,43 @@ mod tests {
 
     fn key(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn every_overlay() -> Vec<fn(&mut Overlays)> {
+        vec![
+            |o: &mut Overlays| o.toggle_help(),
+            |o: &mut Overlays| o.ask(Confirm::quit_with_draft(1)),
+            |o: &mut Overlays| o.open_quick(Vec::new()),
+            |o: &mut Overlays| o.open_settings(PanelId::Chat),
+            |o: &mut Overlays| {
+                o.open_picker(Picker::new(picker::Kind::Emoji, None, Vec::new(), 2.0))
+            },
+            |o: &mut Overlays| {
+                o.open_viewer(
+                    Viewer::new(
+                        vec![media::Item {
+                            message: MessageId(1),
+                            key: crate::discord::media::MediaKey::Gif {
+                                url: "https://x.invalid/a.gif".into(),
+                            },
+                            url: "https://x.invalid/a.gif".into(),
+                            filename: "a.gif".into(),
+                        }],
+                        None,
+                        2.0,
+                    )
+                    .unwrap(),
+                )
+            },
+            |o: &mut Overlays| {
+                o.open_search(Search::new(
+                    crate::discord::handle::SearchScope::Channel(ChannelId(1)),
+                    "#general".into(),
+                ))
+            },
+            |o: &mut Overlays| o.open_attach(Attach::new(25)),
+            |o: &mut Overlays| o.open_menu(Menu::new(MessageId(1), true)),
+        ]
     }
 
     #[test]
@@ -278,13 +648,13 @@ mod tests {
     /// break.
     #[test]
     fn escape_closes_the_overlay_rather_than_the_program() {
-        let mut o = Overlays::default();
-        o.toggle_help();
-        assert_eq!(
-            o.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
-            Key::Taken
-        );
-        assert!(!o.open());
+        for open in every_overlay() {
+            let mut o = Overlays::default();
+            open(&mut o);
+            let answer = o.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+            assert_ne!(answer, Key::Quit, "escape quit");
+            assert!(!o.open(), "escape did not close it");
+        }
     }
 
     /// A modal overlay is modal: while it is up, no key reaches the panel
@@ -311,12 +681,7 @@ mod tests {
     /// once per overlay rather than once.
     #[test]
     fn every_overlay_is_modal() {
-        for open in [
-            |o: &mut Overlays| o.toggle_help(),
-            |o: &mut Overlays| o.ask(Confirm::quit_with_draft(1)),
-            |o: &mut Overlays| o.open_quick(Vec::new()),
-            |o: &mut Overlays| o.open_settings(PanelId::Chat),
-        ] {
+        for open in every_overlay() {
             let mut o = Overlays::default();
             open(&mut o);
             assert!(o.open());
@@ -327,12 +692,7 @@ mod tests {
     /// Except quitting, which works from everywhere including here.
     #[test]
     fn ctrl_c_still_quits() {
-        for open in [
-            |o: &mut Overlays| o.toggle_help(),
-            |o: &mut Overlays| o.ask(Confirm::quit_with_draft(1)),
-            |o: &mut Overlays| o.open_quick(Vec::new()),
-            |o: &mut Overlays| o.open_settings(PanelId::Chat),
-        ] {
+        for open in every_overlay() {
             let mut o = Overlays::default();
             open(&mut o);
             assert_eq!(
@@ -363,13 +723,24 @@ mod tests {
     #[test]
     fn opening_one_closes_the_others() {
         let mut o = Overlays::default();
-        o.toggle_help();
-        o.open_quick(Vec::new());
-        assert!(!o.help);
-        o.ask(Confirm::quit_with_draft(1));
-        assert!(o.quick.is_none());
-        o.open_settings(PanelId::Chat);
-        assert!(o.confirm.is_none());
+        for open in every_overlay() {
+            open(&mut o);
+            let up = [
+                o.help,
+                o.confirm.is_some(),
+                o.quick.is_some(),
+                o.settings.is_some(),
+                o.picker.is_some(),
+                o.viewer.is_some(),
+                o.search.is_some(),
+                o.attach.is_some(),
+                o.menu.is_some(),
+            ]
+            .into_iter()
+            .filter(|up| *up)
+            .count();
+            assert_eq!(up, 1, "two overlays at once");
+        }
     }
 
     #[test]
@@ -390,15 +761,22 @@ mod tests {
         let area = Rect::new(0, 0, 40, 10);
         let mut buf = Buffer::empty(area);
         let before = buf.clone();
-        Overlays::default().render(area, &mut buf, &t, &Config::default());
+        let places = Overlays::default().render(
+            area,
+            &mut buf,
+            &t,
+            &Config::default(),
+            &MediaStore::new(),
+        );
         assert_eq!(buf, before);
+        assert!(places.is_empty());
     }
 
     fn drawn(o: &mut Overlays) -> String {
         let t = theme("terminal");
         let area = Rect::new(0, 0, 100, 30);
         let mut buf = Buffer::empty(area);
-        o.render(area, &mut buf, &t, &Config::default());
+        o.render(area, &mut buf, &t, &Config::default(), &MediaStore::new());
         (0..area.height)
             .map(|y| {
                 (0..area.width)
@@ -428,8 +806,37 @@ mod tests {
     fn scrolling_reaches_the_end_of_the_table() {
         let mut o = Overlays::default();
         o.toggle_help();
-        o.scroll(60);
+        o.scroll(120);
         let text = drawn(&mut o);
         assert!(text.contains("quit"), "{text}");
+    }
+
+    /// Every overlay draws something rather than leaving the panels visible
+    /// through a hole where a box should be.
+    #[test]
+    fn every_overlay_draws_a_box() {
+        for open in every_overlay() {
+            let mut o = Overlays::default();
+            open(&mut o);
+            let text = drawn(&mut o);
+            assert!(
+                text.chars().any(|c| c != ' '),
+                "an open overlay drew nothing"
+            );
+        }
+    }
+
+    /// The picker and the search box ask the core for things; nothing else
+    /// does, and a closed overlay asks for nothing at all.
+    #[test]
+    fn only_the_asking_overlays_ask() {
+        let mut o = Overlays::default();
+        assert!(o.take_commands().is_empty());
+        o.open_picker(Picker::new(picker::Kind::Gif, Some(ChannelId(1)), Vec::new(), 2.0));
+        assert!(
+            matches!(o.take_commands().first(), Some(Command::GifTrending { .. })),
+            "opening the GIF grid asks what is trending"
+        );
+        assert!(o.take_commands().is_empty(), "and only once");
     }
 }

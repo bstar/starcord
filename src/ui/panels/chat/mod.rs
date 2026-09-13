@@ -31,6 +31,7 @@
 //! the panel to cut it to. The drawing itself is a separate pass over every
 //! panel's placements at the end of the frame — see [`media`] for why.
 
+pub mod anim;
 pub mod layout;
 pub mod media;
 pub mod render;
@@ -45,11 +46,13 @@ use starkit::ratatui::text::Span;
 use starkit::vlist::VirtualList;
 use starkit::wrap::width_of;
 
+use self::anim::Animations;
 use self::layout::{Row, Shape};
 use self::media::{MediaStore, Placement};
 use self::render::{Cache, Key, Names, RenderCtx, Rendered, Revealed, SlotKind};
 use super::{empty, fit, rgb};
 use crate::config::Config;
+use crate::discord::media::MediaKey;
 use crate::discord::model::{Message, PartialEmoji};
 use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::state::messages::PendingState;
@@ -84,6 +87,9 @@ pub enum Hit {
     Reply(MessageId),
     Attachment(MessageId, String),
     LoadOlder,
+    /// The bar down the right border: a click or a drag scrolls to that
+    /// fraction of the conversation.
+    Scrollbar,
 }
 
 /// The whole of the message panel's state.
@@ -91,8 +97,16 @@ pub struct ChatState {
     pub cache: Cache,
     pub revealed: Revealed,
     pub names: Names,
-    /// Bumped when a picture one of these messages owns arrives.
-    pub media_gen: u64,
+    /// Which pictures belong to which messages, so that one arriving
+    /// invalidates the measurements of the messages that draw it and nothing
+    /// else. A channel of photographs used to re-measure every message in the
+    /// window for each one that landed.
+    media_owners: HashMap<MediaKey, Vec<MessageId>>,
+    /// Per message, bumped when a picture that message owns arrives. Part of
+    /// the cache key, which is the whole point of it.
+    gens: HashMap<MessageId, u64>,
+    /// Every animation on screen, and the clock that moves them.
+    pub anim: Animations,
     /// What is known about every picture on screen.
     pub media: MediaStore,
     /// Where this frame's pictures go. Filled while drawing, drained by the
@@ -104,7 +118,11 @@ pub struct ChatState {
     memory: HashMap<ChannelId, Memory>,
 
     messages: Vec<Arc<Message>>,
-    pending: Vec<(String, bool)>,
+    pending: Vec<PendingRow>,
+    /// How far each in-flight upload has got, from `Event::UploadProgress`.
+    /// The store knows a message is uploading and not how much of it has gone,
+    /// because the counter moves far too often to be state.
+    uploads: HashMap<crate::discord::handle::Nonce, (u64, u64)>,
     rows: Vec<Row>,
     heights: Vec<u16>,
     rendered: Vec<Option<Arc<Rendered>>>,
@@ -145,13 +163,16 @@ impl ChatState {
             cache: Cache::default(),
             revealed: Revealed::default(),
             names: Names::default(),
-            media_gen: 0,
+            media_owners: HashMap::new(),
+            gens: HashMap::new(),
+            anim: Animations::default(),
             media: MediaStore::new(),
             slots: Vec::new(),
             channel: None,
             memory: HashMap::new(),
             messages: Vec::new(),
             pending: Vec::new(),
+            uploads: HashMap::new(),
             rows: Vec::new(),
             heights: Vec::new(),
             rendered: Vec::new(),
@@ -201,6 +222,108 @@ impl ChatState {
 
     pub fn selected(&self) -> Option<Arc<Message>> {
         self.rows.get(self.cursor)?.message(&self.messages)
+    }
+
+    /// How far one message's files have got.
+    pub fn upload_progress(
+        &mut self,
+        nonce: crate::discord::handle::Nonce,
+        sent: u64,
+        total: u64,
+    ) {
+        self.uploads.insert(nonce, (sent, total));
+    }
+
+    /// Whether a reaction chip on a message is already this account's.
+    ///
+    /// The chip carries the answer and the click has to know it: adding a
+    /// reaction that is already there is a request Discord answers with
+    /// nothing, so the chip would have looked stuck.
+    pub fn selected_reaction_is_mine(
+        &self,
+        message: MessageId,
+        emoji: &crate::discord::handle::EmojiRef,
+    ) -> Option<bool> {
+        let msg = self.messages.iter().find(|m| m.id == message)?;
+        let key = emoji.key();
+        Some(
+            msg.reactions
+                .iter()
+                .any(|r| r.emoji.reaction_key() == key && r.me),
+        )
+    }
+
+    /// The thread started from the message under the cursor, if there is one.
+    pub fn selected_thread(&self) -> Option<ChannelId> {
+        self.rendered.get(self.cursor)?.as_ref()?.thread
+    }
+
+    /// Every picture on screen that has a thread of its own hanging off it is
+    /// not a thing; this is the other half of the arrival path.
+    ///
+    /// A picture arrived. Only the messages that draw it are measured again:
+    /// the generation is per message and is part of the cache key, so a
+    /// channel full of photographs no longer re-measures all five hundred of
+    /// them for every one that lands.
+    pub fn media_arrived(&mut self, key: &MediaKey) {
+        let Some(owners) = self.media_owners.get(key) else {
+            return;
+        };
+        for owner in owners.clone() {
+            let gen = self.gens.entry(owner).or_insert(0);
+            *gen = gen.wrapping_add(1);
+        }
+    }
+
+    /// How far down the conversation the view is, 0.0 at the top.
+    pub fn scrolled(&self) -> f32 {
+        if self.heights.len() != self.rows.len() || self.rows.is_empty() {
+            return 0.0;
+        }
+        let Some(body) = self.body else { return 0.0 };
+        let total: u32 = self.heights.iter().map(|h| u32::from(*h)).sum();
+        let room = total.saturating_sub(u32::from(body.height));
+        if room == 0 {
+            return 0.0;
+        }
+        let get = |i: usize| self.heights.get(i).copied().unwrap_or(0);
+        let visible = self.list.visible(body, get, self.rows.len());
+        let first = visible.first().map(|v| v.index).unwrap_or(0);
+        let skip = visible.first().map(|v| v.skip).unwrap_or(0);
+        let above: u32 = self.heights.iter().take(first).map(|h| u32::from(*h)).sum::<u32>()
+            + u32::from(skip);
+        (above as f32 / room as f32).clamp(0.0, 1.0)
+    }
+
+    /// Put the view that far down the conversation. For a scrollbar drag.
+    pub fn scroll_to_fraction(&mut self, fraction: f32) {
+        if self.heights.len() != self.rows.len() || self.rows.is_empty() {
+            return;
+        }
+        let Some(body) = self.body else { return };
+        let total: u32 = self.heights.iter().map(|h| u32::from(*h)).sum();
+        let room = total.saturating_sub(u32::from(body.height));
+        if room == 0 {
+            return;
+        }
+        let want = (fraction.clamp(0.0, 1.0) * room as f32) as u32;
+        if want >= room {
+            self.to_bottom();
+            return;
+        }
+        let mut acc = 0u32;
+        let mut index = 0usize;
+        for (i, h) in self.heights.iter().enumerate() {
+            if acc + u32::from(*h) > want {
+                index = i;
+                break;
+            }
+            acc += u32::from(*h);
+            index = i;
+        }
+        self.list.scroll_to(index);
+        self.follow_end = false;
+        self.media.viewport_moved();
     }
 
     /// What the reader can see, for the session file: the message at the top
@@ -279,15 +402,20 @@ impl ChatState {
             .map(|s| {
                 s.pending()
                     .iter()
-                    .map(|p| {
-                        (
-                            p.content.clone(),
-                            matches!(p.state, PendingState::Failed(_)),
-                        )
+                    .map(|p| PendingRow {
+                        nonce: p.nonce,
+                        content: p.content.clone(),
+                        failed: matches!(p.state, PendingState::Failed(_)),
+                        uploading: matches!(p.state, PendingState::Uploading { .. }),
+                        files: p.attachments.len(),
                     })
                     .collect()
             })
             .unwrap_or_default();
+        // Progress for sends that have finished is progress nobody will draw.
+        let live: std::collections::HashSet<crate::discord::handle::Nonce> =
+            self.pending.iter().map(|p| p.nonce).collect();
+        self.uploads.retain(|nonce, _| live.contains(nonce));
 
         let guild = state.channel(channel).and_then(|c| c.guild_id);
         self.typing = state
@@ -580,6 +708,11 @@ impl ChatState {
         self.body = Some(body);
 
         let theme_hash = hash_of(&v.theme.id);
+        let threads_hash = hash_of(&{
+            let mut ids: Vec<u64> = self.names.threads.keys().map(|m| m.0).collect();
+            ids.sort_unstable();
+            ids
+        });
         let revealed_hash = hash_of(&{
             let mut ids: Vec<(u64, u16)> = self.revealed.iter().map(|(m, i)| (m.0, *i)).collect();
             ids.sort_unstable();
@@ -589,6 +722,11 @@ impl ChatState {
         let width = body.width.saturating_sub(1).max(1);
         self.heights = Vec::with_capacity(self.rows.len());
         self.rendered = Vec::with_capacity(self.rows.len());
+        // Rebuilt rather than accumulated: a message that left the window
+        // takes its claim on a picture with it, and the whole window is
+        // measured here, so this is the complete answer every frame.
+        let mut owners: HashMap<MediaKey, Vec<MessageId>> = HashMap::new();
+        let mut wanted: Vec<MediaKey> = Vec::new();
 
         for row in 0..self.rows.len() {
             match &self.rows[row] {
@@ -612,7 +750,12 @@ impl ChatState {
                         ),
                         first_in_group: head,
                         revealed: revealed_hash,
-                        media_gen: self.media_gen,
+                        media_gen: self
+                            .gens
+                            .get(&msg.id)
+                            .copied()
+                            .unwrap_or(0)
+                            .wrapping_add(threads_hash),
                         avatars: v.cfg.chat.show_avatars,
                         timestamps: v.cfg.chat.timestamps,
                     };
@@ -630,11 +773,22 @@ impl ChatState {
                         me: v.me,
                         revealed: &self.revealed,
                         names: &self.names,
+                        media: Some(&self.media),
                         tz: v.tz.clone(),
                     };
                     let built = self
                         .cache
                         .get_or_insert(key, || render::render(&msg, head, &ctx));
+                    for slot in &built.images {
+                        owners.entry(slot.key.clone()).or_default().push(msg.id);
+                    }
+                    for slot in &built.emoji {
+                        owners.entry(slot.key.clone()).or_default().push(msg.id);
+                    }
+                    for key in &built.measure {
+                        owners.entry(key.clone()).or_default().push(msg.id);
+                        wanted.push(key.clone());
+                    }
                     self.heights.push(built.height);
                     self.rendered.push(Some(built));
                 }
@@ -643,6 +797,15 @@ impl ChatState {
                     self.rendered.push(None);
                 }
             }
+        }
+        self.media_owners = owners;
+        let held: std::collections::HashSet<MessageId> =
+            self.messages.iter().map(|m| m.id).collect();
+        self.gens.retain(|id, _| held.contains(id));
+        // The pictures nothing said the size of: asked for here rather than in
+        // the drawing pass, because a chip has no rectangle to be asked from.
+        for key in wanted {
+            self.media.want_measure(&key);
         }
         self.clamp_cursor();
     }
@@ -710,17 +873,22 @@ impl ChatState {
                     );
                 }
                 Row::Pending { index } => {
-                    let (text, failed) = self.pending.get(*index).cloned().unwrap_or_default();
-                    let mark = if failed { "\u{2715} " } else { "\u{00b7} " };
-                    let style = if failed {
+                    let row = self.pending.get(*index).cloned().unwrap_or_default();
+                    let mark = if row.failed {
+                        "\u{2715} "
+                    } else {
+                        "\u{00b7} "
+                    };
+                    let style = if row.failed {
                         Style::default().fg(rgb(t.error))
                     } else {
                         Style::default().fg(rgb(t.chat.disconnected_dim))
                     };
+                    let trailer = upload_note(&row, self.uploads.get(&row.nonce).copied());
                     buf.set_string(
                         item.area.x,
                         item.area.y,
-                        fit(&format!("  {mark}{text}"), text_width),
+                        fit(&format!("  {mark}{}{trailer}", row.content), text_width),
                         style,
                     );
                 }
@@ -741,7 +909,28 @@ impl ChatState {
             }
         }
 
-        scrollbar(outer, buf, t, &self.list, &heights, self.rows.len(), body);
+        if scrollbar(outer, buf, t, &self.list, &heights, self.rows.len(), body) {
+            // The whole track, not the thumb: a click anywhere on it goes
+            // there, which is what every scrollbar has always done and what
+            // makes a drag work from wherever the pointer happens to be.
+            self.hits.push((
+                Rect {
+                    x: outer.x + outer.width - 1,
+                    y: body.y,
+                    width: 1,
+                    height: body.height,
+                },
+                Hit::Scrollbar,
+            ));
+        }
+    }
+
+    /// Where the scrollbar's track is, for a drag that has left it sideways.
+    pub fn scrollbar_track(&self) -> Option<Rect> {
+        self.hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::Scrollbar)
+            .map(|(rect, _)| *rect)
     }
 
     /// This frame's pictures, for the pass that draws them.
@@ -751,6 +940,54 @@ impl ChatState {
     /// keeps this panel from owning a second copy of it.
     pub fn take_slots(&mut self) -> Vec<Placement> {
         std::mem::take(&mut self.slots)
+    }
+}
+
+/// One optimistic row, and what it is waiting on.
+#[derive(Debug, Clone)]
+struct PendingRow {
+    nonce: crate::discord::handle::Nonce,
+    content: String,
+    failed: bool,
+    uploading: bool,
+    files: usize,
+}
+
+impl Default for PendingRow {
+    fn default() -> Self {
+        Self {
+            nonce: crate::discord::handle::Nonce(0),
+            content: String::new(),
+            failed: false,
+            uploading: false,
+            files: 0,
+        }
+    }
+}
+
+/// What to put after a message that has not gone yet.
+///
+/// A percentage rather than a spinner: a twenty-megabyte picture on a slow
+/// connection is thirty seconds of something, and "sending" for thirty seconds
+/// looks exactly like a client that has stopped.
+fn upload_note(row: &PendingRow, progress: Option<(u64, u64)>) -> String {
+    if row.failed {
+        return "  (not sent)".into();
+    }
+    if !row.uploading {
+        return String::new();
+    }
+    let files = if row.files == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{} files", row.files)
+    };
+    match progress {
+        Some((sent, total)) if total > 0 => {
+            let percent = (sent.saturating_mul(100) / total).min(100);
+            format!("  ({files}, {percent}%)")
+        }
+        _ => format!("  ({files}\u{2026})"),
     }
 }
 
@@ -982,13 +1219,13 @@ fn scrollbar(
     heights: &[u16],
     len: usize,
     body: Rect,
-) {
+) -> bool {
     if outer.width < 2 || body.height < 3 || len == 0 {
-        return;
+        return false;
     }
     let total: u32 = heights.iter().map(|h| u32::from(*h)).sum();
     if total <= u32::from(body.height) {
-        return;
+        return false;
     }
     let get = |i: usize| heights.get(i).copied().unwrap_or(0);
     let visible = list.visible(body, get, len);
@@ -1015,6 +1252,7 @@ fn scrollbar(
             buf.set_string(x, y, SCROLLBAR, style);
         }
     }
+    true
 }
 
 /// The oldest message the read state says has not been seen.

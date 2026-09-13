@@ -37,6 +37,7 @@ use starkit::ratatui::widgets::Widget;
 use starkit::ratatui_image::Image;
 use starkit::theme::color::Rgb;
 
+use super::anim::Animations;
 use crate::discord::media::{Decoded, MediaError, MediaKey, MediaPriority, MediaRequest, Want};
 use crate::ui::panels::{fit, rgb};
 use crate::ui::theme::Theme;
@@ -118,6 +119,73 @@ impl MediaStore {
             .get(key)
             .map(|e| e.state.clone())
             .unwrap_or(MediaState::Missing)
+    }
+
+    /// The pixels, when there are any.
+    pub fn decoded(&self, key: &MediaKey) -> Option<Arc<Decoded>> {
+        match self.entries.get(key).map(|e| &e.state) {
+            Some(MediaState::Ready(decoded)) => Some(Arc::clone(decoded)),
+            _ => None,
+        }
+    }
+
+    /// How big the picture turned out to be, in pixels.
+    ///
+    /// The renderer reserves rows from the size an attachment *declares*, and
+    /// an embed often declares nothing at all. Those get one row until the
+    /// bytes arrive; this is what the second measurement reads, and it is the
+    /// reason a `MediaStore` is threaded into the render context rather than
+    /// only into the drawing pass.
+    pub fn size(&self, key: &MediaKey) -> Option<(u32, u32)> {
+        let decoded = self.decoded(key)?;
+        let img = match &*decoded {
+            Decoded::Still(img) => img.clone(),
+            Decoded::Animated { frames, .. } => frames.first()?.clone(),
+            Decoded::Bytes(_) => return None,
+        };
+        Some((img.width(), img.height()))
+    }
+
+    /// Ask for a picture nothing said the size of.
+    ///
+    /// The renderer draws it as a chip and cannot give it a rectangle, so the
+    /// size asked for is a guess at the largest it could usefully be drawn;
+    /// what comes back is what settles how many rows it gets on the next
+    /// measurement. Marked as wanted this frame, or the sweep at the end of
+    /// the frame would cancel it the moment it was asked for.
+    pub fn want_measure(&mut self, key: &MediaKey) {
+        let frame = self.frame;
+        let entry = self.entries.entry(key.clone()).or_insert(Entry {
+            state: MediaState::Missing,
+            seen: frame,
+        });
+        entry.seen = frame;
+        if matches!(entry.state, MediaState::Missing) {
+            entry.state = MediaState::Loading;
+            self.requests.push(MediaRequest {
+                key: key.clone(),
+                want: Want::Decoded {
+                    max_w: 64 * PX_PER_COL,
+                    max_h: 32 * PX_PER_ROW,
+                },
+                priority: MediaPriority::Prefetch,
+                generation: self.generation,
+            });
+        }
+    }
+
+    /// Ask for the undecoded bytes of something already on screen.
+    ///
+    /// For saving a picture to disk: the pixels held here have been resized to
+    /// fit a rectangle, and writing those out would hand somebody a thumbnail
+    /// of the file they asked for.
+    pub fn want_bytes(&mut self, key: &MediaKey) {
+        self.requests.push(MediaRequest {
+            key: key.clone(),
+            want: Want::Bytes,
+            priority: MediaPriority::Visible,
+            generation: self.generation,
+        });
     }
 
     /// The core has answered.
@@ -271,6 +339,9 @@ pub struct Painted {
     pub drawn: HashSet<ImageId>,
     /// How many emoji were drawn as pictures, against the cap.
     pub emoji: usize,
+    /// Every animation that was on screen, in the order it was drawn, for the
+    /// clock that decides which of them may move.
+    pub animated: Vec<MediaKey>,
 }
 
 /// Draw every placement, and say what was drawn.
@@ -282,6 +353,7 @@ pub fn paint(
     places: &[Placement],
     graphics: &mut Graphics,
     store: &mut MediaStore,
+    anim: &Animations,
     theme: &Theme,
     buf: &mut Buffer,
 ) -> Painted {
@@ -305,12 +377,22 @@ pub fn paint(
             fallback(place, rect, buf, theme, &state);
             continue;
         };
-        let Some(img) = first_frame(decoded) else {
+        // A moving picture is only ever moving where it is allowed to be: the
+        // marker over a video says the terminal will not play it, so it shows
+        // one frame however many it has.
+        let moves = !matches!(place.shape, Shape::Play) && crate::ui::panels::chat::anim::delays_of(decoded).is_some();
+        let frame = if moves { anim.frame_of(&place.key) } else { 0 };
+        let Some(img) = frame_at(decoded, frame) else {
             fallback(place, rect, buf, theme, &MediaState::Failed);
             continue;
         };
+        if moves {
+            out.animated.push(place.key.clone());
+        }
 
-        let id = ImageId::of(&place.key);
+        // The frame is part of what the protocol was built from, so two frames
+        // of one picture are two entries rather than one that flickers.
+        let id = ImageId::of(&(&place.key, frame));
         if draw_one(graphics, id, img, rect, clipped, buf) {
             out.drawn.insert(id);
         }
@@ -442,12 +524,21 @@ fn overlay_play(rect: Rect, buf: &mut Buffer, theme: &Theme) {
     );
 }
 
-/// The picture to draw for a decoding. An animation shows its first frame
-/// until there is something to advance it.
-fn first_frame(decoded: &Decoded) -> Option<&Arc<image::RgbaImage>> {
+/// The picture to draw for a decoding, at a frame.
+///
+/// A still ignores the frame; an animation that has been asked for one past
+/// its end -- a decode replaced by a shorter one while it was playing -- wraps
+/// rather than disappearing.
+fn frame_at(decoded: &Decoded, frame: usize) -> Option<&Arc<image::RgbaImage>> {
     match decoded {
         Decoded::Still(img) => Some(img),
-        Decoded::Animated { frames, .. } => frames.first(),
+        Decoded::Animated { frames, .. } => {
+            if frames.is_empty() {
+                None
+            } else {
+                frames.get(frame % frames.len())
+            }
+        }
         Decoded::Bytes(_) => None,
     }
 }
@@ -649,7 +740,7 @@ mod tests {
             // Off the panel entirely: never asked for, never drawn.
             place(key(9), Rect::new(0, 40, 10, 4), clip),
         ];
-        let painted = paint(&places, &mut graphics, &mut store, &t, &mut buf);
+        let painted = paint(&places, &mut graphics, &mut store, &Animations::default(), &t, &mut buf);
         store.end_frame();
 
         // Half blocks are drawn by this side rather than by the terminal, so
@@ -696,7 +787,7 @@ mod tests {
             });
         }
         store.begin_frame();
-        let painted = paint(&places, &mut graphics, &mut store, &t, &mut buf);
+        let painted = paint(&places, &mut graphics, &mut store, &Animations::default(), &t, &mut buf);
         store.end_frame();
         assert_eq!(
             painted.emoji, EMOJI_PER_FRAME,

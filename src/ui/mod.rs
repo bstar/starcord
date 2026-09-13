@@ -11,6 +11,7 @@
 //! which is a core rather than a consumer of one.
 
 pub mod app;
+pub mod clipboard;
 pub mod core_ext;
 pub mod fake;
 #[cfg(test)]
@@ -22,3 +23,4 @@ pub mod overlays;
 pub mod panels;
 pub mod status;
 pub mod theme;
+pub mod unread;

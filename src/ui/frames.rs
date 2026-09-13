@@ -387,3 +387,4 @@ fn the_pictures_as_chips() {
     app.tick();
     insta::assert_snapshot!("pictures-chips-100x30", render(&mut app, 100, 30));
 }
+

@@ -87,6 +87,10 @@ pub enum Drag {
     /// Index into [`Regions::seams`], and where the pointer was last seen, so
     /// a move can be turned into a delta.
     Seam { seam: usize, x: u16, y: u16 },
+    /// The message list's scrollbar. Carries nothing: where the pointer is on
+    /// the track is the whole of the answer, so a drag that has wandered off
+    /// the column sideways still scrolls.
+    Scrollbar,
 }
 
 /// One frame's geometry.

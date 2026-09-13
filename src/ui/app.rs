@@ -67,8 +67,13 @@ use starkit::term;
 use super::keymap::{self, Action, PrefixKey};
 use super::layout::{Drag, LayoutState, Regions};
 use super::login::{LoginScreen, Outcome};
+use super::overlays::attach::Attach;
 use super::overlays::confirm::{Confirm, Pending};
+use super::overlays::media::Viewer;
+use super::overlays::menu::{Choice, Menu};
+use super::overlays::picker::{Kind, Picker};
 use super::overlays::quick::{self, Target};
+use super::overlays::search::Search;
 use super::overlays::settings::Setting;
 use super::overlays::{self, Overlays};
 use super::panels::chat::{ChatState, Hit};
@@ -76,10 +81,11 @@ use super::panels::composer::{self, Composer, Sources};
 use super::panels::{self, channels, chat, dms, guilds, members, rgb, DmTab, Fold, PanelId};
 use super::status;
 use super::theme::Theme;
-use super::{core_ext, layout};
+use super::{clipboard, core_ext, layout, unread};
 use crate::config::Config;
 use crate::discord::handle::{
     AuthEvent, Connection, EmojiRef, Event, ExternalKind, MessagesChange, Note, NoteLevel,
+    SearchScope,
 };
 use crate::discord::snowflake::{ChannelId, GuildId, MessageId};
 use crate::discord::{Command, Handle};
@@ -195,6 +201,21 @@ pub struct App {
     composer_width: u16,
     /// Where the caret goes, if anything on screen has one.
     caret: Option<(u16, u16)>,
+    /// Draw every cell next frame rather than only what changed.
+    ///
+    /// The terminal is a shared surface. A capability reply that arrived late,
+    /// a stray byte echoed by something else, a multiplexer redrawing a pane:
+    /// any of them leaves the screen holding a character this program's buffer
+    /// does not know about, and the diff will never repaint that cell because
+    /// as far as it is concerned nothing there changed. Closing an overlay is
+    /// where that shows, because the overlay blanked the region and the panels
+    /// underneath are about to claim it back. So the frame after an overlay
+    /// closes is a full one, and `ctrl+l` asks for one at any time.
+    repaint: bool,
+    /// A message the view should land on once its channel's window arrives.
+    pending_jump: Option<(ChannelId, MessageId)>,
+    /// A picture waiting for its undecoded bytes so it can be written out.
+    pending_save: Option<super::overlays::media::Item>,
     quit: bool,
 }
 
@@ -244,6 +265,9 @@ impl App {
             layout_dirty: None,
             composer_width: 40,
             caret: None,
+            repaint: false,
+            pending_jump: None,
+            pending_save: None,
             quit: false,
             core,
             cfg,
@@ -282,11 +306,26 @@ impl App {
 
             self.tick();
 
+            if std::mem::take(&mut self.repaint) {
+                // Throw away what the diff believes is on the screen, so the
+                // next draw writes every cell.
+                term.clear()?;
+            }
             term.draw(|f| {
                 self.draw(f.area(), f.buffer_mut());
             })?;
 
-            if event::poll(FRAME)? {
+            // A frame is the ceiling on how long a keystroke waits; an
+            // animation that is due sooner than that is the floor. Without
+            // this a hundred-millisecond GIF frame arrives up to a frame late
+            // every time, which is visible as a limp.
+            let wait = self
+                .chat
+                .anim
+                .next_due(Instant::now())
+                .map(|due| due.min(FRAME))
+                .unwrap_or(FRAME);
+            if event::poll(wait)? {
                 match event::read()? {
                     TermEvent::Key(k) if k.kind == KeyEventKind::Press => self.key(k),
                     TermEvent::Mouse(m) => {
@@ -328,6 +367,27 @@ impl App {
         self.settle_layout();
         self.maybe_mark_read();
         self.refresh_qr();
+
+        let now = Instant::now();
+        self.over.tick(now);
+        for command in self.over.take_commands() {
+            self.core.send(command);
+        }
+
+        // The animation clock, at the top of the frame and before anything is
+        // measured: what moves is decided from what the last frame drew.
+        self.chat.anim.set_policy(self.cfg.media.animate);
+        let focused = self.terminal_focused
+            && (self.layout.focus() == PanelId::Chat || self.over.open());
+        let media = &self.chat.media;
+        let moved = self.chat.anim.tick(now, focused, |key| {
+            media
+                .decoded(key)
+                .and_then(|d| chat::anim::delays_of(&d))
+        });
+        if moved {
+            self.view.stale = true;
+        }
     }
 
     /// A code nobody scanned in time is replaced without being asked.
@@ -464,28 +524,114 @@ impl App {
                 // one that is not recorded is one that is asked for again on
                 // every frame for as long as the message is on screen.
                 let ok = result.is_ok();
-                self.chat.media.arrived(key, result);
+                self.chat.media.arrived(key.clone(), result);
+                if let Some(item) = self.pending_save.clone() {
+                    if item.key == key {
+                        if let Some(decoded) = self.chat.media.decoded(&key) {
+                            if let crate::discord::media::Decoded::Bytes(bytes) = &*decoded {
+                                let bytes = bytes.clone();
+                                self.pending_save = None;
+                                self.write_saved(&item.filename, &bytes);
+                            }
+                        }
+                    }
+                }
                 if ok {
-                    // Every message that owns this picture has to be measured
-                    // again; the generation is what makes their cache keys
-                    // miss.
-                    self.chat.media_gen = self.chat.media_gen.wrapping_add(1);
+                    // Only the messages that draw this picture are measured
+                    // again; their generation is what makes their cache keys
+                    // miss, and nobody else's.
+                    self.chat.media_arrived(&key);
                 }
                 self.view.stale = true;
             }
-            Event::Mention { .. } => {
-                if self.cfg.notify.bell {
-                    // The terminal's own bell: the one notification that needs
-                    // nothing installed and reaches a machine over ssh. Written
-                    // and flushed here rather than left in a buffer that the
-                    // next frame would scribble over.
-                    use std::io::Write as _;
-                    let mut out = std::io::stdout();
-                    let _ = out.write_all(b"\x07");
-                    let _ = out.flush();
+            Event::Mention { channel, message } => self.mentioned(channel, message),
+            Event::UploadProgress { nonce, sent, total } => {
+                self.chat.upload_progress(nonce, sent, total);
+                self.view.stale = true;
+            }
+            Event::Gifs { id, result } => {
+                if self
+                    .over
+                    .gifs_arrived(id, result.map(|page| page.results))
+                {
+                    self.view.stale = true;
                 }
             }
-            Event::UploadProgress { .. } | Event::Gifs { .. } | Event::Search { .. } => {}
+            Event::Search { id, result } => {
+                let state = self.core.state();
+                let tz = self.tz.clone();
+                let name_of = |msg: &crate::discord::model::Message| {
+                    let guild = state.channel(msg.channel_id).and_then(|c| c.guild_id);
+                    (
+                        state.display_name(guild, msg.author.id),
+                        msg.timestamp
+                            .map(|t| {
+                                t.to_zoned(tz.clone())
+                                    .strftime("%Y-%m-%d %H:%M")
+                                    .to_string()
+                            })
+                            .unwrap_or_default(),
+                    )
+                };
+                let used = self.over.search_arrived(id, result, name_of);
+                drop(state);
+                if used {
+                    self.view.stale = true;
+                }
+            }
+        }
+    }
+
+    /// Somebody said this account's name somewhere.
+    ///
+    /// The desktop notification is the core's — it has the configuration, the
+    /// collapse rule and the bus — and this is the terminal's own half: the
+    /// bell and a line in the status bar. Doing both here would notify twice;
+    /// doing neither would leave the client silent on a machine with no
+    /// notification daemon, which is most of the ones it will run on.
+    fn mentioned(&mut self, channel: ChannelId, message: MessageId) {
+        let (muted, who, what, place) = {
+            let state = self.core.state();
+            let muted = state.unread(channel).muted;
+            let msg = state.message(channel, message);
+            let guild = state.channel(channel).and_then(|c| c.guild_id);
+            let who = msg
+                .as_ref()
+                .map(|m| state.display_name(guild, m.author.id))
+                .unwrap_or_else(|| "somebody".into());
+            let what = msg
+                .as_ref()
+                .map(|m| crate::discord::markdown::parse(&m.content).plain_text())
+                .unwrap_or_default();
+            let place = state
+                .channel(channel)
+                .and_then(|c| c.name().map(|n| format!("#{n}")))
+                .unwrap_or_else(|| state.dm_title(channel));
+            (muted, who, what, place)
+        };
+        let decision = unread::interrupt(
+            unread::Where {
+                channel,
+                open: self.nav.channel,
+                terminal_focused: self.terminal_focused,
+            },
+            self.cfg.notify.enabled,
+            self.cfg.notify.bell,
+            muted,
+        );
+        if decision.bell {
+            // The terminal's own bell: the one notification that needs nothing
+            // installed and reaches a machine over ssh. Written and flushed
+            // here rather than left in a buffer the next frame would scribble
+            // over.
+            use std::io::Write as _;
+            let mut out = std::io::stdout();
+            let _ = out.write_all(b"\x07");
+            let _ = out.flush();
+        }
+        if decision.note {
+            let one: String = what.lines().next().unwrap_or("").chars().take(60).collect();
+            self.note(format!("@{who} in {place}: {one}"));
         }
     }
 
@@ -511,8 +657,17 @@ impl App {
             // presses often, and the alternative is a reverse index from
             // every message to everything that quotes it.
             MessagesChange::Updated(_) => self.chat.cache.clear(),
+            MessagesChange::Replaced => {
+                if let Some((wanted, message)) = self.pending_jump {
+                    if wanted == channel {
+                        self.pending_jump = None;
+                        self.refresh_now();
+                        self.chat.select(message);
+                        self.note("jumped \u{b7} G for the newest");
+                    }
+                }
+            }
             MessagesChange::Appended(_)
-            | MessagesChange::Replaced
             | MessagesChange::Pending(_)
             | MessagesChange::Loading(_) => {}
         }
@@ -1055,6 +1210,10 @@ impl App {
                 return;
             }
             overlays::Key::Ignored => {}
+            other => {
+                self.overlay_asked(other);
+                return;
+            }
         }
 
         // Then the composer, which is a text field and takes raw keys.
@@ -1131,10 +1290,25 @@ impl App {
 
     /// One action. The single place a key turns into a change.
     pub fn handle(&mut self, action: Action) {
+        // An overlay that is about to go away takes the cells it blanked with
+        // it, and the panels underneath have to claim them back. See `repaint`.
+        let was_open = self.over.open();
+        self.act(action);
+        if was_open && !self.over.open() {
+            self.repaint = true;
+        }
+    }
+
+    fn act(&mut self, action: Action) {
         match action {
             Action::Quit => self.ask_to_quit(),
             Action::Help => self.over.toggle_help(),
             Action::CloseOverlay => self.over.close(),
+            Action::Redraw => {
+                self.repaint = true;
+                self.chat.cache.clear();
+                self.note("redrawn");
+            }
 
             Action::CursorUp => self.move_cursor(-1),
             Action::CursorDown => self.move_cursor(1),
@@ -1242,9 +1416,16 @@ impl App {
             Action::Yank => self.yank(false),
             Action::YankLink => self.yank(true),
             Action::CopyMessageLink => self.copy_jump_link(),
-            Action::OpenExternal | Action::OpenMedia => self.open_external(),
+            Action::OpenExternal => self.open_external(),
+            Action::OpenMedia => self.open_viewer(),
+            // `space` is one key with two jobs, and which one it does is a
+            // fact about the message rather than a mode: a message that
+            // started a thread opens it, and one that did not uncovers
+            // whatever it is hiding.
             Action::RevealSpoiler => {
-                if !self.chat.reveal() {
+                if let Some(thread) = self.chat.selected_thread() {
+                    self.open_channel(thread);
+                } else if !self.chat.reveal() {
                     self.note("nothing hidden here");
                 }
             }
@@ -1280,21 +1461,312 @@ impl App {
                 self.draft_changed();
             }
 
-            // Everything the later milestones own. Named rather than left to a
-            // catch-all so that adding an action forces a decision here.
-            Action::NextUnread
-            | Action::PrevUnread
-            | Action::Search
-            | Action::React
-            | Action::TogglePin
-            | Action::EmojiPicker
-            | Action::GifPicker
-            | Action::Attach
-            | Action::PasteImage
-            | Action::MediaNext
-            | Action::MediaPrev
-            | Action::MediaSave
-            | Action::MediaZoom => self.note("not yet"),
+            Action::NextUnread => self.hop_unread(true),
+            Action::PrevUnread => self.hop_unread(false),
+            Action::Search => self.open_search(false),
+            Action::SearchGuild => self.open_search(true),
+            Action::React => self.open_react(),
+            Action::EmojiPicker => self.open_picker(Kind::Emoji),
+            Action::GifPicker => self.open_picker(Kind::Gif),
+            Action::Attach => self.open_attach(),
+            Action::PasteImage => self.paste_image(),
+
+            // The viewer takes its own keys while it is open, so these only
+            // arrive when it is not. Delegated rather than ignored so that the
+            // key table and what happens stay the same thing.
+            Action::MediaNext | Action::MediaPrev | Action::MediaZoom | Action::MediaSave => {
+                self.note("nothing open to look at")
+            }
+
+            // Pinning needs a route the core does not have: `Command` has no
+            // pin, deliberately, and adding one is a milestone of its own.
+            Action::TogglePin => self.note("pinning is not here yet"),
+        }
+    }
+
+    // -- the pickers, the viewer and the search ----------------------------
+
+    /// `ctrl+e` and `ctrl+g`: the emoji grid and the GIF grid.
+    fn open_picker(&mut self, kind: Kind) {
+        let emoji = core_ext::custom_emoji(&self.core.state());
+        let aspect = self.look.graphics.cell_aspect().unwrap_or(2.0);
+        self.over
+            .open_picker(Picker::new(kind, self.nav.channel, emoji, aspect));
+    }
+
+    /// `+`: react to the message under the cursor.
+    fn open_react(&mut self) {
+        let (Some(channel), Some(msg)) = (self.nav.channel, self.chat.selected()) else {
+            self.note("no message chosen");
+            return;
+        };
+        // Which reactions are already this account's, so that choosing one of
+        // them takes it off rather than trying to add it twice.
+        let mine: Vec<String> = msg
+            .reactions
+            .iter()
+            .filter(|r| r.me)
+            .map(|r| r.emoji.reaction_key())
+            .collect();
+        let emoji = core_ext::custom_emoji(&self.core.state());
+        let aspect = self.look.graphics.cell_aspect().unwrap_or(2.0);
+        self.over.open_picker(
+            Picker::new(Kind::Reaction(msg.id), Some(channel), emoji, aspect).with_mine(mine),
+        );
+    }
+
+    /// `alt+a`: attach a file by typing where it is.
+    fn open_attach(&mut self) {
+        if self.nav.channel.is_none() {
+            self.note("no channel open");
+            return;
+        }
+        self.over
+            .open_attach(Attach::new(self.cfg.media.max_attachment_mib));
+    }
+
+    /// `ctrl+v`: the picture on the clipboard becomes a chip.
+    fn paste_image(&mut self) {
+        if self.nav.channel.is_none() {
+            self.note("no channel open");
+            return;
+        }
+        match clipboard::image() {
+            Ok((bytes, dims)) => {
+                let limit = self.cfg.media.max_attachment_mib.saturating_mul(1024 * 1024);
+                if limit > 0 && bytes.len() as u64 > limit {
+                    self.note_at(
+                        format!(
+                            "that picture is {}, over the limit",
+                            super::overlays::attach::human(bytes.len() as u64)
+                        ),
+                        NoteLevel::Warning,
+                    );
+                    return;
+                }
+                let pending = composer::Pending::clipboard(bytes, dims);
+                let name = pending.name.clone();
+                if self.composer.attach(pending) {
+                    self.note(format!("attached {name}"));
+                    self.layout.focus_set(PanelId::Composer);
+                }
+            }
+            Err(e) => {
+                tracing::debug!("no picture on the clipboard: {e}");
+                self.note_at("no picture on the clipboard", NoteLevel::Warning);
+            }
+        }
+    }
+
+    /// `/` and `alt+/`.
+    fn open_search(&mut self, guild_wide: bool) {
+        let state = self.core.state();
+        let scope = if guild_wide {
+            match self.nav.guild {
+                Some(guild) => SearchScope::Guild(guild),
+                None => {
+                    drop(state);
+                    self.note("direct messages are searched one at a time");
+                    return;
+                }
+            }
+        } else {
+            match self.nav.channel {
+                Some(channel) => SearchScope::Channel(channel),
+                None => {
+                    drop(state);
+                    self.note("no channel open");
+                    return;
+                }
+            }
+        };
+        let where_ = match scope {
+            SearchScope::Guild(guild) => state
+                .guild(guild)
+                .map(|g| g.name.clone())
+                .unwrap_or_else(|| "this server".into()),
+            SearchScope::Channel(channel) => state
+                .channel(channel)
+                .and_then(|c| c.name().map(|n| format!("#{n}")))
+                .unwrap_or_else(|| state.dm_title(channel)),
+        };
+        drop(state);
+        self.over.open_search(Search::new(scope, where_));
+    }
+
+    /// `enter` on a message with something worth looking at.
+    fn open_viewer(&mut self) {
+        let Some(channel) = self.nav.channel else {
+            self.note("no channel open");
+            return;
+        };
+        let state = self.core.state();
+        let items: Vec<super::overlays::media::Item> = state
+            .recent(channel, 500)
+            .iter()
+            .flat_map(|msg| {
+                msg.attachments
+                    .iter()
+                    .filter(|a| a.is_image())
+                    .map(|a| super::overlays::media::Item {
+                        message: msg.id,
+                        key: crate::discord::media::MediaKey::Attachment {
+                            message: msg.id,
+                            id: a.id.0,
+                            url: a.url.clone(),
+                        },
+                        url: a.url.clone(),
+                        filename: a.filename.clone(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        drop(state);
+        let on = self.chat.selected().map(|m| m.id);
+        let aspect = self.look.graphics.cell_aspect().unwrap_or(2.0);
+        match Viewer::new(items, on, aspect) {
+            Some(viewer) => self.over.open_viewer(viewer),
+            None => self.note("no pictures in this channel"),
+        }
+    }
+
+    /// `alt+up` and `alt+down`.
+    fn hop_unread(&mut self, forward: bool) {
+        let stops = {
+            let state = self.core.state();
+            let channels: Vec<std::sync::Arc<crate::discord::model::Channel>> = match self.nav.guild
+            {
+                Some(guild) => state.channels_ordered(guild),
+                // The direct-message home walks the conversations instead,
+                // which is the list it is showing.
+                None => state.dms_ordered(),
+            };
+            channels
+                .iter()
+                .filter(|c| c.kind.is_text())
+                .map(|c| {
+                    let unread = state.unread(c.id);
+                    unread::Stop {
+                        channel: c.id,
+                        unread: unread.notable(),
+                        mentions: unread.mentions,
+                        muted: unread.muted,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        match unread::hop(&stops, self.nav.channel, forward) {
+            Some(channel) => self.open_channel(channel),
+            None => self.note("nothing unread here"),
+        }
+    }
+
+    /// What an overlay asked the application to do.
+    fn overlay_asked(&mut self, what: overlays::Key) {
+        match what {
+            overlays::Key::Insert(text) => {
+                self.composer.input.insert_str(&text);
+                self.layout.focus_set(PanelId::Composer);
+                self.draft_changed();
+            }
+            overlays::Key::JumpToMessage { channel, message } => {
+                if self.nav.channel != Some(channel) {
+                    self.open_channel(channel);
+                }
+                self.pending_jump = Some((channel, message));
+                self.core.send(Command::JumpTo { channel, message });
+            }
+            overlays::Key::Menu(choice, message) => {
+                self.chat.select(message);
+                match choice {
+                    Choice::Reply => self.handle(Action::Reply),
+                    Choice::ReplyNoPing => self.handle(Action::ReplyNoPing),
+                    Choice::React => self.handle(Action::React),
+                    Choice::Edit => self.handle(Action::Edit),
+                    Choice::Delete => self.handle(Action::Delete),
+                    Choice::Yank => self.handle(Action::Yank),
+                    Choice::Open => self.handle(Action::OpenExternal),
+                    Choice::CopyLink => self.handle(Action::CopyMessageLink),
+                }
+            }
+            overlays::Key::Attach(path) => self.attach_file(path),
+            overlays::Key::Open(url) => {
+                self.core.send(Command::OpenExternal {
+                    url,
+                    kind: ExternalKind::Image,
+                });
+                self.note("opening");
+            }
+            overlays::Key::Copy(text) => self.copy(&text, "link copied"),
+            overlays::Key::SaveMedia => self.save_media(),
+            _ => {}
+        }
+    }
+
+    /// A path the attach box accepted.
+    fn attach_file(&mut self, path: std::path::PathBuf) {
+        let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        // The size on the chip is what will be uploaded, and the dimensions
+        // come from the header alone: reading four hundred bytes to say
+        // `640x480` is worth it, and decoding the whole picture to say it is
+        // not.
+        let dims = image::ImageReader::open(&path)
+            .ok()
+            .and_then(|r| r.with_guessed_format().ok())
+            .and_then(|r| r.into_dimensions().ok());
+        let pending = composer::Pending::file(path, bytes, dims);
+        let name = pending.name.clone();
+        if self.composer.attach(pending) {
+            self.note(format!("attached {name}"));
+            self.layout.focus_set(PanelId::Composer);
+        } else {
+            self.note(format!("{name} is already attached"));
+        }
+    }
+
+    /// `s` in the media viewer: write the file to `[media] save_dir`.
+    ///
+    /// What the store holds has been resized to fit a rectangle, so the bytes
+    /// are asked for again when that is all there is. The save then happens on
+    /// the frame they arrive, which is why this is two paths rather than one.
+    fn save_media(&mut self) {
+        let Some(viewer) = &self.over.viewer else {
+            return;
+        };
+        let item = viewer.current().clone();
+        match self.chat.media.decoded(&item.key) {
+            Some(decoded) => match &*decoded {
+                crate::discord::media::Decoded::Bytes(bytes) => {
+                    let bytes = bytes.clone();
+                    self.write_saved(&item.filename, &bytes);
+                }
+                _ => {
+                    self.chat.media.want_bytes(&item.key);
+                    self.note("fetching the whole picture\u{2026}");
+                    self.pending_save = Some(item);
+                }
+            },
+            None => {
+                self.chat.media.want_bytes(&item.key);
+                self.note("fetching the whole picture\u{2026}");
+                self.pending_save = Some(item);
+            }
+        }
+    }
+
+    fn write_saved(&mut self, filename: &str, bytes: &[u8]) {
+        let dir = self.cfg.save_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.note_at(format!("could not make {}: {e}", dir.display()), NoteLevel::Error);
+            return;
+        }
+        // Never over something already there: a second `cat.png` is
+        // `cat-1.png`, because a save that silently replaced a file would be
+        // the one destructive thing in the program.
+        let path = free_name(&dir, filename);
+        match std::fs::write(&path, bytes) {
+            Ok(()) => self.note(format!("saved {}", path.display())),
+            Err(e) => self.note_at(format!("could not save: {e}"), NoteLevel::Error),
         }
     }
 
@@ -1322,6 +1794,13 @@ impl App {
     }
 
     fn ask_to_quit(&mut self) {
+        // A file that is halfway up the wire is not a draft: leaving now loses
+        // the upload and leaves a message nobody receives, so it is asked
+        // about first and in its own words.
+        if self.uploading() > 0 {
+            self.over.ask(Confirm::quit_while_uploading(self.uploading()));
+            return;
+        }
         let unsent = self.composer.unsent();
         if unsent > 0 {
             self.over.ask(Confirm::quit_with_draft(unsent));
@@ -1335,6 +1814,25 @@ impl App {
             self.save_channel_state(channel);
         }
         self.quit = true;
+    }
+
+    /// How many messages are still handing their files over.
+    fn uploading(&self) -> usize {
+        use crate::discord::state::messages::PendingState;
+        let state = self.core.state();
+        let channels: Vec<ChannelId> = state
+            .guilds_ordered()
+            .iter()
+            .flat_map(|g| state.channels_ordered(g.id))
+            .chain(state.dms_ordered())
+            .map(|c| c.id)
+            .collect();
+        channels
+            .into_iter()
+            .filter_map(|id| state.messages(id))
+            .flat_map(|store| store.pending())
+            .filter(|p| matches!(p.state, PendingState::Uploading { .. }))
+            .count()
     }
 
     fn confirmed(&mut self, pending: Pending) {
@@ -1508,16 +2006,17 @@ impl App {
             composer::Mode::Reply { to, ping, .. } => (Some(*to), *ping),
             _ => (None, true),
         };
-        let content = self.composer.take();
-        if content.trim().is_empty() {
+        if !self.composer.has_something_to_send() {
             return;
         }
+        let attachments = self.composer.take_attachments();
+        let content = self.composer.take();
         self.core.send(Command::SendMessage {
             channel,
             content,
             reply_to,
             mention_author,
-            attachments: Vec::new(),
+            attachments,
         });
         self.core.send(Command::SetDraft {
             channel,
@@ -1683,6 +2182,7 @@ impl App {
                             self.change_setting(setting, forward)
                         }
                         overlays::Key::Taken | overlays::Key::Ignored => {}
+                        other => self.overlay_asked(other),
                     }
                 }
                 _ => {}
@@ -1709,6 +2209,11 @@ impl App {
                     self.panel_click(&regions, panel, x, y, double);
                 }
             }
+            MouseEventKind::Down(MouseButton::Right) => {
+                if regions.hit(x, y) == Some(PanelId::Chat) {
+                    self.open_menu(x, y);
+                }
+            }
             MouseEventKind::Drag(MouseButton::Left) => self.drag_to(x, y),
             MouseEventKind::Up(MouseButton::Left) => self.layout.drag = None,
             MouseEventKind::ScrollDown => self.scroll_panel(&regions, x, y, 3),
@@ -1718,6 +2223,10 @@ impl App {
     }
 
     fn drag_to(&mut self, x: u16, y: u16) {
+        if self.layout.drag == Some(Drag::Scrollbar) {
+            self.drag_scrollbar(y);
+            return;
+        }
         let Some(Drag::Seam { seam, x: px, y: py }) = self.layout.drag else {
             return;
         };
@@ -1738,6 +2247,33 @@ impl App {
         self.layout.drag = Some(Drag::Seam { seam, x, y });
     }
 
+    /// The pointer on the scrollbar's track: that fraction of the way down.
+    fn drag_scrollbar(&mut self, y: u16) {
+        let Some(track) = self.chat.scrollbar_track() else {
+            return;
+        };
+        if track.height == 0 {
+            return;
+        }
+        let within = y.clamp(track.y, track.y + track.height - 1) - track.y;
+        let fraction = f32::from(within) / f32::from(track.height.saturating_sub(1).max(1));
+        self.chat.scroll_to_fraction(fraction);
+    }
+
+    /// Right-click: what can be done to the message under the pointer.
+    fn open_menu(&mut self, x: u16, y: u16) {
+        let Some(Hit::Message(id)) = self
+            .chat
+            .hit(x, y)
+            .or_else(|| self.chat.selected().map(|m| Hit::Message(m.id)))
+        else {
+            return;
+        };
+        self.chat.select(id);
+        let mine = self.chat.selected().is_some_and(|m| self.is_mine(&m));
+        self.over.open_menu(Menu::new(id, mine));
+    }
+
     fn status_hit(&self, regions: &Regions, x: u16, y: u16) -> Option<status::Hit> {
         let view = self.status_view();
         status::hit(regions.status, &view, x, y)
@@ -1748,6 +2284,7 @@ impl App {
             status::Hit::Help => self.over.toggle_help(),
             status::Hit::Connection => self.handle(Action::Reconnect),
             status::Hit::Location => self.handle(Action::QuickSwitch),
+            status::Hit::NewBelow => self.chat.to_bottom(),
         }
     }
 
@@ -1816,7 +2353,11 @@ impl App {
                 }
             }
             PanelId::Chat => self.chat_click(x, y, double),
-            PanelId::Composer => {}
+            PanelId::Composer => {
+                if let Some(index) = self.composer.chip_at(x, y) {
+                    self.composer.drop_attachment(index);
+                }
+            }
         }
     }
 
@@ -1847,12 +2388,26 @@ impl App {
                     (_, Some(name)) => EmojiRef::Unicode(name),
                     _ => return,
                 };
-                // The chip says whether this account is on it; toggling is the
-                // one gesture, and the core decides which request that is.
-                self.core.send(Command::AddReaction {
-                    channel,
-                    message,
-                    emoji,
+                // The chip says whether this account is already on it, and a
+                // click on one is a toggle: adding a reaction that is already
+                // there is a request Discord answers with nothing at all, so
+                // the chip would have looked stuck.
+                let mine = self
+                    .chat
+                    .selected_reaction_is_mine(message, &emoji)
+                    .unwrap_or(false);
+                self.core.send(if mine {
+                    Command::RemoveReaction {
+                        channel,
+                        message,
+                        emoji,
+                    }
+                } else {
+                    Command::AddReaction {
+                        channel,
+                        message,
+                        emoji,
+                    }
                 });
             }
             Hit::Attachment(id, url) => {
@@ -1868,6 +2423,10 @@ impl App {
                 if let Some(channel) = self.nav.channel {
                     self.core.send(Command::LoadOlder(channel));
                 }
+            }
+            Hit::Scrollbar => {
+                self.layout.drag = Some(Drag::Scrollbar);
+                self.drag_scrollbar(y);
             }
         }
     }
@@ -2007,6 +2566,8 @@ impl App {
             return;
         }
 
+        let mut drawn: std::collections::HashSet<starkit::graphics::ImageId> =
+            std::collections::HashSet::new();
         let composer_rows = self.composer.rows(&self.cfg.compose, self.composer_width);
         let Some(regions) = self
             .layout
@@ -2084,7 +2645,7 @@ impl App {
         // After the text and before the overlays: an overlay clears the cells
         // it covers, and a protocol image whose cell has been cleared is one
         // the terminal is never told about.
-        self.paint_pictures(icons, buf);
+        drawn.extend(self.paint_pictures(icons, buf));
 
         // The message list asks for older history once it is looking at the
         // top of what it has, which is only knowable after it has been laid
@@ -2096,7 +2657,16 @@ impl App {
         }
 
         status::render(regions.status, buf, &self.status_view());
-        self.over.render(area, buf, &self.look.theme, &self.cfg);
+        // The overlay's own pictures go after its chrome, and in a second
+        // pass: a `Clear` wipes the cells a protocol image lives in, so the
+        // panels' pictures have to be down before this and the overlay's after
+        // it.
+        let over = self
+            .over
+            .render(area, buf, &self.look.theme, &self.cfg, &self.chat.media);
+        self.paint_overlay(over, buf, &mut drawn);
+        self.look.graphics.forget_unused(&drawn);
+        self.finish_pictures();
         self.draw_caret(area, buf);
     }
 
@@ -2104,7 +2674,11 @@ impl App {
     ///
     /// One pass for the whole screen, because the set of what is on it is what
     /// decides which built protocols are still worth the terminal's memory.
-    fn paint_pictures(&mut self, icons: Vec<(guilds::Icon, Rect)>, buf: &mut Buffer) {
+    fn paint_pictures(
+        &mut self,
+        icons: Vec<(guilds::Icon, Rect)>,
+        buf: &mut Buffer,
+    ) -> std::collections::HashSet<starkit::graphics::ImageId> {
         let mut places = self.chat.take_slots();
         places.extend(
             icons
@@ -2126,15 +2700,47 @@ impl App {
             &places,
             &mut self.look.graphics,
             &mut self.chat.media,
+            &self.chat.anim,
             &self.look.theme,
             buf,
         );
-        // Whatever is not on the screen is not worth the terminal's memory.
-        // Kitty keeps every uploaded image until it is told otherwise, and a
-        // client left open all day would otherwise hand it a conversation's
-        // worth of pictures and never take one back.
-        self.look.graphics.forget_unused(&painted.drawn);
+        // What moved this frame is what may move next frame: the clock is fed
+        // from the drawing pass and from nothing else, which is what keeps an
+        // animation that has scrolled away from costing anything.
+        self.chat.anim.set_visible(painted.animated);
+        painted.drawn
+    }
 
+    /// The open overlay's pictures, drawn over its own chrome.
+    fn paint_overlay(
+        &mut self,
+        places: Vec<chat::media::Placement>,
+        buf: &mut Buffer,
+        drawn: &mut std::collections::HashSet<starkit::graphics::ImageId>,
+    ) {
+        if places.is_empty() {
+            return;
+        }
+        let painted = chat::media::paint(
+            &places,
+            &mut self.look.graphics,
+            &mut self.chat.media,
+            &self.chat.anim,
+            &self.look.theme,
+            buf,
+        );
+        drawn.extend(painted.drawn);
+        // An overlay's animation is the only one that matters while it is up:
+        // everything behind it is covered.
+        let mut moving = painted.animated;
+        moving.extend(self.chat.anim.visible().iter().cloned());
+        self.chat.anim.set_visible(moving);
+    }
+
+    /// Whatever is not on the screen is not worth the terminal's memory, and
+    /// whatever is missing is worth asking for. Both are answers only the end
+    /// of the frame has.
+    fn finish_pictures(&mut self) {
         self.chat.media.end_frame();
         for request in self.chat.media.take_requests() {
             self.core.send(Command::FetchMedia(request));
@@ -2194,6 +2800,42 @@ fn first_link(msg: &crate::discord::model::Message) -> Option<String> {
         return Some(attachment.url.clone());
     }
     msg.embeds.iter().find_map(|e| e.url.clone())
+}
+
+/// A name in `dir` that is not taken: `cat.png`, then `cat-1.png`.
+///
+/// A save that silently replaced a file would be the one destructive thing in
+/// the program, and the two pictures a conversation calls `image.png` are
+/// nearly always two different pictures.
+fn free_name(dir: &std::path::Path, filename: &str) -> PathBuf {
+    let filename = filename.trim();
+    let filename = if filename.is_empty() {
+        "attachment"
+    } else {
+        filename
+    };
+    // Only the last component, whatever the far end called it: a filename with
+    // a slash in it is somebody else's path traversal.
+    let filename = filename.rsplit(['/', '\\']).next().unwrap_or("attachment");
+    let stem = std::path::Path::new(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "attachment".into());
+    let extension = std::path::Path::new(filename)
+        .extension()
+        .map(|s| format!(".{}", s.to_string_lossy()))
+        .unwrap_or_default();
+    let first = dir.join(format!("{stem}{extension}"));
+    if !first.exists() {
+        return first;
+    }
+    for n in 1..1000 {
+        let next = dir.join(format!("{stem}-{n}{extension}"));
+        if !next.exists() {
+            return next;
+        }
+    }
+    first
 }
 
 /// The one line a terminal below the floor gets.

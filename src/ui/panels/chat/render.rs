@@ -90,6 +90,10 @@ pub struct RenderCtx<'a> {
     /// Spoilers the reader has uncovered, by message and ordinal.
     pub revealed: &'a Revealed,
     pub names: &'a Names,
+    /// What has already been decoded, for the pictures that arrived without
+    /// saying how big they are. `None` measures from the declared size alone,
+    /// which is every case a test cares about.
+    pub media: Option<&'a super::media::MediaStore>,
     /// The zone timestamps are rendered in. Carried rather than asked for, so
     /// a test is not a test of the machine's clock settings.
     pub tz: jiff::tz::TimeZone,
@@ -114,6 +118,7 @@ impl<'a> RenderCtx<'a> {
             me: None,
             revealed,
             names,
+            media: None,
             tz: jiff::tz::TimeZone::UTC,
         }
     }
@@ -154,6 +159,12 @@ pub struct Names {
     /// here is what stops a reply reading "the original is not loaded" one
     /// second after it was written.
     pub replies: HashMap<MessageId, (String, String)>,
+    /// Messages that started a thread, and what the thread is called.
+    ///
+    /// Discord gives a thread the id of the message it was started from, so
+    /// this is a lookup in the channel list rather than a field on the
+    /// message: the payload carries nothing about it at all.
+    pub threads: HashMap<MessageId, (ChannelId, String)>,
 }
 
 impl Names {
@@ -263,6 +274,12 @@ pub struct Rendered {
     pub spoilers: Vec<SpoilerSpan>,
     pub attachments: Vec<AttachmentRef>,
     pub reactions: Vec<ReactionChip>,
+    /// Pictures this message would like measured: ones it drew as a chip
+    /// because nothing said how big they are. Fetching one is what turns the
+    /// chip into a picture on the measurement after it arrives.
+    pub measure: Vec<MediaKey>,
+    /// The thread started from this message, if there is one.
+    pub thread: Option<ChannelId>,
     /// The row carrying `╭ ↩ …`, so a click on it jumps to the quoted message.
     pub reply_row: Option<u16>,
     /// The message as text, for `y`.
@@ -309,6 +326,7 @@ pub fn render(msg: &Message, first_in_group: bool, ctx: &RenderCtx<'_>) -> Rende
     let doc = parse(&msg.content);
     w.blocks(&doc.blocks, ctx.gutter());
 
+    w.thread_line(msg);
     w.attachments(msg);
     if ctx.show_embeds {
         w.embeds(msg);
@@ -860,18 +878,19 @@ impl<'a> Writer<'a> {
             });
 
             let chip = attachment_chip(attachment);
-            let (cols, rows) = self.picture_box(attachment);
+            let key = MediaKey::Attachment {
+                message: msg.id,
+                id: attachment.id.0,
+                url: attachment.url.clone(),
+            };
+            let (cols, rows) = self.picture_box(attachment, &key);
             if rows > 0 {
                 self.out.images.push(ImageSlot {
                     row,
                     col: gutter,
                     cols,
                     rows,
-                    key: MediaKey::Attachment {
-                        message: msg.id,
-                        id: attachment.id.0,
-                        url: attachment.url.clone(),
-                    },
+                    key: key.clone(),
                     kind: if is_animated(attachment) {
                         SlotKind::Gif
                     } else {
@@ -888,8 +907,32 @@ impl<'a> Writer<'a> {
                 // failed -- draws it in the reserved rows instead.
                 continue;
             }
+            // A picture that said nothing about its size is a chip for now and
+            // asks to be measured; the frame after the bytes arrive has a real
+            // size to reserve rows from, and this message is measured again.
+            if self.ctx.pictures && self.ctx.max_image_rows > 0 && attachment.is_image() {
+                self.out.measure.push(key);
+            }
             self.chip(gutter, &chip);
         }
+    }
+
+    /// `⌸ thread — name`, under a message somebody started one from.
+    fn thread_line(&mut self, msg: &Message) {
+        let Some((channel, name)) = self.ctx.names.threads.get(&msg.id) else {
+            return;
+        };
+        self.out.thread = Some(*channel);
+        self.flush();
+        let gutter = self.ctx.gutter();
+        let text = format!("\u{2338} thread \u{00b7} {name}");
+        self.row_of(vec![
+            Span::raw(" ".repeat(usize::from(gutter))),
+            Span::styled(
+                cut(&text, self.width().saturating_sub(gutter)),
+                Style::default().fg(rgb(self.theme.chat.link_fg)),
+            ),
+        ]);
     }
 
     /// The cells to reserve for a picture, from what the attachment says it is.
@@ -904,11 +947,18 @@ impl<'a> Writer<'a> {
     /// every photograph into its top-left corner and reserve a screenful of
     /// blank beside it, which is what this looked like before the box was
     /// measured in both directions.
-    fn picture_box(&self, attachment: &Attachment) -> (u16, u16) {
+    fn picture_box(&self, attachment: &Attachment, key: &MediaKey) -> (u16, u16) {
         if !self.ctx.pictures || self.ctx.max_image_rows == 0 || !attachment.is_image() {
             return (0, 0);
         }
-        let (Some(w), Some(h)) = (attachment.width, attachment.height) else {
+        // What it says it is, or -- for the ones that say nothing, which is
+        // most of what a bot posts -- what it turned out to be once the bytes
+        // were here.
+        let declared = match (attachment.width, attachment.height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
+            _ => None,
+        };
+        let Some((w, h)) = declared.or_else(|| self.ctx.media.and_then(|m| m.size(key))) else {
             return (0, 0);
         };
         if w == 0 || h == 0 {

@@ -29,6 +29,7 @@
 //! not.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::input::{Edit, TextInput};
@@ -38,6 +39,7 @@ use starkit::ratatui::style::{Modifier, Style};
 
 use super::{fit, rgb};
 use crate::config::{Compose, SendKey};
+use crate::discord::handle::Upload;
 use crate::discord::snowflake::{ChannelId, EmojiId, MessageId};
 use crate::ui::theme::Theme;
 
@@ -78,6 +80,61 @@ pub enum Mode {
 impl Mode {
     pub fn is_normal(&self) -> bool {
         matches!(self, Mode::Normal)
+    }
+}
+
+/// A file waiting to go out with the next message.
+///
+/// Checked before it becomes one of these — it exists, and it is under
+/// `[media] max_attachment_mib` — so a chip on the screen is a file that will
+/// actually be sent. A chip that appeared and then failed at send time would
+/// be a message somebody believes they sent.
+#[derive(Debug, Clone)]
+pub struct Pending {
+    pub name: String,
+    pub bytes: u64,
+    /// Pixels, for the ones that are pictures.
+    pub dims: Option<(u32, u32)>,
+    pub upload: Upload,
+}
+
+impl Pending {
+    /// A file on disk, already checked.
+    pub fn file(path: std::path::PathBuf, bytes: u64, dims: Option<(u32, u32)>) -> Self {
+        Self {
+            name: crate::ui::overlays::attach::name_of(&path),
+            bytes,
+            dims,
+            upload: Upload::Path(path),
+        }
+    }
+
+    /// A picture off the clipboard, which has no path and so no name of its
+    /// own. Everything that pastes a picture calls the result `clipboard.png`;
+    /// there is nothing better to call it.
+    pub fn clipboard(data: Vec<u8>, dims: (u32, u32)) -> Self {
+        Self {
+            name: "clipboard.png".into(),
+            bytes: data.len() as u64,
+            dims: Some(dims),
+            upload: Upload::Bytes {
+                filename: "clipboard.png".into(),
+                data: Arc::new(data),
+                content_type: "image/png".into(),
+            },
+        }
+    }
+
+    /// `[harbour.png 640x480 ×]`, which is the chip as it is drawn.
+    pub fn chip(&self) -> String {
+        match self.dims {
+            Some((w, h)) => format!("[{} {w}x{h} \u{00d7}]", self.name),
+            None => format!(
+                "[{} {} \u{00d7}]",
+                self.name,
+                crate::ui::overlays::attach::human(self.bytes)
+            ),
+        }
     }
 }
 
@@ -167,6 +224,10 @@ pub struct Composer {
     pub input: TextInput,
     pub mode: Mode,
     pub complete: Option<Autocomplete>,
+    /// Files going out with the next message.
+    pub attachments: Vec<Pending>,
+    /// Where each chip's `×` was drawn, for the pointer.
+    chips: Vec<(Rect, usize)>,
     /// What was typed and not sent, per channel.
     drafts: HashMap<ChannelId, String>,
     channel: Option<ChannelId>,
@@ -187,6 +248,8 @@ impl Composer {
             input: TextInput::multiline().with_max_chars(MAX_CHARS),
             mode: Mode::Normal,
             complete: None,
+            attachments: Vec::new(),
+            chips: Vec::new(),
             drafts: HashMap::new(),
             channel: None,
             note: None,
@@ -198,7 +261,38 @@ impl Composer {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.input.is_empty()
+        self.input.is_empty() && self.attachments.is_empty()
+    }
+
+    /// Add a file to the next message. False when it is already there.
+    pub fn attach(&mut self, pending: Pending) -> bool {
+        if self.attachments.iter().any(|a| a.name == pending.name) {
+            return false;
+        }
+        self.attachments.push(pending);
+        true
+    }
+
+    pub fn drop_attachment(&mut self, index: usize) {
+        if index < self.attachments.len() {
+            self.attachments.remove(index);
+        }
+    }
+
+    /// The files, taken, for the send that carries them.
+    pub fn take_attachments(&mut self) -> Vec<Upload> {
+        std::mem::take(&mut self.attachments)
+            .into_iter()
+            .map(|a| a.upload)
+            .collect()
+    }
+
+    /// Which chip's `×` a click landed on.
+    pub fn chip_at(&self, x: u16, y: u16) -> Option<usize> {
+        self.chips
+            .iter()
+            .find(|(r, _)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+            .map(|(_, index)| *index)
     }
 
     pub fn channel(&self) -> Option<ChannelId> {
@@ -206,6 +300,10 @@ impl Composer {
     }
 
     /// Channels with something unsent in them, for the quit confirmation.
+    ///
+    /// A file waiting to go counts as one whether or not anything was typed
+    /// beside it: quitting over a picture that has not been sent is the same
+    /// loss as quitting over a paragraph.
     pub fn unsent(&self) -> usize {
         let mut n = self
             .drafts
@@ -222,6 +320,9 @@ impl Composer {
                 n += 1;
             } else if !live && stored {
                 n -= 1;
+            }
+            if !self.attachments.is_empty() && !live && !stored {
+                n += 1;
             }
         }
         n
@@ -279,6 +380,11 @@ impl Composer {
         text
     }
 
+    /// Whether there is anything at all to send: text, or a file, or both.
+    pub fn has_something_to_send(&self) -> bool {
+        !self.input.text().trim().is_empty() || !self.attachments.is_empty()
+    }
+
     pub fn reply_to(&mut self, to: MessageId, author: String, ping: bool) {
         self.mode = Mode::Reply { to, author, ping };
     }
@@ -311,13 +417,14 @@ impl Composer {
         let text_width = width.saturating_sub(2).max(1);
         let text = self.input.height(text_width).max(1);
         let banner = u16::from(!self.mode.is_normal());
+        let chips = u16::from(!self.attachments.is_empty());
         let popup = self
             .complete
             .as_ref()
             .map(|c| c.items.len().min(MAX_SUGGESTIONS) as u16)
             .unwrap_or(0);
         // Three of chrome: two borders and the header row the words sit on.
-        (text + banner + popup + 3).clamp(MIN_ROWS, cfg.max_rows.max(MIN_ROWS))
+        (text + banner + chips + popup + 3).clamp(MIN_ROWS, cfg.max_rows.max(MIN_ROWS))
     }
 
     /// One key, of the ones the key table hands to the composer.
@@ -433,7 +540,7 @@ impl Composer {
         if let Mode::Edit { id, .. } = self.mode {
             return Outcome::SaveEdit(id);
         }
-        if self.input.text().trim().is_empty() {
+        if self.input.text().trim().is_empty() && self.attachments.is_empty() {
             return Outcome::Taken;
         }
         Outcome::Send
@@ -511,6 +618,7 @@ impl Composer {
     // -- drawing -----------------------------------------------------------
 
     pub fn render(&mut self, body: Rect, buf: &mut Buffer, v: &View<'_>) -> Option<(u16, u16)> {
+        self.chips.clear();
         if body.width == 0 || body.height == 0 {
             return None;
         }
@@ -527,6 +635,36 @@ impl Composer {
                     .fg(rgb(t.accent))
                     .add_modifier(Modifier::BOLD),
             );
+            y += 1;
+        }
+
+        if !self.attachments.is_empty() && y < bottom {
+            let mut x = body.x;
+            for (index, pending) in self.attachments.iter().enumerate() {
+                let chip = pending.chip();
+                let w = starkit::wrap::width_of(&chip);
+                if x + w > body.x + body.width {
+                    break;
+                }
+                buf.set_string(
+                    x,
+                    y,
+                    &chip,
+                    Style::default().fg(rgb(t.accent)).bg(rgb(t.panel_bg)),
+                );
+                // The `×` and the bracket after it: two cells, because one is
+                // a hard thing to hit with a mouse.
+                self.chips.push((
+                    Rect {
+                        x: x + w.saturating_sub(2),
+                        y,
+                        width: 2,
+                        height: 1,
+                    },
+                    index,
+                ));
+                x += w + 1;
+            }
             y += 1;
         }
 
