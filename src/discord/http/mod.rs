@@ -382,7 +382,7 @@ fn is_transient(e: &reqwest::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::discord::snowflake::ChannelId;
+    use crate::discord::snowflake::{ChannelId, MessageId};
 
     fn props() -> Arc<ClientProps> {
         Arc::new(ClientProps::new("en-US", 1))
@@ -633,7 +633,14 @@ mod tests {
             .unwrap()
             .with_retry_policy(fast());
         let err = http
-            .request::<serde_json::Value>(Route::ChannelMessages(ChannelId(1)), None::<&()>)
+            .request::<serde_json::Value>(
+                Route::ChannelMessages {
+                    channel: ChannelId(1),
+                    history: route::History::Latest,
+                    limit: route::PAGE,
+                },
+                None::<&()>,
+            )
             .await
             .unwrap_err();
         match err {
@@ -738,5 +745,157 @@ mod tests {
             !all.contains("super-secret-token"),
             "the token appeared in a media request's headers"
         );
+    }
+
+    /// Paging through history: the first request asks for the newest page, the
+    /// second asks for what is before the oldest of it, and both come out of
+    /// one allowance.
+    #[tokio::test]
+    async fn history_pages_backwards_through_a_channel() {
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        fn page(from: u64, count: u64) -> serde_json::Value {
+            // Newest first, as Discord returns it.
+            serde_json::Value::Array(
+                (0..count)
+                    .map(|n| {
+                        serde_json::json!({
+                            "id": (from - n).to_string(),
+                            "channel_id": "7",
+                            "content": format!("m{}", from - n),
+                            "author": {"id": "2", "username": "alex"}
+                        })
+                    })
+                    .collect(),
+            )
+        }
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/7/messages"))
+            .and(query_param("limit", "50"))
+            .and(query_param("before", "100"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(page(99, 3)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/channels/7/messages"))
+            .and(query_param("limit", "50"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(page(150, 3)))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let http = Http::with_base(props(), server.uri())
+            .unwrap()
+            .with_retry_policy(fast());
+
+        let newest = api::messages(&http, ChannelId(7), route::History::Latest)
+            .await
+            .unwrap();
+        assert_eq!(newest.len(), 3);
+        assert_eq!(newest[0].id.get(), 150, "Discord returns newest first");
+
+        let older = api::messages(&http, ChannelId(7), route::History::Before(MessageId(100)))
+            .await
+            .unwrap();
+        assert_eq!(older.len(), 3);
+        assert_eq!(older[0].id.get(), 99);
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].url.query().unwrap().contains("limit=50"));
+        assert!(requests[1].url.query().unwrap().contains("before=100"));
+    }
+
+    /// The send path, which is the one place a nonce has to survive
+    /// serialisation exactly: without it the gateway echo cannot find the row
+    /// it belongs to and the sender sees their message twice.
+    #[tokio::test]
+    async fn a_sent_message_carries_its_nonce_and_its_reply() {
+        use wiremock::matchers::{body_json_schema, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/7/messages"))
+            .and(body_json_schema::<serde_json::Value>)
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "500",
+                "channel_id": "7",
+                "content": "hello",
+                "nonce": "81237712343",
+                "author": {"id": "1", "username": "sam"}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let http = Http::with_base(props(), server.uri())
+            .unwrap()
+            .with_retry_policy(fast());
+
+        let sent = api::create_message(
+            &http,
+            ChannelId(7),
+            &api::CreateMessage {
+                content: "hello",
+                nonce: "81237712343".into(),
+                message_reference: Some(api::ReplyTo {
+                    message_id: MessageId(499),
+                    channel_id: ChannelId(7),
+                    fail_if_not_exists: false,
+                }),
+                allowed_mentions: api::AllowedMentions::new(true),
+                tts: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sent.id, MessageId(500));
+        assert_eq!(sent.nonce.as_deref(), Some("81237712343"));
+
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["nonce"], "81237712343");
+        assert_eq!(body["content"], "hello");
+        assert_eq!(body["message_reference"]["message_id"], "499");
+        assert_eq!(body["allowed_mentions"]["replied_user"], true);
+    }
+
+    /// Too long is refused here rather than by Discord. A refused request is
+    /// still a request, and on a user account that is a line in somebody's
+    /// ledger.
+    #[tokio::test]
+    async fn an_overlong_message_never_reaches_the_network() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let http = Http::with_base(props(), server.uri()).unwrap();
+        let long = "x".repeat(api::MAX_CONTENT + 1);
+        let err = api::create_message(
+            &http,
+            ChannelId(7),
+            &api::CreateMessage {
+                content: &long,
+                nonce: "1".into(),
+                message_reference: None,
+                allowed_mentions: api::AllowedMentions::new(false),
+                tts: false,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, HttpError::Status { status: 400, .. }));
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 }
