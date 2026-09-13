@@ -260,7 +260,12 @@ fn send_one(
                     if Some(id) == sent {
                         stamp(started);
                         println!("echoed back by the gateway");
-                        if let Some(message) = handle.state().message(channel, id) {
+                        // Bound before the `if let`, so the read guard is gone
+                        // before `print_message` takes one of its own: a second
+                        // read on the same thread deadlocks against a writer
+                        // that queued between them.
+                        let message = handle.state().message(channel, id);
+                        if let Some(message) = message {
                             print_message(handle, &message, "  ");
                         }
                         return;

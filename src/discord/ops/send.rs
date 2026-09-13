@@ -254,7 +254,10 @@ pub async fn delete(ops: &Ops, channel: ChannelId, message: MessageId) {
         .await;
     match deleted {
         Ok(()) => {
-            if ops.state_mut().messages_mut(channel).remove(message) {
+            // Bound rather than used as the `if` condition, so the write guard
+            // is released before anything else runs.
+            let removed = ops.state_mut().messages_mut(channel).remove(message);
+            if removed {
                 ops.emit(Event::Messages(channel, MessagesChange::Removed(message)));
             }
         }
