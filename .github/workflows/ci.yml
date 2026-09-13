@@ -1,0 +1,78 @@
+name: ci
+
+# Documentation-only changes do not rebuild anything.
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore: *docs
+  workflow_call:
+  workflow_dispatch:
+
+# Nothing here needs write access. Declared rather than inherited, so a change
+# to the repository default cannot quietly widen what a workflow may do.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # No build dependencies. TLS is rustls, the keyring reaches
+      # secret-service through zbus and nothing runs bindgen, so there is
+      # nothing to apt-get. Adding a `-sys` crate means adding a step here.
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo fmt --check
+      # dead_code is allowed rather than denied: the Discord core lands
+      # milestone by milestone, complete and tested, ahead of the UI that will
+      # reach it. Every other lint is an error.
+      - run: cargo clippy --all-targets -- -D warnings -A dead_code
+      # Nothing here needs an account; anything that would is gated behind
+      # STARCORD_TEST_TOKEN.
+      - run: cargo test --all
+
+  # macOS is a supported target, and most of what breaks there breaks at
+  # compile time -- a `cfg` that assumed Linux, a keyring backend that is not
+  # selected, a path that assumed XDG -- so a build is most of the value.
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo clippy --all-targets -- -D warnings -A dead_code
+      - run: cargo test --all
+
+  # What the dependency tree is carrying, which nobody notices by reading it.
+  # Two questions: is anything under a known advisory, and is anything under a
+  # licence this cannot ship. See `deny.toml` for what is allowed and why.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          command: check advisories bans licenses sources
+
+  msrv:
+    # rust-version in Cargo.toml is a promise; this is what makes it true.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: "1.90"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo check --all-targets

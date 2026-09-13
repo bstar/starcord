@@ -1,0 +1,32 @@
+name: nix
+
+# Documentation-only changes do not rebuild anything.
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore: *docs
+  workflow_call:
+  workflow_dispatch:
+
+# Nothing here needs write access. Declared rather than inherited, so a change
+# to the repository default cannot quietly widen what a workflow may do.
+permissions:
+  contents: read
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # main
+      # buildRustPackage runs `cargo test` itself, so this is a full check and
+      # not just a link.
+      - run: nix build .#default --print-build-logs
+      - run: nix flake check --print-build-logs

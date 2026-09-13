@@ -1,0 +1,161 @@
+[package]
+name = "starcord"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "A Winamp-feel terminal Discord client"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/bstar/starcord"
+keywords = ["discord", "tui", "chat", "winamp", "terminal"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+# The shared terminal foundation: paths, logging, atomic and private file
+# writes, theming, the dock layout engine and the image pipeline, all of it
+# already proven in staramp. starcord takes only what a chat client needs --
+# `wsz` is a Winamp skin format nothing here reads.
+#
+# Commented out until the crate exists on disk. `src/paths.rs` and
+# `src/logging.rs` carry local copies of the two pieces M1 needs, with the same
+# signatures, so swapping this in is a delete and an import change.
+# starkit = { path = "../starkit", default-features = false, features = ["image", "gif", "net"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Errors. `anyhow` where a failure is only ever reported, `thiserror` where the
+# caller has to tell one failure from another -- HTTP, above all, where a 401
+# stops the client and a 429 only delays it.
+anyhow = "1"
+thiserror = "2"
+
+# Logging — file only. stdout belongs to the alternate screen, and a token or a
+# message body must never reach either.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# The async runtime, confined to one OS thread that the UI never sees. Only the
+# parts the core uses: `net` for sockets, `fs` for the media cache, `time` for
+# heartbeats and backoff, `sync` for the channels and the state lock.
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "sync",
+    "time",
+    "macros",
+    "net",
+    "fs",
+] }
+# CancellationToken. A gateway connection has three reasons to stop -- a
+# reconnect, a logout and a shutdown -- and all three have to reach a `select!`
+# that may be parked on a socket read.
+tokio-util = "0.7"
+
+# The gateway socket. Hand-rolled protocol on a plain websocket, because
+# Discord's user-account gateway is not what any bot library models.
+# webpki roots rather than the platform store: the only host it ever dials is
+# Discord's, and a container with no ca-certificates should still connect.
+tokio-tungstenite = { version = "0.30", default-features = false, features = [
+    "connect",
+    "handshake",
+    "rustls-tls-webpki-roots",
+] }
+
+# REST. `rustls-no-provider` rather than `rustls`: the plain feature pulls
+# aws-lc-rs, a C and assembly TLS backend, where this crate installs `ring` as
+# the process default instead (see `http::install_crypto_provider`, and the
+# test that fails if aws-lc reappears in the graph).
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls-no-provider",
+    "json",
+    "http2",
+    "stream",
+] }
+
+# The provider itself, so `ring` is a direct and visible choice rather than
+# whatever a transitive default happens to select.
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+
+# The gateway is `compress=zlib-stream`: one deflate context shared across every
+# frame for the life of the connection, which no per-message decompressor can
+# do.
+flate2 = "1.1"
+
+# Wire formats. `raw_value` matters: a dispatch envelope is decoded once to read
+# `op`/`t`/`s`, and its payload is only parsed if the event is one this client
+# handles, so an unknown event costs nothing.
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+
+# Config and the credentials file on disk.
+toml = "0.9"
+
+# Timestamps. `jiff` rather than `chrono` or `time` because message headers are
+# rendered in the reader's local zone, and it is the one crate that carries a
+# tzdb and gets local time right without a separate database crate.
+jiff = { version = "0.2", features = ["serde"] }
+
+# The token store. 4.2 is the rewrite over `keyring-core`; its `v1` default
+# feature selects the Apple Keychain on macOS and a pure-Rust secret-service
+# client over zbus on Linux, so no target gating and no libdbus.
+keyring = "4.2"
+
+# `X-Super-Properties` is base64 of a JSON object, and remote auth exchanges
+# base64url keys and nonces.
+base64 = "0.22"
+
+# Parsing and joining API and CDN URLs, and -- the reason it is here rather than
+# formatting strings -- deciding by host whether a request may carry the token.
+url = "2"
+
+# Lock-free publication of the connection status and the current token, both
+# read on paths that must not block on a writer.
+arc-swap = "1"
+
+# The event side of the Handle. The UI loop is synchronous and drains this once
+# per frame; a tokio channel would need a runtime on the UI thread.
+crossbeam-channel = "0.5"
+
+# IDENTIFY capabilities are a bitfield, and named flags are the difference
+# between a reviewable constant and a magic number.
+bitflags = "2"
+
+# `apply` returns the events one dispatch produced, which is almost always none
+# or one. Inline storage keeps that off the heap on the gateway's hot path.
+smallvec = { version = "1", features = ["union"] }
+
+# Jitter on heartbeats and reconnect backoff, and the nonce on an outgoing
+# message. Jitter is not cosmetic: without it every client that lost the same
+# connection redials at the same instant.
+rand = "0.9"
+
+[dev-dependencies]
+# Anything that parses foreign input gets a property test: the gateway
+# inflater, the model deserialisers and the markdown parser all read bytes
+# somebody else wrote.
+proptest = "1"
+# A real HTTP server for the rate limiter, which is a pile of header arithmetic
+# that only a real response can exercise honestly.
+wiremock = "0.6"
+# Token-store and path tests write real files with real modes.
+tempfile = "3"
+
+[profile.release]
+# Arithmetic on sequence numbers, sizes and offsets read off the wire. Wrapping
+# silently in release turns a hostile number into a plausible wrong one, and the
+# debug-built test suite would never see it.
+overflow-checks = true
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# Decompressing and decoding what the gateway sends must not be slow in a debug
+# build, or nothing can be tested without a release compile.
+[profile.dev.package."*"]
+opt-level = 2

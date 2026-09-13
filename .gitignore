@@ -1,0 +1,20 @@
+/target
+/result
+/result-*
+.direnv/
+
+# Gateway recordings from STARCORD_RECORD_GATEWAY. They are captured from a
+# real account and carry names, ids and message text until they are scrubbed,
+# so nothing lands in the repository by accident; the scrubbed fixtures under
+# testdata/gateway/ are added explicitly.
+/recordings
+
+# Editor and desktop cruft, so a contributor's tools do not land in a PR.
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# The local starkit checkout override, documented in AGENTS.md. Never committed.
+/.cargo/config.toml

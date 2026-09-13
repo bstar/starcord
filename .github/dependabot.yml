@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Actions only. The cargo ecosystem is deliberately left out: it churns
+  # Cargo.lock, and the Arch build uses --frozen, so every churn is a package
+  # break waiting to be noticed by somebody else.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

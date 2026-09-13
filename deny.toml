@@ -1,0 +1,68 @@
+# cargo-deny: what the dependency tree is allowed to contain.
+#
+# Two questions, both of which someone has to answer eventually and neither of
+# which anyone answers by hand: is a dependency carrying a known vulnerability,
+# and is one carrying a licence this project cannot ship under.
+
+[advisories]
+# Vulnerabilities and yanked releases stop the build. Those are ours to act on
+# however deep in the tree they are: the fix is a version bump, and if there is
+# not one yet that is worth knowing today rather than at release.
+#
+# This matters more here than in a music player. Everything in this tree either
+# terminates TLS, decompresses a stream somebody else produced, or parses JSON
+# that arrived over a socket.
+yanked = "deny"
+
+# Unmaintained crates only when we depend on one directly. A crate we chose and
+# that has since been abandoned is a decision to revisit; one three levels down
+# is its parent's decision, not ours, and cannot be fixed here.
+unmaintained = "workspace"
+
+[licenses]
+# Everything in the tree today, and nothing else. Adding a dependency under a
+# licence not on this list is meant to stop CI and be a decision.
+#
+# The list is shorter than staramp's because there is no ffmpeg and no C in
+# here at all. One entry is worth knowing about --
+#
+#   CDLA-Permissive-2.0   webpki-roots. It is not code: it is Mozilla's CA
+#                         list, which is published under that licence rather
+#                         than under the crate's own.
+#
+# Two entries that are *not* here and might be expected to be: OpenSSL, which
+# `ring` used to be reported under and no longer is, and MPL-2.0, which
+# webpki-roots used to carry. `cargo deny check licenses` warns about an
+# allowance nothing matches, so an entry that stops being needed shows up as a
+# warning rather than sitting here forever.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+# A crate offering a choice takes the first of these it can satisfy, so a
+# dual-licensed dependency resolves to the permissive half rather than to
+# whatever its manifest happens to list first.
+[licenses.private]
+ignore = true
+
+[bans]
+# Duplicate versions of one crate are ordinary in a tree this size and are the
+# resolver's business, not a licence question.
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+# Nothing from a git URL or a private registry: everything comes from crates.io,
+# so a compromised or vanished repository cannot reach a build. starkit will be
+# the one exception, and gets an explicit `allow-git` entry when it does.
+unknown-registry = "deny"
+unknown-git = "deny"
