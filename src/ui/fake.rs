@@ -29,6 +29,16 @@
 //! `at_ms` is measured from the moment the login is accepted, not from
 //! startup, so a drop at twenty seconds is twenty seconds of somebody using
 //! it.
+//!
+//! ## Messages
+//!
+//! A timeline is a poor way to describe a conversation that is already there
+//! when a channel is opened, so the messages come from a second file named by
+//! `"messages"` and resolved beside the session. Opening a channel fills its
+//! store from that file's `messages`; `LoadOlder` prepends its `older` once;
+//! sending appends an echo and answers with a `SendResult`. Everything goes
+//! through `MessageStore`, the same type the real core's `ops` write to, so a
+//! page that behaves here behaves there.
 
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
@@ -41,7 +51,9 @@ use serde::Deserialize;
 
 use crate::discord::auth::TokenStoreKind;
 use crate::discord::gateway::payload;
-use crate::discord::handle::{AuthEvent, Connection, HandleParts, MessagesChange, Note};
+use crate::discord::handle::{AuthEvent, Connection, HandleParts, MessagesChange, Nonce, Note};
+use crate::discord::model::Message;
+use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::state::{apply, State};
 use crate::discord::{Command, Event, Handle};
 
@@ -99,10 +111,47 @@ pub struct Step {
     pub note: Option<String>,
 }
 
+/// One channel's messages, as the fixture file states them.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Page {
+    /// The window a channel opens on, oldest first.
+    #[serde(default)]
+    pub messages: Vec<Message>,
+    /// What `LoadOlder` answers with, once.
+    #[serde(default)]
+    pub older: Vec<Message>,
+}
+
+/// The message fixture: channels by id.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Conversations {
+    #[serde(default)]
+    pub channels: std::collections::HashMap<String, Page>,
+}
+
+impl Conversations {
+    pub fn read(path: &Path) -> Result<Self> {
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+    }
+
+    fn page(&self, channel: ChannelId) -> Option<&Page> {
+        self.channels.get(&channel.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Session {
     #[serde(default)]
     pub steps: Vec<Step>,
+    /// A file of messages, beside this one. Relative to the session file, so a
+    /// fixture can be copied as a pair.
+    #[serde(default)]
+    pub messages: Option<String>,
+    /// Filled in by [`Session::read`], because the path is only known there.
+    #[serde(skip)]
+    pub conversations: Conversations,
 }
 
 impl Session {
@@ -115,7 +164,12 @@ impl Session {
     pub fn read(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        Self::parse(&text)
+        let mut session = Self::parse(&text)?;
+        if let Some(name) = session.messages.clone() {
+            let beside = path.parent().unwrap_or(Path::new(".")).join(&name);
+            session.conversations = Conversations::read(&beside)?;
+        }
+        Ok(session)
     }
 
     /// The first READY in the file, for the user the login reports.
@@ -180,6 +234,23 @@ pub fn loaded(session: &Session, upto_ms: u64) -> (Handle, Idle) {
     for step in session.steps.iter().filter(|s| s.at_ms <= upto_ms) {
         play(step, &sink, &state, &status);
     }
+    // The conversations are put in as well, because a channel's history is
+    // not something a timeline can describe: it is already there when the
+    // channel is opened. This is what the command loop would have done on the
+    // first `OpenChannel`, done up front so a snapshot does not depend on a
+    // round trip.
+    {
+        let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+        for (id, page) in &session.conversations.channels {
+            let Ok(id) = id.parse::<u64>() else { continue };
+            let store = guard.messages_mut(ChannelId(id));
+            store.replace(page.messages.clone(), true);
+            store.set_has_older(!page.older.is_empty());
+            store.set_open(true);
+        }
+        guard.touch();
+    }
+
     // The events are thrown away: the caller is about to read `State`, which
     // is the truth, and a queue of notifications about how it got there would
     // only make the first frame depend on how many of them fitted.
@@ -257,6 +328,8 @@ fn run(
     // what a person sees first and a replay that skipped it would not exercise
     // the thing it is there to exercise. Any token is accepted: the point is
     // the interface, not the credential.
+    let conversations = session.conversations.clone();
+    let mut served = Served::default();
     let mut signed_in = false;
     while !signed_in {
         match commands.blocking_recv() {
@@ -284,7 +357,14 @@ fn run(
         loop {
             match commands.try_recv() {
                 Ok(Command::Shutdown) => return,
-                Ok(command) => answer(command, &sink),
+                Ok(command) => answer(
+                    command,
+                    &sink,
+                    &state,
+                    &conversations,
+                    &mut served,
+                    user.as_deref(),
+                ),
                 Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                 // The handle was dropped.
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => return,
@@ -361,21 +441,147 @@ fn play(step: &Step, sink: &Sink, state: &Arc<RwLock<State>>, status: &Arc<ArcSw
     }
 }
 
+/// What has already been handed out, so a page arrives once.
+#[derive(Debug, Default)]
+struct Served {
+    opened: std::collections::HashSet<ChannelId>,
+    older: std::collections::HashSet<ChannelId>,
+    /// The id the next echoed send gets. Above every fixture id, and climbing,
+    /// so two sends are in order.
+    next_id: u64,
+}
+
+impl Served {
+    fn mint(&mut self) -> MessageId {
+        if self.next_id == 0 {
+            self.next_id = 590_000_000_000_000_000;
+        }
+        self.next_id += 1;
+        MessageId(self.next_id)
+    }
+}
+
 /// Answer a command the way the real core would, as far as a file can.
-fn answer(command: Command, sink: &Sink) {
+fn answer(
+    command: Command,
+    sink: &Sink,
+    state: &Arc<RwLock<State>>,
+    conversations: &Conversations,
+    served: &mut Served,
+    me: Option<&crate::discord::model::User>,
+) {
     match command {
         Command::OpenChannel(channel) => {
-            // The history is whatever READY and the timeline have already put
-            // in the store, so the fetch finishes immediately. The events are
-            // still sent: the UI's spinner is driven by them, and a spinner
-            // that never stops is exactly the bug this should be able to
-            // reproduce.
+            // The events are sent whether or not there is anything to send:
+            // the UI's spinner is driven by them, and a spinner that never
+            // stops is exactly the bug this should be able to reproduce.
             sink.send(Event::Messages(channel, MessagesChange::Loading(true)));
+            if served.opened.insert(channel) {
+                if let Some(page) = conversations.page(channel) {
+                    let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                    let store = guard.messages_mut(channel);
+                    store.replace(page.messages.clone(), true);
+                    store.set_has_older(!page.older.is_empty());
+                    store.set_open(true);
+                    guard.touch();
+                }
+            }
             sink.send(Event::Messages(channel, MessagesChange::Loading(false)));
             sink.send(Event::Messages(channel, MessagesChange::Replaced));
         }
-        Command::LoadOlder(channel) | Command::LoadNewer(channel) => {
+        Command::LoadOlder(channel) => {
+            sink.send(Event::Messages(channel, MessagesChange::Loading(true)));
+            let mut added = 0usize;
+            if served.older.insert(channel) {
+                if let Some(page) = conversations.page(channel) {
+                    if !page.older.is_empty() {
+                        let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                        let store = guard.messages_mut(channel);
+                        added = store.prepend(page.older.clone());
+                        store.set_has_older(false);
+                        guard.touch();
+                    }
+                }
+            }
             sink.send(Event::Messages(channel, MessagesChange::Loading(false)));
+            if added > 0 {
+                sink.send(Event::Messages(channel, MessagesChange::Prepended(added)));
+            }
+        }
+        Command::LoadNewer(channel) => {
+            sink.send(Event::Messages(channel, MessagesChange::Loading(false)));
+        }
+        Command::SendMessage {
+            channel,
+            content,
+            reply_to,
+            ..
+        } => {
+            // The echo the gateway would send, built here so the optimistic
+            // row is replaced by a real message rather than left pending.
+            let id = served.mint();
+            let mut message = Message {
+                id,
+                channel_id: channel,
+                content,
+                timestamp: Some(jiff::Timestamp::now()),
+                ..Message::default()
+            };
+            if let Some(me) = me {
+                message.author = me.clone();
+            }
+            if let Some(to) = reply_to {
+                message.kind = crate::discord::model::MessageKind::Reply;
+                message.message_reference = Some(crate::discord::model::MessageReference {
+                    message_id: Some(to),
+                    channel_id: Some(channel),
+                    ..Default::default()
+                });
+            }
+            {
+                let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                guard.messages_mut(channel).receive(message);
+                guard.touch();
+            }
+            sink.send(Event::Messages(channel, MessagesChange::Appended(id)));
+            sink.send(Event::SendResult {
+                nonce: Nonce(0),
+                result: Ok(id),
+            });
+        }
+        Command::EditMessage {
+            channel,
+            message,
+            content,
+        } => {
+            let changed = {
+                let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                let payload = serde_json::json!({
+                    "content": content,
+                    "edited_timestamp": jiff::Timestamp::now().to_string(),
+                });
+                let changed = guard.messages_mut(channel).update(message, &payload);
+                if changed {
+                    guard.touch();
+                }
+                changed
+            };
+            if changed {
+                sink.send(Event::Messages(channel, MessagesChange::Updated(message)));
+            }
+        }
+        Command::DeleteMessage { channel, message } => {
+            let removed = {
+                let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                let removed = guard.messages_mut(channel).remove(message);
+                if removed {
+                    guard.touch();
+                }
+                removed
+            };
+            if removed {
+                sink.send(Event::Messages(channel, MessagesChange::Removed(message)));
+            }
         }
         Command::MarkRead { channel, .. } => sink.send(Event::ReadState(channel)),
         Command::Logout => {

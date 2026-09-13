@@ -106,7 +106,7 @@ impl Default for Layout {
 }
 
 /// How much of a timestamp a message header carries.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Timestamps {
     Off,

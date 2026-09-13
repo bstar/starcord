@@ -84,8 +84,9 @@ const LIST_MIN_ROWS: u16 = 4;
 /// What the pointer is in the middle of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Drag {
-    /// Index into [`Regions::seams`].
-    Seam(usize),
+    /// Index into [`Regions::seams`], and where the pointer was last seen, so
+    /// a move can be turned into a delta.
+    Seam { seam: usize, x: u16, y: u16 },
 }
 
 /// One frame's geometry.
@@ -419,6 +420,67 @@ impl LayoutState {
     /// than clicking whatever the panel drew there.
     pub fn seam_at(&self, x: u16, y: u16) -> Option<usize> {
         self.dock.seam_at(x, y)
+    }
+
+    /// Which way a seam moves, so the pointer's delta is measured along it.
+    pub fn seam_axis(&self, seam: usize) -> Option<starkit::dock::Axis> {
+        self.dock.seams().get(seam).map(|s| s.axis)
+    }
+
+    /// Move a seam, and record where it ended up.
+    ///
+    /// The recording is the whole of it. This struct rebuilds the dock from
+    /// `[layout]` whenever those numbers change, so a drag that only moved the
+    /// tree would be undone by the next solve; reading the new extents back
+    /// out of the dock and into the config is what makes the drag the thing
+    /// that persists. It also means the number written to `config.toml` is
+    /// what the panels actually are rather than what the drag intended.
+    ///
+    /// Returns whether anything the file records changed. The seam between the
+    /// message list and the composer is not one of them: the composer sizes
+    /// itself from what is written in it, so that seam springs back, and the
+    /// alternative is a number that fights the text.
+    pub fn drag_seam(&mut self, seam: usize, delta: i16) -> bool {
+        if delta == 0 {
+            return false;
+        }
+        self.dock.drag_seam(seam, delta);
+        let before = (
+            self.cfg.left_cols,
+            self.cfg.members_cols,
+            self.cfg.dms_share,
+        );
+
+        if let Some(r) = self.dock.rect_of(PanelId::Channels) {
+            self.cfg.left_cols = r.width.clamp(LEFT_MIN_COLS, LEFT_MAX_COLS);
+        }
+        if let Some(r) = self.dock.rect_of(PanelId::Members) {
+            self.cfg.members_cols = r.width.clamp(MEMBERS_MIN_COLS, MEMBERS_MAX_COLS);
+        }
+        if let (Some(channels), Some(dms)) = (
+            self.dock.rect_of(PanelId::Channels),
+            self.dock.rect_of(PanelId::Dms),
+        ) {
+            let total = u32::from(channels.height) + u32::from(dms.height);
+            if let Some(share) = (u32::from(dms.height) * 100).checked_div(total) {
+                self.cfg.dms_share = share.clamp(10, 90) as u16;
+            }
+        }
+
+        // Keep the remembered shape in step, or the next frame rebuilds the
+        // tree from the old numbers and the drag is undone between frames.
+        if let Some(shape) = &mut self.shape {
+            shape.left = self.cfg.left_cols;
+            shape.members = self.cfg.members_cols;
+            shape.dms_share = self.cfg.dms_share;
+        }
+
+        before
+            != (
+                self.cfg.left_cols,
+                self.cfg.members_cols,
+                self.cfg.dms_share,
+            )
     }
 }
 

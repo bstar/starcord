@@ -46,6 +46,11 @@ pub struct View<'a> {
     pub mentions: u32,
     /// What the terminal can draw pictures with, for the right-hand end.
     pub graphics: &'a str,
+    /// `chat`, `compose`, `reply` or `edit`: which of the two halves of the
+    /// window the keyboard is pointed at.
+    pub mode: &'a str,
+    /// Messages below the viewport, when the reader has scrolled up.
+    pub new_below: u32,
     pub now: Instant,
 }
 
@@ -64,6 +69,15 @@ impl View<'_> {
     /// left moves when a number changes.
     fn right(&self) -> String {
         let mut parts = Vec::new();
+        if !self.mode.is_empty() {
+            parts.push(self.mode.to_string());
+        }
+        // The one part of the right-hand field that is allowed to appear and
+        // disappear, because it is the one that is a call to act rather than a
+        // fact to glance at.
+        if self.new_below > 0 {
+            parts.push(format!("\u{2193} {} new", self.new_below));
+        }
         if self.mentions > 0 {
             parts.push(format!("{} unread · @{}", self.unread, self.mentions));
         } else if self.unread > 0 {
@@ -241,6 +255,8 @@ mod tests {
             unread: 3,
             mentions: 1,
             graphics: "kitty",
+            mode: "chat",
+            new_below: 0,
             now,
         }
     }
@@ -279,11 +295,15 @@ mod tests {
             resumed: false,
         };
         let mut v = view(&t, &c, None, Instant::now());
-        assert_eq!(v.right(), "3 unread · @1  \u{25b2} online  kitty");
+        assert_eq!(v.right(), "chat  3 unread · @1  \u{25b2} online  kitty");
         v.mentions = 0;
-        assert_eq!(v.right(), "3 unread  \u{25b2} online  kitty");
+        assert_eq!(v.right(), "chat  3 unread  \u{25b2} online  kitty");
         v.unread = 0;
-        assert_eq!(v.right(), "\u{25b2} online  kitty");
+        assert_eq!(v.right(), "chat  \u{25b2} online  kitty");
+        // The one part that is allowed to come and go, because it is the only
+        // one that is asking to be acted on.
+        v.new_below = 3;
+        assert_eq!(v.right(), "chat  \u{2193} 3 new  \u{25b2} online  kitty");
     }
 
     /// Every connection has a word, and the three states are told apart by a

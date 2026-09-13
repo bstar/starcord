@@ -17,7 +17,7 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                                        ││                      │
 │      ││                        ││            choose a channel            ││                      │
 │      ││                        ││                                        ││                      │
-│      ││                        ││                                        ││     members soon     │
+│      ││                        ││                                        ││  members not loaded  │
 │      │└────────────────────────┘│                                        ││                      │
 │      │┌═ messages ═────────────┐│                                        ││                      │
 │      ││         friends  close ││                                        ││                      │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││open a channel to write in it           ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help                                                                  6 unread · @3  ▲ online  off
+? help                                                            chat  6 unread · @3  ▲ online  off

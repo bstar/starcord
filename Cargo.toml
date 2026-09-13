@@ -210,6 +210,23 @@ qrcode = { version = "0.14", default-features = false }
 # go to the configured player instead, by argv and never through a shell.
 webbrowser = "1"
 
+# The system clipboard, for `y` and `Y`. `wayland-data-control` is what makes a
+# copy survive the program exiting under a Wayland compositor: without it the
+# clipboard is owned by a process that has gone away, and the paste lands
+# nowhere. The default features are off because the ones that matter here are
+# text, and `image-data` pulls a second decoder in beside the one the media
+# core already has.
+arboard = { version = "3.6", default-features = false, features = [
+    "wayland-data-control",
+] }
+
+# The quick switcher's ranking. The same matcher Helix and nucleo's own picker
+# use, as a library rather than a picker: this supplies the list and the
+# ordering, and the overlay draws it. A hand-written subsequence match would
+# rank `general` below `gen-e-r-a-l` in some other channel's name, which is
+# exactly the difference a fuzzy matcher exists to get right.
+nucleo-matcher = "0.3"
+
 [dev-dependencies]
 # `start_paused` runtimes, so the rate limiter's sleeps are asserted rather
 # than waited out.

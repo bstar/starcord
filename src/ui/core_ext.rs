@@ -25,7 +25,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::discord::model::{PresenceStatus, User};
-use crate::discord::snowflake::{ChannelId, UserId};
+use crate::discord::snowflake::{ChannelId, GuildId, UserId};
 use crate::discord::state::State;
 
 /// Everybody this account is friends with, as far as the DM list can say.
@@ -89,6 +89,36 @@ pub fn dm_row(state: &State, channel: ChannelId) -> (String, PresenceStatus, Opt
 /// Here so the two ask the same question rather than two similar ones.
 pub fn avatar_hash(state: &State, id: UserId) -> Option<Arc<str>> {
     state.user(id).and_then(|u| u.avatar.clone()).map(Arc::from)
+}
+
+/// The member list for a guild, which the core does not keep yet.
+///
+/// `State` has no `member_list(guild)`: the lazy subscription that fills one
+/// — op 37, then `GUILD_MEMBER_LIST_UPDATE` with SYNC, INSERT, UPDATE, DELETE
+/// and INVALIDATE against a range — is core work in the milestone beside this
+/// one. `None` here is "the server has not told us", which the panel draws as
+/// *members not loaded*; an empty `Vec` would be "this server has nobody in
+/// it", and those are not the same statement.
+///
+/// What the core should grow:
+/// `State::member_list(&self, guild: GuildId) -> Option<&MemberList>`, with
+/// `MemberList` carrying the groups Discord sent, in Discord's order.
+pub fn member_rows(
+    _state: &State,
+    _guild: GuildId,
+) -> Option<Vec<crate::ui::panels::members::Row>> {
+    None
+}
+
+/// Custom emoji this account can write, by name.
+///
+/// `State` keeps guilds flattened to what a sidebar needs and drops the
+/// `emojis` array READY carries with each one, so there is nothing to read.
+/// The composer's `:` popup therefore offers unicode emoji and, once the core
+/// grows `State::custom_emoji(&self) -> Vec<Arc<CustomEmoji>>`, whatever this
+/// returns instead.
+pub fn custom_emoji(_state: &State) -> Vec<(String, crate::discord::snowflake::EmojiId, bool)> {
+    Vec::new()
 }
 
 /// The channel that was open when the program last closed.

@@ -6,10 +6,18 @@
 //! and does not take that panel's keys is a dialogue you can type through,
 //! which is the bug this arrangement makes impossible to write.
 //!
-//! The help overlay is the only one this milestone has. The confirm, media,
-//! picker, search, quick-switch and settings overlays land with the milestones
-//! that give them something to do, and each is a field on this struct and an
-//! arm in the two functions below.
+//! Four of them so far: the help, the confirmation, the quick switcher and the
+//! settings list. The media viewer, the pickers and the search land with the
+//! milestones that give them something to do, and each is a field on this
+//! struct and an arm in the two functions below.
+//!
+//! Only one is ever open. Stacking them would mean deciding what `esc` closes,
+//! and the answer "the innermost one" is a stack somebody has to keep in their
+//! head; the answer "the one that is open" is not.
+
+pub mod confirm;
+pub mod quick;
+pub mod settings;
 
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::keymap::HelpView;
@@ -17,11 +25,16 @@ use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::widgets::Widget;
 
+use self::confirm::{Confirm, Pending};
+use self::quick::{Quick, Target};
+use self::settings::{Setting, Settings};
+use crate::config::Config;
 use crate::ui::keymap::{BINDINGS, MOUSE};
+use crate::ui::panels::PanelId;
 use crate::ui::theme::Theme;
 
 /// What an overlay did with a key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Key {
     /// Nothing was open; the key belongs to whatever is underneath.
     Ignored,
@@ -29,6 +42,12 @@ pub enum Key {
     Taken,
     /// Quitting works from here as it does from everywhere.
     Quit,
+    /// The confirmation was answered yes.
+    Confirmed(Pending),
+    /// The switcher chose somewhere to go.
+    Jump(Target),
+    /// A settings row was changed; `true` steps forward.
+    Setting(Setting, bool),
 }
 
 /// Everything modal, and whether any of it is up.
@@ -36,6 +55,9 @@ pub enum Key {
 pub struct Overlays {
     pub help: bool,
     pub help_scroll: u16,
+    pub confirm: Option<Confirm>,
+    pub quick: Option<Quick>,
+    pub settings: Option<Settings>,
 }
 
 impl Overlays {
@@ -44,21 +66,45 @@ impl Overlays {
     /// Checked first in both `handle` and `handle_mouse`, so that a key or a
     /// click reaches the overlay rather than the panel under it.
     pub fn open(&self) -> bool {
-        self.help
+        self.help || self.confirm.is_some() || self.quick.is_some() || self.settings.is_some()
+    }
+
+    /// Whether the open overlay is a text field, so bracketed paste goes to it.
+    pub fn takes_paste(&self) -> bool {
+        self.quick.is_some()
     }
 
     pub fn close(&mut self) {
         self.help = false;
         self.help_scroll = 0;
+        self.confirm = None;
+        self.quick = None;
+        self.settings = None;
     }
 
     pub fn toggle_help(&mut self) {
         if self.help {
             self.close();
         } else {
+            self.close();
             self.help = true;
             self.help_scroll = 0;
         }
+    }
+
+    pub fn ask(&mut self, confirm: Confirm) {
+        self.close();
+        self.confirm = Some(confirm);
+    }
+
+    pub fn open_quick(&mut self, items: Vec<quick::Item>) {
+        self.close();
+        self.quick = Some(Quick::new(items));
+    }
+
+    pub fn open_settings(&mut self, panel: PanelId) {
+        self.close();
+        self.settings = Some(Settings::new(panel));
     }
 
     /// Keys, while something is open.
@@ -67,6 +113,49 @@ impl Overlays {
     /// key is taken: a modal overlay that let a key through to the panel it is
     /// drawn over is a dialogue you can type through.
     pub fn handle(&mut self, key: KeyEvent) -> Key {
+        if let Some(confirm) = &self.confirm {
+            let pending = confirm.on_yes.clone();
+            return match confirm::answer(key) {
+                confirm::Answer::Yes => {
+                    self.confirm = None;
+                    Key::Confirmed(pending)
+                }
+                confirm::Answer::No => {
+                    self.confirm = None;
+                    Key::Taken
+                }
+                confirm::Answer::Quit => Key::Quit,
+                confirm::Answer::Waiting => Key::Taken,
+            };
+        }
+
+        if let Some(quick) = &mut self.quick {
+            return match quick.handle(key) {
+                quick::Action::Taken => Key::Taken,
+                quick::Action::Close => {
+                    self.quick = None;
+                    Key::Taken
+                }
+                quick::Action::Open(target) => {
+                    self.quick = None;
+                    Key::Jump(target)
+                }
+                quick::Action::Quit => Key::Quit,
+            };
+        }
+
+        if let Some(settings) = &mut self.settings {
+            return match settings.handle(key) {
+                settings::Action::Taken => Key::Taken,
+                settings::Action::Close => {
+                    self.settings = None;
+                    Key::Taken
+                }
+                settings::Action::Change(setting, forward) => Key::Setting(setting, forward),
+                settings::Action::Quit => Key::Quit,
+            };
+        }
+
         if !self.help {
             return Key::Ignored;
         }
@@ -92,15 +181,39 @@ impl Overlays {
         Key::Taken
     }
 
-    /// The wheel, while something is open.
-    pub fn scroll(&mut self, delta: i16) {
-        if !self.help {
-            return;
+    /// A bracketed paste, while a text overlay is open.
+    pub fn paste(&mut self, text: &str) {
+        if let Some(quick) = &mut self.quick {
+            quick.paste(text);
         }
-        self.help_scroll = self.help_scroll.saturating_add_signed(delta);
     }
 
-    pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
+    /// The wheel, while something is open.
+    pub fn scroll(&mut self, delta: i16) {
+        if self.help {
+            self.help_scroll = self.help_scroll.saturating_add_signed(delta);
+        }
+        if let Some(quick) = &mut self.quick {
+            quick.scroll(delta);
+        }
+        if let Some(settings) = &mut self.settings {
+            settings.scroll_by(delta);
+        }
+    }
+
+    pub fn render(&mut self, area: Rect, buf: &mut Buffer, theme: &Theme, cfg: &Config) {
+        if let Some(confirm) = &self.confirm {
+            confirm::render(area, buf, theme, confirm);
+            return;
+        }
+        if let Some(quick) = &mut self.quick {
+            quick::render(area, buf, theme, quick);
+            return;
+        }
+        if let Some(settings) = &self.settings {
+            settings.render(area, buf, theme, cfg);
+            return;
+        }
         if !self.help {
             return;
         }
@@ -118,6 +231,7 @@ impl Overlays {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::discord::snowflake::{ChannelId, MessageId};
     use crate::ui::theme::tests_support::theme;
 
     fn key(c: char) -> KeyEvent {
@@ -161,6 +275,7 @@ mod tests {
     fn no_key_falls_through_an_open_overlay() {
         let mut o = Overlays::default();
         for c in ['t', 'r', 'd', 'x', 'i', 'g'] {
+            o.close();
             o.help = true;
             o.help_scroll = 0;
             assert_eq!(
@@ -172,16 +287,70 @@ mod tests {
         }
     }
 
+    /// The same, for every other overlay. A dialogue you can type through is
+    /// the failure this module exists to make impossible, so it is asserted
+    /// once per overlay rather than once.
+    #[test]
+    fn every_overlay_is_modal() {
+        for open in [
+            |o: &mut Overlays| o.toggle_help(),
+            |o: &mut Overlays| o.ask(Confirm::quit_with_draft(1)),
+            |o: &mut Overlays| o.open_quick(Vec::new()),
+            |o: &mut Overlays| o.open_settings(PanelId::Chat),
+        ] {
+            let mut o = Overlays::default();
+            open(&mut o);
+            assert!(o.open());
+            assert_ne!(o.handle(key('t')), Key::Ignored, "a key fell through");
+        }
+    }
+
     /// Except quitting, which works from everywhere including here.
     #[test]
     fn ctrl_c_still_quits() {
+        for open in [
+            |o: &mut Overlays| o.toggle_help(),
+            |o: &mut Overlays| o.ask(Confirm::quit_with_draft(1)),
+            |o: &mut Overlays| o.open_quick(Vec::new()),
+            |o: &mut Overlays| o.open_settings(PanelId::Chat),
+        ] {
+            let mut o = Overlays::default();
+            open(&mut o);
+            assert_eq!(
+                o.handle(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+                Key::Quit
+            );
+        }
+    }
+
+    /// Yes carries the thing it was asked about; no carries nothing.
+    #[test]
+    fn a_confirmation_answers_once() {
+        let mut o = Overlays::default();
+        let pending = Pending::DeleteMessage {
+            channel: ChannelId(1),
+            message: MessageId(2),
+        };
+        o.ask(Confirm::delete(ChannelId(1), MessageId(2), "hello"));
+        assert_eq!(o.handle(key('y')), Key::Confirmed(pending));
+        assert!(!o.open(), "and it closed itself");
+
+        o.ask(Confirm::delete(ChannelId(1), MessageId(2), "hello"));
+        assert_eq!(o.handle(key('n')), Key::Taken);
+        assert!(!o.open());
+    }
+
+    /// Only one at a time: opening one closes whatever was up.
+    #[test]
+    fn opening_one_closes_the_others() {
         let mut o = Overlays::default();
         o.toggle_help();
-        assert_eq!(
-            o.handle(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
-            Key::Quit
-        );
-        assert!(o.open(), "and it did not close on the way out");
+        o.open_quick(Vec::new());
+        assert!(!o.help);
+        o.ask(Confirm::quit_with_draft(1));
+        assert!(o.quick.is_none());
+        o.open_settings(PanelId::Chat);
+        assert!(o.confirm.is_none());
     }
 
     #[test]
@@ -202,15 +371,15 @@ mod tests {
         let area = Rect::new(0, 0, 40, 10);
         let mut buf = Buffer::empty(area);
         let before = buf.clone();
-        Overlays::default().render(area, &mut buf, &t);
+        Overlays::default().render(area, &mut buf, &t, &Config::default());
         assert_eq!(buf, before);
     }
 
-    fn drawn(o: &Overlays) -> String {
+    fn drawn(o: &mut Overlays) -> String {
         let t = theme("terminal");
         let area = Rect::new(0, 0, 100, 30);
         let mut buf = Buffer::empty(area);
-        o.render(area, &mut buf, &t);
+        o.render(area, &mut buf, &t, &Config::default());
         (0..area.height)
             .map(|y| {
                 (0..area.width)
@@ -225,7 +394,7 @@ mod tests {
     fn the_open_help_draws_the_key_table() {
         let mut o = Overlays::default();
         o.toggle_help();
-        let text = drawn(&o);
+        let text = drawn(&mut o);
         assert!(text.contains("navigation"), "{text}");
         assert!(text.contains("next panel"), "{text}");
         // The list is longer than any terminal is tall, which is what the
@@ -241,7 +410,7 @@ mod tests {
         let mut o = Overlays::default();
         o.toggle_help();
         o.scroll(60);
-        let text = drawn(&o);
+        let text = drawn(&mut o);
         assert!(text.contains("quit"), "{text}");
     }
 }

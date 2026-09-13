@@ -15,8 +15,10 @@
 //! Two themes, because the roles are resolved per theme and only a drawn frame
 //! shows what they resolve to: `terminal`, which is the sixteen-colour one, and
 //! `catppuccin-mocha`, which is the default and has a full base16 palette.
-//! Colours are in the snapshots — `Buffer`'s `Debug` carries them — so a
-//! derivation change shows up here as well as in the legibility test.
+//!
+//! Everything here is pinned to UTC. A message header carries a local time,
+//! and a snapshot taken in the machine's own zone is a snapshot that fails in
+//! another country.
 
 use std::path::PathBuf;
 
@@ -96,6 +98,7 @@ fn loaded(theme: &str) -> (App, fake::Idle) {
         None,
         Graphics::disabled(),
     );
+    app.tz = jiff::tz::TimeZone::UTC;
     assert!(app.login.is_none(), "a ready core needs no login screen");
 
     // The rail opens on the direct-message home; the snapshots want a server
@@ -107,6 +110,42 @@ fn loaded(theme: &str) -> (App, fake::Idle) {
     app.tick();
     (app, idle)
 }
+
+/// The same, at a moment in the timeline rather than at the start of it.
+fn loaded_at(theme: &str, upto_ms: u64) -> (App, fake::Idle) {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/gateway/session.json");
+    let session = fake::Session::read(&path).expect("the replay fixture");
+    let (core, idle) = fake::loaded(&session, upto_ms);
+    let mut app = App::new(
+        core,
+        config(theme),
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        Graphics::disabled(),
+    );
+    app.tz = jiff::tz::TimeZone::UTC;
+    app.tick();
+    app.open_channel(CHANNEL);
+    app.tick();
+    (app, idle)
+}
+
+/// The same, with the fixture channel open and the conversation in it.
+///
+/// `#general` in the first server is the one `messages_basic.json` fills: a
+/// group of three, a system line, a code block, a reply with reactions, a
+/// spoiler, a mention, an image, a link card and a gifv, across two days.
+fn in_general(theme: &str) -> (App, fake::Idle) {
+    let (mut app, idle) = loaded(theme);
+    app.open_channel(CHANNEL);
+    app.tick();
+    (app, idle)
+}
+
+/// `#general` in the first server, which is where the conversation is.
+const CHANNEL: crate::discord::snowflake::ChannelId =
+    crate::discord::snowflake::ChannelId(200000000000000011);
 
 #[test]
 fn the_login_screen() {
@@ -156,4 +195,122 @@ fn the_folded_message_list() {
     // a panel that is not there.
     app.handle(Action::ToggleDms);
     insta::assert_snapshot!("fold-terminal-60x12", render(&mut app, 60, 12));
+}
+
+/// The conversation itself: every construct the renderer has, at once.
+///
+/// This is the snapshot the whole of `panels::chat` is for. A grouping change,
+/// a wrap change, a divider that moved, a chip that lost its brackets: all of
+/// them are a diff here, and none of them is visible in an assertion about a
+/// row count.
+#[test]
+fn the_fixture_conversation() {
+    let (mut app, _idle) = in_general("terminal");
+    insta::assert_snapshot!("chat-terminal-100x30", render(&mut app, 100, 30));
+
+    let (mut app, _idle) = in_general("catppuccin-mocha");
+    insta::assert_snapshot!("chat-mocha-100x30", render(&mut app, 100, 30));
+}
+
+/// The top of the same conversation, where the day divider, the group of
+/// three, the system line and the code block are.
+#[test]
+fn the_top_of_the_conversation() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    app.handle(Action::Home);
+    insta::assert_snapshot!("chat-top-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// A spoiler covered, and the same spoiler uncovered. Only that message
+/// changes: the two snapshots differ in one run of cells and nowhere else,
+/// which is the property the cache key exists to keep.
+#[test]
+fn a_spoiler_hidden_and_revealed() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    // Put the cursor on the message carrying the spoiler.
+    app.chat
+        .select(crate::discord::snowflake::MessageId(500000000000000107));
+    let hidden = render(&mut app, 100, 30);
+    insta::assert_snapshot!("chat-spoiler-hidden-100x30", hidden.clone());
+
+    app.handle(Action::RevealSpoiler);
+    let shown = render(&mut app, 100, 30);
+    insta::assert_snapshot!("chat-spoiler-shown-100x30", shown.clone());
+    assert_ne!(hidden, shown, "revealing changed nothing");
+}
+
+/// The composer in reply mode, with its banner and a half-typed message.
+#[test]
+fn the_composer_replying() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    app.chat
+        .select(crate::discord::snowflake::MessageId(500000000000000105));
+    app.handle(Action::Reply);
+    for c in "and a reply to it".chars() {
+        app.key(starkit::crossterm::event::KeyEvent::from(
+            starkit::crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    insta::assert_snapshot!("composer-reply-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// The composer's `@` popup, which is the part of it that has geometry.
+#[test]
+fn the_composer_completing_a_name() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusComposer);
+    for c in "hello @al".chars() {
+        app.key(starkit::crossterm::event::KeyEvent::from(
+            starkit::crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    insta::assert_snapshot!(
+        "composer-complete-terminal-100x30",
+        render(&mut app, 100, 30)
+    );
+}
+
+#[test]
+fn the_quick_switcher() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::QuickSwitch);
+    for c in "gen".chars() {
+        app.key(starkit::crossterm::event::KeyEvent::from(
+            starkit::crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    insta::assert_snapshot!("quick-terminal-100x30", render(&mut app, 100, 30));
+}
+
+#[test]
+fn the_confirm_overlay() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    app.over.ask(crate::ui::overlays::confirm::Confirm::delete(
+        CHANNEL,
+        crate::discord::snowflake::MessageId(500000000000000105),
+        "here is the thing I meant",
+    ));
+    insta::assert_snapshot!("confirm-terminal-100x30", render(&mut app, 100, 30));
+}
+
+#[test]
+fn the_settings_overlay() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    app.handle(Action::OpenPanelSettings);
+    insta::assert_snapshot!("settings-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// The typing line, which is the one row that is neither a message nor a
+/// divider and is always last.
+#[test]
+fn the_typing_row() {
+    // Nine seconds in, which is after the TYPING_START in `#general` and long
+    // before the connection drops.
+    let (mut app, _idle) = loaded_at("terminal", 9_000);
+    insta::assert_snapshot!("chat-typing-terminal-100x30", render(&mut app, 100, 30));
 }
