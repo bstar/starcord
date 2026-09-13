@@ -12,6 +12,8 @@
 //! standard input rather than through `argv`, which is world-readable in
 //! `/proc` on Linux.
 
+pub mod remote;
+
 use std::fmt;
 
 use anyhow::{Context, Result};

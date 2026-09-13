@@ -76,80 +76,10 @@ pub enum EmojiRef {
     },
 }
 
-/// A piece of media, identified by what it is rather than by its URL, because
-/// attachment URLs are signed and expire while the picture does not.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MediaKey {
-    Avatar {
-        user: UserId,
-        hash: String,
-        size: u16,
-    },
-    GuildIcon {
-        guild: GuildId,
-        hash: String,
-        size: u16,
-    },
-    Emoji {
-        id: EmojiId,
-        animated: bool,
-        size: u16,
-    },
-    Sticker {
-        id: u64,
-    },
-    Attachment {
-        message: MessageId,
-        id: u64,
-        url: String,
-    },
-    EmbedImage {
-        url: String,
-    },
-    Gif {
-        url: String,
-    },
-}
-
-/// What a fetch is for, which decides its priority and its size cap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediaPriority {
-    /// On screen now.
-    Visible,
-    /// Likely to be on screen shortly.
-    Prefetch,
-}
-
-#[derive(Debug, Clone)]
-pub struct MediaRequest {
-    pub key: MediaKey,
-    pub priority: MediaPriority,
-    /// Bumped when the viewport moves. A queued request from an older
-    /// generation is dropped rather than fetched.
-    pub generation: u64,
-    pub max_width: u32,
-    pub max_height: u32,
-}
-
-/// Decoded media.
-///
-/// M1 carries bytes only: decoding needs the `image` dependency, which arrives
-/// with the media milestone along with the animated variant. The type is here
-/// so that `Event::Media` does not change shape when it does.
-#[derive(Debug)]
-pub enum Decoded {
-    Bytes(Arc<Vec<u8>>),
-}
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum MediaError {
-    #[error("the download failed: {0}")]
-    Fetch(String),
-    #[error("the picture could not be decoded: {0}")]
-    Decode(String),
-    #[error("the picture is larger than the cap allows")]
-    TooLarge,
-}
+// Pictures live in `media`, spelled here because this file is the UI's whole
+// vocabulary and it should not have to know which module a type came from.
+#[allow(unused_imports)]
+pub use crate::discord::media::{Decoded, MediaError, MediaKey, MediaPriority, MediaRequest, Want};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchScope {
@@ -258,6 +188,21 @@ pub enum Command {
         channel: ChannelId,
         up_to: MessageId,
     },
+
+    /// Remember the half-typed text in a channel. Held in memory and written
+    /// to `session.toml`, which is mode 0600 for exactly this reason.
+    SetDraft {
+        channel: ChannelId,
+        text: String,
+    },
+    /// Remember where the view is anchored in a channel; `None` is the bottom.
+    SetAnchor {
+        channel: ChannelId,
+        message: Option<MessageId>,
+    },
+    /// Write the session now rather than at the next autosave. Sent on the way
+    /// out, where "in thirty seconds" is too late.
+    SaveSession,
     AddReaction {
         channel: ChannelId,
         message: MessageId,
@@ -325,6 +270,9 @@ impl Command {
             Command::DeleteMessage { .. } => "DeleteMessage",
             Command::Typing(_) => "Typing",
             Command::MarkRead { .. } => "MarkRead",
+            Command::SetDraft { .. } => "SetDraft",
+            Command::SetAnchor { .. } => "SetAnchor",
+            Command::SaveSession => "SaveSession",
             Command::AddReaction { .. } => "AddReaction",
             Command::RemoveReaction { .. } => "RemoveReaction",
             Command::OpenDm(_) => "OpenDm",
@@ -349,6 +297,10 @@ pub enum AuthEvent {
         url: String,
         fingerprint: String,
         expires_in: Duration,
+        /// The code itself, one `bool` per module, `true` for dark. The core
+        /// does not draw, so it hands over the squares and the UI decides what
+        /// a dark module looks like in a terminal.
+        matrix: Vec<Vec<bool>>,
     },
     /// The phone scanned it and Discord said whose phone it was.
     QrScanned {
@@ -466,6 +418,9 @@ pub enum Event {
     Auth(AuthEvent),
     /// READY has been applied and `State` is worth drawing.
     Ready,
+    /// The session file was read. Carries the whole of it, because it is small
+    /// and because the UI needs the drafts before it draws anything.
+    SessionLoaded(Arc<crate::session::Session>),
     Note(Note),
     Guilds,
     /// One guild's channel list, or the DM list when `None`.
@@ -526,6 +481,8 @@ pub struct DiscordConfig {
     /// `STARCORD_RECORD_GATEWAY`; recordings carry real names and message text
     /// until they are scrubbed.
     pub record_gateway: Option<PathBuf>,
+    /// `[media]`: cache size, attachment cap, and the player argv.
+    pub media: crate::discord::media::MediaConfig,
 }
 
 impl Default for DiscordConfig {
@@ -537,6 +494,7 @@ impl Default for DiscordConfig {
             legacy_lazy_request: false,
             discover_build: true,
             record_gateway: None,
+            media: crate::discord::media::MediaConfig::default(),
         }
     }
 }
@@ -550,6 +508,17 @@ pub struct EventSink {
 }
 
 impl EventSink {
+    /// A sink with its own counters, for a caller that holds both ends: the
+    /// tests in `ops` and `media`, and `probe --media`, which drives one fetch
+    /// with no core behind it.
+    pub fn detached(tx: crossbeam_channel::Sender<Event>) -> Self {
+        Self {
+            tx,
+            dropped: Arc::new(AtomicU64::new(0)),
+            needs_refresh: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
     pub fn send(&self, event: Event) {
         // A dropped event means the UI's incremental picture may be wrong, so
         // the next one that fits is preceded by a Refresh. Sending the Refresh

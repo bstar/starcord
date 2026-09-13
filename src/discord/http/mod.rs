@@ -141,6 +141,14 @@ pub struct Http {
     limits: RateLimiter,
     base: String,
     retry: RetryPolicy,
+    /// Whether this client may fetch media over plain http.
+    ///
+    /// False for every client the program builds. It is true only when the base
+    /// was deliberately pointed somewhere that is not https, which nothing but a
+    /// test against a local mock server ever does — and a local mock server
+    /// cannot serve https. The field exists so that the rule has one place
+    /// rather than an argument threaded through every call site.
+    insecure: bool,
 }
 
 impl Http {
@@ -179,6 +187,7 @@ impl Http {
             limits: RateLimiter::new(),
             base,
             retry: RetryPolicy::default(),
+            insecure: !https_only,
         })
     }
 
@@ -328,7 +337,16 @@ impl Http {
     /// The cap is enforced while reading rather than from `Content-Length`,
     /// because a length header is a claim and the bytes are the fact.
     pub async fn download(&self, url: &str, limit: u64) -> Result<Vec<u8>, HttpError> {
-        if !url.starts_with("https://") {
+        self.download_typed(url, limit).await.map(|d| d.bytes)
+    }
+
+    /// The same, keeping what the server said the bytes were.
+    ///
+    /// The media cache names a file by its type, and a `Content-Type` from the
+    /// server is a better answer than an extension on a URL that may not have
+    /// one at all.
+    pub async fn download_typed(&self, url: &str, limit: u64) -> Result<Download, HttpError> {
+        if !url.starts_with("https://") && !self.insecure {
             return Err(HttpError::NotHttps {
                 url: url.to_string(),
             });
@@ -338,7 +356,7 @@ impl Http {
 
     /// The reading half of `download`, separated so the cap can be exercised
     /// against a local server that cannot serve https.
-    async fn get_capped(&self, url: &str, limit: u64) -> Result<Vec<u8>, HttpError> {
+    async fn get_capped(&self, url: &str, limit: u64) -> Result<Download, HttpError> {
         let response = self
             .media
             .get(url)
@@ -359,6 +377,12 @@ impl Http {
             return Err(HttpError::TooLarge { limit });
         }
 
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+
         let mut out = Vec::new();
         let mut response = response;
         while let Some(chunk) = response.chunk().await.map_err(HttpError::Network)? {
@@ -367,8 +391,18 @@ impl Http {
             }
             out.extend_from_slice(&chunk);
         }
-        Ok(out)
+        Ok(Download {
+            bytes: out,
+            content_type,
+        })
     }
+}
+
+/// Bytes from a CDN, and what the server called them.
+#[derive(Debug, Clone)]
+pub struct Download {
+    pub bytes: Vec<u8>,
+    pub content_type: Option<String>,
 }
 
 /// Whether a transport failure is worth one more try.
@@ -712,7 +746,7 @@ mod tests {
             ),
             "4 KiB came back under a 1 KiB cap"
         );
-        assert_eq!(http.get_capped(&url, 8192).await.unwrap().len(), 4096);
+        assert_eq!(http.get_capped(&url, 8192).await.unwrap().bytes.len(), 4096);
     }
 
     /// A download carries a User-Agent and nothing else. An Authorization

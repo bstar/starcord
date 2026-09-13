@@ -12,7 +12,9 @@
 //! capability on here changes what arrives, and the first recorded READY from a
 //! real account is what settles which branch is live.
 
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
+use std::time::{Duration, Instant};
 
 use serde::{Serialize, Serializer};
 
@@ -109,7 +111,7 @@ impl IdentifyPresence {
 /// that cannot be applied.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ClientState {
-    pub guild_versions: std::collections::BTreeMap<String, u64>,
+    pub guild_versions: BTreeMap<String, u64>,
 }
 
 /// op 2.
@@ -168,9 +170,16 @@ impl fmt::Debug for Resume<'_> {
 
 /// op 37, the member-list subscription the web client sends today.
 ///
-/// op 14 is the older spelling of the same request. Which one a user-account
-/// session is expected to send has to be confirmed against a live connection,
-/// so both are reachable and the choice is one boolean rather than an edit.
+/// op 14 is the older spelling of the same request with the same body. Which
+/// one a user-account session is expected to send has to be confirmed against a
+/// live connection, so both are reachable and the choice is one boolean rather
+/// than an edit.
+///
+/// The flags are what this client actually reads. `typing` is on because the
+/// chat panel shows who is typing. `threads` is on because a thread created
+/// under an open channel should appear without a reconnect. `activities` is
+/// **off**: it is a presence firehose for a whole guild, and nothing here draws
+/// what anybody is playing.
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateGuildSubscriptions {
     pub guild_id: GuildId,
@@ -178,25 +187,198 @@ pub struct UpdateGuildSubscriptions {
     pub threads: bool,
     pub activities: bool,
     /// Channel id → the ranges of the member list to receive, as `[start, end]`
-    /// pairs. Three ranges of a hundred is the documented maximum.
-    pub channels: std::collections::BTreeMap<String, Vec<[u32; 2]>>,
+    /// pairs. Three ranges of a hundred is the documented maximum. An empty map
+    /// is how a subscription is dropped.
+    pub channels: BTreeMap<String, Vec<[u32; 2]>>,
 }
 
 impl UpdateGuildSubscriptions {
     /// Subscribe to one channel's member list.
     pub fn for_channel(guild: GuildId, channel: ChannelId, ranges: &[(u32, u32)]) -> Self {
-        let mut channels = std::collections::BTreeMap::new();
+        let mut channels = BTreeMap::new();
         channels.insert(
             channel.to_string(),
             ranges.iter().map(|&(a, b)| [a, b]).collect(),
         );
+        Self::for_channels(guild, channels)
+    }
+
+    pub fn for_channels(guild: GuildId, channels: BTreeMap<String, Vec<[u32; 2]>>) -> Self {
         Self {
             guild_id: guild,
             typing: true,
-            threads: false,
-            activities: true,
+            threads: true,
+            activities: false,
             channels,
         }
+    }
+
+    /// Stop receiving anything for a guild.
+    pub fn none(guild: GuildId) -> Self {
+        Self {
+            guild_id: guild,
+            typing: false,
+            threads: false,
+            activities: false,
+            channels: BTreeMap::new(),
+        }
+    }
+}
+
+/// The first window of a member list, which is what one open channel asks for.
+pub const FIRST_RANGE: [u32; 2] = [0, 99];
+
+/// How long a guild keeps its subscription after the last channel in it closes.
+///
+/// Thirty seconds, because clicking between two channels in the same server is
+/// the common case and unsubscribing and resubscribing across it would be two
+/// payloads for nothing. The grace is also why leaving is scheduled rather than
+/// sent: coming back inside it costs nothing at all.
+pub const UNSUBSCRIBE_GRACE: Duration = Duration::from_secs(30);
+
+/// What this client is subscribed to, and what it has actually told the gateway.
+///
+/// The two are separate on purpose. Discord's member-list subscriptions are
+/// cheap to hold and expensive to churn, and a client that re-sends the same
+/// ranges every time the user clicks a channel is a client generating traffic
+/// that says nothing. Every method here returns a payload only when what the
+/// gateway believes differs from what is wanted.
+pub struct Subscriptions {
+    /// Channels open per guild, which is what the ranges are derived from.
+    open: HashMap<GuildId, BTreeSet<ChannelId>>,
+    /// What was last sent, per guild, so an unchanged request is not re-sent.
+    sent: HashMap<GuildId, BTreeMap<String, Vec<[u32; 2]>>>,
+    /// Guilds with nothing open, and when their grace runs out.
+    leaving: HashMap<GuildId, Instant>,
+    legacy: bool,
+}
+
+impl Subscriptions {
+    /// `legacy` sends op 14 rather than op 37, for a session where the newer
+    /// opcode turns out not to be accepted.
+    pub fn new(legacy: bool) -> Self {
+        Self {
+            open: HashMap::new(),
+            sent: HashMap::new(),
+            leaving: HashMap::new(),
+            legacy,
+        }
+    }
+
+    /// The opcode in use, which `starcord probe` prints so that a live session
+    /// can settle which one Discord accepts.
+    pub fn opcode(&self) -> super::payload::OpCode {
+        if self.legacy {
+            super::payload::OpCode::LazyRequest
+        } else {
+            super::payload::OpCode::UpdateGuildSubscriptions
+        }
+    }
+
+    /// A word for a report.
+    pub fn describe(&self) -> &'static str {
+        if self.legacy {
+            "op 14 (legacy lazy request)"
+        } else {
+            "op 37 (update guild subscriptions)"
+        }
+    }
+
+    fn wanted(&self, guild: GuildId) -> BTreeMap<String, Vec<[u32; 2]>> {
+        self.open
+            .get(&guild)
+            .map(|channels| {
+                channels
+                    .iter()
+                    .map(|c| (c.to_string(), vec![FIRST_RANGE]))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Send the guild's current subscription, if it differs from the last one.
+    fn sync(&mut self, guild: GuildId) -> Option<String> {
+        let wanted = self.wanted(guild);
+        if self.sent.get(&guild) == Some(&wanted) {
+            return None;
+        }
+        let payload = serde_json::to_string(&Outgoing::new(
+            self.opcode(),
+            UpdateGuildSubscriptions::for_channels(guild, wanted.clone()),
+        ))
+        .ok()?;
+        self.sent.insert(guild, wanted);
+        Some(payload)
+    }
+
+    /// A channel was opened. Returns the payload to send, if anything changed.
+    pub fn open(&mut self, guild: GuildId, channel: ChannelId) -> Option<String> {
+        // Coming back inside the grace period cancels the departure.
+        self.leaving.remove(&guild);
+        self.open.entry(guild).or_default().insert(channel);
+        self.sync(guild)
+    }
+
+    /// A channel was closed.
+    ///
+    /// Closing the last channel in a guild schedules the unsubscribe rather
+    /// than sending it; see [`UNSUBSCRIBE_GRACE`].
+    pub fn close(&mut self, guild: GuildId, channel: ChannelId, now: Instant) -> Option<String> {
+        let channels = self.open.get_mut(&guild)?;
+        channels.remove(&channel);
+        if !channels.is_empty() {
+            return self.sync(guild);
+        }
+        self.open.remove(&guild);
+        self.leaving.insert(guild, now + UNSUBSCRIBE_GRACE);
+        None
+    }
+
+    /// Unsubscribe payloads whose grace has run out.
+    pub fn due(&mut self, now: Instant) -> Vec<String> {
+        let expired: Vec<GuildId> = self
+            .leaving
+            .iter()
+            .filter(|(_, at)| **at <= now)
+            .map(|(guild, _)| *guild)
+            .collect();
+
+        let mut payloads = Vec::new();
+        for guild in expired {
+            self.leaving.remove(&guild);
+            if self.open.contains_key(&guild) {
+                // Something reopened while the timer was running.
+                continue;
+            }
+            if self.sent.remove(&guild).is_none() {
+                continue;
+            }
+            if let Ok(payload) = serde_json::to_string(&Outgoing::new(
+                self.opcode(),
+                UpdateGuildSubscriptions::none(guild),
+            )) {
+                payloads.push(payload);
+            }
+        }
+        payloads
+    }
+
+    /// Everything goes: the socket was lost, so the gateway remembers nothing
+    /// and the next open must re-send.
+    pub fn forget_connection(&mut self) {
+        self.sent.clear();
+    }
+
+    /// Re-send every live subscription, for after a reconnect.
+    pub fn resend_all(&mut self) -> Vec<String> {
+        self.forget_connection();
+        let guilds: Vec<GuildId> = self.open.keys().copied().collect();
+        guilds.into_iter().filter_map(|g| self.sync(g)).collect()
+    }
+
+    /// How many guilds are subscribed, for a report.
+    pub fn guilds(&self) -> usize {
+        self.sent.len()
     }
 }
 
@@ -337,5 +519,140 @@ mod tests {
             value["d"]["channels"]["2"],
             serde_json::json!([[0, 99], [100, 199]])
         );
+        assert_eq!(value["d"]["typing"], true);
+        assert_eq!(value["d"]["threads"], true);
+        assert_eq!(
+            value["d"]["activities"], false,
+            "activities is a presence firehose for a whole guild"
+        );
+    }
+
+    fn body(payload: &str) -> serde_json::Value {
+        serde_json::from_str(payload).expect("a subscription payload is json")
+    }
+
+    #[test]
+    fn opening_a_channel_subscribes_and_opening_it_again_does_not() {
+        let mut subs = Subscriptions::new(false);
+        let payload = subs
+            .open(GuildId(1), ChannelId(2))
+            .expect("the first open sends");
+        let value = body(&payload);
+        assert_eq!(value["op"], 37);
+        assert_eq!(value["d"]["guild_id"], "1");
+        assert_eq!(value["d"]["channels"]["2"], serde_json::json!([[0, 99]]));
+
+        assert!(
+            subs.open(GuildId(1), ChannelId(2)).is_none(),
+            "the same ranges were sent twice"
+        );
+        assert_eq!(subs.guilds(), 1);
+    }
+
+    #[test]
+    fn a_second_channel_in_the_same_guild_is_one_merged_subscription() {
+        let mut subs = Subscriptions::new(false);
+        subs.open(GuildId(1), ChannelId(2));
+        let payload = subs
+            .open(GuildId(1), ChannelId(3))
+            .expect("the ranges changed");
+        let value = body(&payload);
+        assert_eq!(value["d"]["channels"]["2"], serde_json::json!([[0, 99]]));
+        assert_eq!(value["d"]["channels"]["3"], serde_json::json!([[0, 99]]));
+        assert_eq!(
+            subs.guilds(),
+            1,
+            "two channels in one guild are one subscription"
+        );
+    }
+
+    #[test]
+    fn closing_the_last_channel_waits_out_the_grace_before_unsubscribing() {
+        let mut subs = Subscriptions::new(false);
+        let now = Instant::now();
+        subs.open(GuildId(1), ChannelId(2));
+
+        assert!(
+            subs.close(GuildId(1), ChannelId(2), now).is_none(),
+            "leaving a guild unsubscribed immediately"
+        );
+        assert!(subs.due(now + Duration::from_secs(5)).is_empty());
+
+        let due = subs.due(now + UNSUBSCRIBE_GRACE + Duration::from_secs(1));
+        assert_eq!(due.len(), 1);
+        let value = body(&due[0]);
+        assert_eq!(value["d"]["guild_id"], "1");
+        assert_eq!(value["d"]["channels"], serde_json::json!({}));
+        assert_eq!(value["d"]["typing"], false);
+        assert_eq!(subs.guilds(), 0);
+
+        // And nothing is owed twice.
+        assert!(subs
+            .due(now + UNSUBSCRIBE_GRACE + Duration::from_secs(60))
+            .is_empty());
+    }
+
+    /// Clicking between two channels in the same server is the common case;
+    /// unsubscribing and resubscribing across it would be two payloads for
+    /// nothing.
+    #[test]
+    fn coming_back_inside_the_grace_costs_nothing() {
+        let mut subs = Subscriptions::new(false);
+        let now = Instant::now();
+        subs.open(GuildId(1), ChannelId(2));
+        subs.close(GuildId(1), ChannelId(2), now);
+
+        assert!(
+            subs.open(GuildId(1), ChannelId(2)).is_none(),
+            "reopening inside the grace re-sent an unchanged subscription"
+        );
+        assert!(
+            subs.due(now + UNSUBSCRIBE_GRACE + Duration::from_secs(1))
+                .is_empty(),
+            "the cancelled departure still happened"
+        );
+    }
+
+    #[test]
+    fn closing_one_of_two_channels_re_sends_the_rest() {
+        let mut subs = Subscriptions::new(false);
+        let now = Instant::now();
+        subs.open(GuildId(1), ChannelId(2));
+        subs.open(GuildId(1), ChannelId(3));
+
+        let payload = subs
+            .close(GuildId(1), ChannelId(3), now)
+            .expect("the ranges changed");
+        let value = body(&payload);
+        assert_eq!(value["d"]["channels"]["2"], serde_json::json!([[0, 99]]));
+        assert!(value["d"]["channels"]["3"].is_null());
+    }
+
+    #[test]
+    fn a_lost_socket_means_the_next_open_re_sends() {
+        let mut subs = Subscriptions::new(false);
+        subs.open(GuildId(1), ChannelId(2));
+        assert!(subs.open(GuildId(1), ChannelId(2)).is_none());
+
+        subs.forget_connection();
+        assert!(
+            subs.open(GuildId(1), ChannelId(2)).is_some(),
+            "the gateway remembers nothing across a reconnect"
+        );
+    }
+
+    #[test]
+    fn the_legacy_flag_changes_the_opcode_and_nothing_else() {
+        let mut modern = Subscriptions::new(false);
+        let mut legacy = Subscriptions::new(true);
+        let a = body(&modern.open(GuildId(1), ChannelId(2)).unwrap());
+        let b = body(&legacy.open(GuildId(1), ChannelId(2)).unwrap());
+
+        assert_eq!(a["op"], 37);
+        assert_eq!(b["op"], 14);
+        assert_eq!(a["d"], b["d"], "the body is the same request either way");
+        assert_eq!(legacy.opcode(), OpCode::LazyRequest);
+        assert!(legacy.describe().contains("14"));
+        assert!(modern.describe().contains("37"));
     }
 }
