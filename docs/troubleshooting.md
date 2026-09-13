@@ -42,8 +42,8 @@ Two causes, and the fix differs.
 
 The code assumes a **dark terminal background**: a scanner needs the dark
 modules dark, and in a terminal the dark thing is the background, so what gets
-painted is the light modules. On a light background that is inside out. Use the
-other polarity.
+painted is the light modules. On a light background that is inside out.
+`starcord probe --qr --qr-invert` draws it the other way round.
 
 If the font renders the half-block characters with gaps, no polarity will help.
 **The login URL is printed under the code** for exactly this case: put it
