@@ -2085,14 +2085,11 @@ impl App {
 
     /// Put text on the system clipboard.
     ///
-    /// A fresh `Clipboard` each time. Under Wayland the clipboard is owned by
-    /// a live connection, and holding one for the life of the program means
-    /// holding a socket open for a feature used a few times an hour; under X11
-    /// `wayland-data-control` is not in play at all. Failure is a note rather
-    /// than an error: a terminal with no clipboard at the other end -- over
-    /// ssh, in a bare tty -- is a perfectly ordinary place to be running this.
+    /// Failure is a note rather than an error: a terminal with no clipboard at
+    /// the other end -- over ssh, in a bare tty -- is a perfectly ordinary
+    /// place to be running a chat client.
     fn copy(&mut self, text: &str, done: &str) {
-        match arboard::Clipboard::new().and_then(|mut c| c.set_text(text.to_string())) {
+        match clipboard::copy(text) {
             Ok(()) => self.note(done),
             Err(e) => {
                 tracing::debug!("clipboard: {e}");

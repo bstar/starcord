@@ -60,7 +60,7 @@ use crate::discord::handle::{RequestId, SearchPage};
 use crate::discord::model::{GifResult, Message};
 use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::Command;
-use crate::ui::keymap::{Module, BINDINGS, MOUSE};
+use crate::ui::keymap::{BINDINGS, MOUSE};
 use crate::ui::panels::chat::media::{MediaStore, Placement};
 use crate::ui::panels::PanelId;
 use crate::ui::theme::Theme;
@@ -136,18 +136,6 @@ impl Overlays {
             || self.search.is_some()
             || self.attach.is_some()
             || self.menu.is_some()
-    }
-
-    /// Which half of the key table the open overlay reads first, for the help
-    /// heading and for nothing else: every one of them takes raw keys.
-    pub fn module(&self) -> Option<Module> {
-        if self.viewer.is_some() {
-            Some(Module::Media)
-        } else if self.picker.is_some() {
-            Some(Module::Picker)
-        } else {
-            None
-        }
     }
 
     /// Whether the open overlay is a text field, so bracketed paste goes to it.

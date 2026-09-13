@@ -67,8 +67,7 @@ const MAX_EMOJI: usize = 512;
 /// a grid with no gap reads as one long run of glyphs.
 const EMOJI_CELL: u16 = 4;
 
-/// How many GIF tiles across, and how wide one is.
-const GIF_COLS: u16 = 4;
+/// How many GIF tiles the grid will squeeze into whatever width it is given.
 const GIF_MIN_COLS: u16 = 3;
 const GIF_MAX_COLS: u16 = 5;
 
