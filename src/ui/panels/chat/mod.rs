@@ -114,6 +114,8 @@ pub struct ChatState {
     asked_older: bool,
     first_unread: Option<MessageId>,
     newer_hidden: usize,
+    /// Messages below the viewport as of the last frame.
+    below: usize,
 
     /// The width the heights were measured at, so a resize clears the cache.
     width: u16,
@@ -151,6 +153,7 @@ impl ChatState {
             asked_older: false,
             first_unread: None,
             newer_hidden: 0,
+            below: 0,
             width: 0,
             hits: Vec::new(),
             body: None,
@@ -161,12 +164,18 @@ impl ChatState {
         self.channel
     }
 
-    /// Messages that are not new, so the status line can say `↓ 3 new`.
+    /// Messages the reader has scrolled past, so the status line can say
+    /// `↓ 3 new` and mean something they can act on.
+    ///
+    /// Two sources, and the larger wins. What is below the viewport is what
+    /// they would see by pressing `G`; `newer_hidden` is what the store
+    /// refused to append because the view had already left the end, and is
+    /// not on screen at all.
     pub fn new_below(&self) -> usize {
         if self.list.is_at_end() {
             0
         } else {
-            self.newer_hidden
+            self.below.max(self.newer_hidden)
         }
     }
 
@@ -646,6 +655,13 @@ impl ChatState {
         let get = |i: usize| heights.get(i).copied().unwrap_or(0);
         let visible = self.list.visible(body, get, self.rows.len());
         let text_width = body.width.saturating_sub(1).max(1);
+        self.below = match visible.last() {
+            Some(last) => self.rows[last.index + 1..]
+                .iter()
+                .filter(|r| r.selectable())
+                .count(),
+            None => 0,
+        };
 
         for item in &visible {
             let row = &self.rows[item.index];
@@ -1276,5 +1292,21 @@ mod tests {
         assert!(typing_line(&["a".into(), "b".into()]).contains("a and b are typing"));
         let many: Vec<String> = ["a", "b", "c", "d"].iter().map(|s| s.to_string()).collect();
         assert!(typing_line(&many).contains("2 others"));
+    }
+
+    /// Scrolling up puts a count in the status bar; `G` takes it away.
+    #[test]
+    fn the_status_bar_counts_what_is_below_the_viewport() {
+        let (mut chat, t, cfg) = panel(40);
+        draw(&mut chat, &t, &cfg);
+        assert_eq!(chat.new_below(), 0, "at the end there is nothing below");
+
+        chat.scroll(-20);
+        draw(&mut chat, &t, &cfg);
+        assert!(chat.new_below() > 0, "scrolled up and counted nothing");
+
+        chat.to_bottom();
+        draw(&mut chat, &t, &cfg);
+        assert_eq!(chat.new_below(), 0);
     }
 }

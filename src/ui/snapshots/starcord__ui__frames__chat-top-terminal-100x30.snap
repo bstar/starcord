@@ -1,5 +1,6 @@
 ---
 source: src/ui/frames.rs
+assertion_line: 222
 expression: "render(&mut app, 100, 30)"
 ---
 ┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
@@ -31,4 +32,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││message #general · First Guild          ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                                    chat  6 unread · @3  ▲ online  off
+? help  #general · First Guild                           chat  ↓ 3 new  6 unread · @3  ▲ online  off
