@@ -152,8 +152,13 @@ impl Settings {
     /// Through STAR/KIT's own hit test, which measures the list the same way
     /// the widget draws it: a row that scrolled out of sight is not a row
     /// anything can click, and the two answers cannot drift because there is
-    /// only one of them. A click off the list closes the overlay, which is
-    /// what clicking outside a dialogue has always meant here.
+    /// only one of them.
+    ///
+    /// A click on a row steps it, exactly as `enter` on it would: every row
+    /// here cycles through a handful of values, so selecting one without
+    /// changing it would be a click that does nothing visible. A click off the
+    /// list closes the overlay, which is what clicking outside a dialogue has
+    /// always meant here.
     pub fn click(&mut self, area: Rect, x: u16, y: u16) -> Action {
         match settings::hit(area, Setting::ALL.len(), self.scroll, x, y) {
             Some(index) => {
@@ -202,6 +207,34 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// A click on a row is the same as `enter` on it, and one outside the
+    /// list closes. Both answers come from STAR/KIT's hit test, so they cannot
+    /// disagree with where the widget drew the rows.
+    #[test]
+    fn a_click_steps_the_row_it_landed_on() {
+        let area = Rect::new(0, 0, 60, 20);
+        let mut s = Settings::new(PanelId::Chat);
+        let rows = Setting::ALL.len();
+
+        // Find where the widget puts the last row, and click it.
+        let mut hit = None;
+        for y in area.y..area.y + area.height {
+            if settings::hit(area, rows, 0, area.x + area.width / 2, y) == Some(rows - 1) {
+                hit = Some(y);
+                break;
+            }
+        }
+        let y = hit.expect("the widget draws the last row somewhere");
+        assert_eq!(
+            s.click(area, area.x + area.width / 2, y),
+            Action::Change(Setting::ALL[rows - 1], true)
+        );
+        assert_eq!(s.cursor, rows - 1, "the cursor followed the pointer");
+
+        // The corner is not a row.
+        assert_eq!(s.click(area, area.x, area.y), Action::Close);
     }
 
     /// Every setting names a real place in the file. A row that wrote to a key
