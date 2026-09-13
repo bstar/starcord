@@ -60,3 +60,34 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   member-list subscriptions from op 37 to op 14; which one a user-account
   session is expected to send is something only a live connection can settle, so
   the one that went out is printed rather than logged.
+- **Pictures, fetched and decoded.** A picture is named by what it is — a user
+  and a hash, a message and an attachment id — rather than by where it
+  currently lives, because Discord's attachment URLs are signed and expire
+  within the day while the picture does not. The cache strips the signature
+  back off before naming the bytes on disk, so the same attachment fetched on
+  Monday and on Friday is one file, and a 403 on one is a stale link worth
+  exactly one re-signing rather than a failure worth remembering. The queue
+  serves what is on screen before what might be, and drops a prefetch the
+  reader has already scrolled past.
+- **A decoder that assumes the bytes are hostile.** The header is read and
+  checked before anything is decoded, so a four-hundred-byte file claiming to
+  be forty thousand pixels on a side is refused rather than believed. An
+  animation is capped at three hundred frames or fifty million pixels and comes
+  back as its first frame past either, with a note saying why it is not moving.
+  Frame delays have a twenty-millisecond floor, because a GIF asking to be
+  drawn as fast as the machine can manage is asking for the whole terminal to
+  be redrawn a thousand times a second.
+- **Signing in by scanning a code**, which is now the recommended way in. An
+  RSA-2048 keypair is generated per attempt and its private half never leaves
+  the process; the password is never typed into a terminal and the token is
+  never displayed, never in a clipboard, and never in shell history. The phone
+  shows who is asking before it agrees. A code nobody scans is regenerated once
+  and then waits to be asked again.
+- **`probe --qr` and `probe --media`.** The first draws the code as half-blocks
+  and reports who signed in and where the token went; everything up to the
+  point the code appears needs no account at all, which makes it the way to
+  check that half of the handshake on its own. The second fetches and decodes
+  one URL and prints what came back, with no gateway and no token involved.
+- **`docs/account-safety.md` and `docs/auth.md`**, which say plainly what a
+  user-account session is, what Discord's terms say about one, what this client
+  deliberately cannot express, and what actually revokes a token.

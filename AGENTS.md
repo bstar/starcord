@@ -41,6 +41,12 @@ this directory, so it waits for the git dependency and
 `session_file()` or `media_cache_dir()`; either those move upstream or the local
 file keeps them as an extension over the shared type.
 
+`image` is in the same position, and for the same reason: it is a direct
+dependency today with the four formats Discord serves, and it becomes STAR/KIT's
+re-export when the swap happens. The core and the terminal image pipeline must
+not end up on two versions of it, because an `RgbaImage` from one is not an
+`RgbaImage` to the other.
+
 Once `starkit` is a git dependency, a local checkout is used through an
 uncommitted `.cargo/config.toml`:
 
@@ -85,7 +91,15 @@ type that holds a token is a leak.
 `download()` in `http/mod.rs` sends only a `User-Agent`. Attachment and avatar
 URLs point at `cdn.discordapp.com` and at media proxies, and an
 `Authorization` header on a request to a host Discord does not control is how a
-session gets handed to somebody else.
+session gets handed to somebody else. It also refuses anything that is not
+https. The one exception is `Http::insecure`, true only when the base was
+deliberately pointed at a non-https URL, which nothing but a test against a
+local mock server does — there is no way to set it from configuration.
+
+The QR login has a second secret with the same rules. `auth::remote::Keys`
+holds the RSA private key every payload in that handshake is sealed to, and its
+`Debug` prints `Keys(<redacted>)`. The nonce, the ticket and the decrypted
+token are never logged at any level, including `trace`.
 
 ## The account-safety boundary
 
@@ -135,6 +149,17 @@ not leave it as folklore.
   last-resort fallback behind live discovery and a 24-hour cache; the comment
   there records when it was taken and from where.
 
+The QR login settled one of these and left another. **The `nonce_proof` reply
+is the base64url, unpadded, of the SHA-256 of the decrypted nonce**, not the
+nonce itself — a live handshake against `remote-auth-gateway.discord.gg` on
+2026-09-13 got past that step and came back with a fingerprint, which a wrong
+proof cannot do (the failure is a close 4002). `PROOF_IS_HASHED` in
+`auth/remote.rs` is kept as a constant so the other answer stays one line away.
+What that run could not reach is **everything after the scan**: the shape of
+`pending_ticket`'s payload, the `pending_login` exchange and the token decrypt
+are still from the documentation, and settling them needs a phone and
+`starcord probe --qr` run to completion.
+
 There is one more, added with the message milestone: **whether a `nonce` sent
 on a `POST /messages` comes back on the gateway echo** as well as in the
 response body. The optimistic-send path assumes it does, and falls back to the
@@ -146,6 +171,25 @@ which happened.
 dispatch as `<seq>_<event>.json`. `testdata/gateway/README.md` has the scrub
 procedure. The fixture in that directory today is **synthetic**, hand-written
 from the documented field lists, and says so.
+
+## Pictures are named, not addressed
+
+`MediaKey` names a picture by what it is — a user and a hash, a message and an
+attachment id — and never by where it currently lives. Discord's attachment
+URLs are signed with `ex`, `is` and `hm`, and the signature is regenerated
+every few hours for bytes that never change. A key built out of one would miss
+the cache on every refresh, and a UI holding one would redraw the same picture
+as a new one. `media::cache::canonical` strips the three parameters back off
+before the bytes are named on disk; a 403 or a 404 on an attachment is a stale
+link rather than a missing file and is worth exactly one `refresh-urls` round
+trip, and no more.
+
+Decoding assumes the bytes are hostile. The header is read and checked before
+anything is decoded, so a small file declaring itself forty thousand pixels on
+a side is refused rather than believed; an animation is capped at three hundred
+frames or fifty million pixels and falls back to its first frame past either.
+Everything decoded goes through `spawn_blocking`: it is the one genuinely
+CPU-bound thing in the core, and the runtime has two worker threads.
 
 ## Tests
 
