@@ -17,7 +17,7 @@
 use std::borrow::Cow;
 
 use crate::discord::handle::EmojiRef;
-use crate::discord::snowflake::{ChannelId, MessageId};
+use crate::discord::snowflake::{ChannelId, GuildId, MessageId, UserId};
 
 /// The characters that may appear in a path segment or a query value as they
 /// stand. Everything else is percent-encoded.
@@ -116,6 +116,16 @@ pub enum Route {
     AddReaction(ChannelId, MessageId, EmojiRef),
     /// Take it off again.
     RemoveReaction(ChannelId, MessageId, EmojiRef),
+    /// Search a server's messages, or one channel's.
+    ///
+    /// The query is in the path rather than in a body: it is a `GET`, and the
+    /// text somebody typed goes through the same percent-encoding as
+    /// everything else that came from outside this program.
+    Search {
+        scope: SearchIn,
+        query: SearchTerms,
+    },
+
     /// The GIF picker's three requests.
     ///
     /// One bucket for all of them, because that is how Discord counts them:
@@ -131,6 +141,41 @@ pub enum Route {
     /// one allowance for the whole account, because a client that has scrolled
     /// back through a year of pictures asks for a great many of them at once.
     RefreshAttachmentUrls,
+}
+
+/// Where a search looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchIn {
+    Guild(GuildId),
+    Channel(ChannelId),
+}
+
+/// What a search asks for.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchTerms {
+    pub content: String,
+    /// Narrow a guild search to one channel. Meaningless on a channel search,
+    /// which is already narrowed.
+    pub channel: Option<ChannelId>,
+    pub author: Option<UserId>,
+    /// How many results to skip. Discord pages these twenty-five at a time.
+    pub offset: u32,
+}
+
+impl SearchTerms {
+    fn query_string(&self, scope: SearchIn) -> String {
+        let mut query = format!("?content={}", escape(&self.content));
+        if let (SearchIn::Guild(_), Some(channel)) = (scope, self.channel) {
+            query.push_str(&format!("&channel_id={channel}"));
+        }
+        if let Some(author) = self.author {
+            query.push_str(&format!("&author_id={author}"));
+        }
+        if self.offset > 0 {
+            query.push_str(&format!("&offset={}", self.offset));
+        }
+        query
+    }
 }
 
 /// Which of the picker's three questions is being asked.
@@ -187,7 +232,9 @@ impl Default for GifProvider {
 impl Route {
     pub fn method(&self) -> reqwest::Method {
         match self {
-            Route::Me | Route::ChannelMessages { .. } | Route::Gifs(_) => reqwest::Method::GET,
+            Route::Me | Route::ChannelMessages { .. } | Route::Gifs(_) | Route::Search { .. } => {
+                reqwest::Method::GET
+            }
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
             | Route::CreateAttachments(_)
@@ -236,6 +283,18 @@ impl Route {
                 "/channels/{channel}/messages/{message}/reactions/{}/@me",
                 escape(&emoji.key())
             )),
+            Route::Search { scope, query } => Cow::Owned(match scope {
+                SearchIn::Guild(guild) => {
+                    format!(
+                        "/guilds/{guild}/messages/search{}",
+                        query.query_string(*scope)
+                    )
+                }
+                SearchIn::Channel(channel) => format!(
+                    "/channels/{channel}/messages/search{}",
+                    query.query_string(*scope)
+                ),
+            }),
             Route::RefreshAttachmentUrls => Cow::Borrowed("/attachments/refresh-urls"),
             // The provider is not on the `Route`: it is configuration, and a
             // bucket that carried it would count Tenor and Giphy separately
@@ -309,6 +368,15 @@ impl Route {
             Route::RemoveReaction(channel, _, _) => {
                 Cow::Owned(format!("DELETE /channels/{channel}/messages/:id/reactions"))
             }
+            // The major parameter is the guild or the channel; the words are
+            // not part of the allowance, or every different search would be a
+            // fresh empty one.
+            Route::Search { scope, .. } => Cow::Owned(match scope {
+                SearchIn::Guild(guild) => format!("GET /guilds/{guild}/messages/search"),
+                SearchIn::Channel(channel) => {
+                    format!("GET /channels/{channel}/messages/search")
+                }
+            }),
             Route::RefreshAttachmentUrls => Cow::Borrowed("POST /attachments/refresh-urls"),
             Route::Gifs(request) => Cow::Owned(format!("GET /gifs/{}", request.leaf())),
         }

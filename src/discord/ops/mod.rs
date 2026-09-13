@@ -21,6 +21,7 @@
 pub mod ack;
 pub mod open;
 pub mod reactions;
+pub mod search;
 pub mod send;
 pub mod typing;
 pub mod upload;
@@ -55,6 +56,9 @@ pub struct Shared {
     /// Which channel each outstanding send belongs to, so `RetrySend` and
     /// `CancelSend` can find it from a nonce alone.
     pub sends: HashMap<Nonce, ChannelId>,
+    /// Keeps message searches three hundred milliseconds apart, which is the
+    /// same gate and the same reasoning as the GIF picker's.
+    pub searches: crate::discord::gifs::Spacer,
 }
 
 impl Shared {
@@ -66,6 +70,7 @@ impl Shared {
             focus: None,
             terminal_focused: true,
             sends: HashMap::new(),
+            searches: crate::discord::gifs::Spacer::default(),
         }
     }
 }

@@ -139,6 +139,10 @@ fn run_probe(options: cli::Probe) -> Result<()> {
     if let Some(channel) = options.channel.map(ChannelId) {
         open_channel(&handle, started, channel, deadline)?;
 
+        if let Some(text) = options.search.clone() {
+            report_search(&handle, started, channel, &text, options.search_here);
+        }
+
         if let Some(react) = options.react.clone() {
             react_once(&handle, started, channel, &react, options.unreact)?;
         }
@@ -360,6 +364,73 @@ fn probe_media(url: &str) -> Result<()> {
         }
         Ok(())
     })
+}
+
+/// Search, and print what came back.
+///
+/// The results are not put in the message store and are not drawn from it: a
+/// search reaches back through a year of a channel nobody has open, and what is
+/// on screen must not depend on what was last searched for. They arrive on the
+/// event and are printed from it.
+fn report_search(handle: &Handle, started: Instant, channel: ChannelId, text: &str, here: bool) {
+    use discord::handle::{RequestId, SearchQuery, SearchScope};
+
+    let guild = handle.state().channel(channel).and_then(|c| c.guild_id);
+    let scope = match (here, guild) {
+        (false, Some(guild)) => SearchScope::Guild(guild),
+        // A DM has no server to search, so there is only one answer.
+        _ => SearchScope::Channel(channel),
+    };
+
+    let id = RequestId(1);
+    stamp(started);
+    match scope {
+        SearchScope::Guild(guild) => println!("searching {guild} for {text:?}"),
+        SearchScope::Channel(channel) => println!("searching {channel} for {text:?}"),
+    }
+    handle.send(discord::Command::Search {
+        id,
+        scope,
+        query: SearchQuery {
+            content: text.to_string(),
+            ..Default::default()
+        },
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Search { id: got, result } if got == id => {
+                    stamp(started);
+                    match result {
+                        Ok(page) => {
+                            println!(
+                                "{} results, showing {} from offset {}",
+                                page.total,
+                                page.messages.len(),
+                                page.offset
+                            );
+                            println!();
+                            for message in &page.messages {
+                                print!("  {} ", message.channel_id);
+                                print_message(handle, message, "");
+                            }
+                        }
+                        Err(e) => println!("the search returned nothing: {e}"),
+                    }
+                    return;
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                }
+                _ => {}
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    println!("the search did not answer within twenty seconds");
 }
 
 /// Put this account's reaction on a message, or take it off.

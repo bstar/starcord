@@ -6,12 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::discord::handle::EmojiRef;
+use crate::discord::handle::{EmojiRef, SearchPage};
 use crate::discord::model::gif::{GifPage, GifResult, Suggestion, Trending};
 use crate::discord::model::{Message, User};
 use crate::discord::snowflake::{ChannelId, MessageId};
 
-use super::route::{GifProvider, GifRequest, History, Route, PAGE};
+use super::route::{GifProvider, GifRequest, History, Route, SearchIn, SearchTerms, PAGE};
 use super::{Http, HttpError};
 
 /// The longest message this client will send.
@@ -403,6 +403,87 @@ pub async fn refresh_attachment_urls(
         }),
     )
     .await
+}
+
+/// What a search came back with, before the groups are unpicked.
+///
+/// Discord answers a search with an array of *groups*: each one is the message
+/// that matched plus the couple on either side of it, and the match itself is
+/// marked `hit`. The messages stay as raw JSON here so that the flag can be
+/// read without teaching `Message` about a field that only exists in this one
+/// response.
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    #[serde(default)]
+    total_results: u32,
+    #[serde(default)]
+    messages: Vec<Vec<Box<serde_json::value::RawValue>>>,
+    /// Present instead of results when the server has not finished indexing
+    /// the guild. It is a 202 rather than an error, which is why it has to be
+    /// noticed here.
+    #[serde(default)]
+    retry_after: Option<f64>,
+    #[serde(default)]
+    documents_indexed: Option<u64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct Hit {
+    #[serde(default)]
+    hit: bool,
+}
+
+/// Search a guild or a channel.
+///
+/// Results are returned, not stored: see [`crate::discord::handle::SearchPage`]
+/// for why they must not reach the message store.
+pub async fn search(
+    http: &Http,
+    scope: SearchIn,
+    query: &SearchTerms,
+) -> Result<SearchPage, HttpError> {
+    let route = Route::Search {
+        scope,
+        query: query.clone(),
+    };
+    let response: SearchResponse = http.request(route, None::<&()>).await?;
+
+    if let Some(retry) = response.retry_after {
+        let indexed = response.documents_indexed.unwrap_or(0);
+        return Err(HttpError::Status {
+            status: 202,
+            code: 110000,
+            message: format!(
+                "the server is still indexing its messages ({indexed} so far);                  try again in about {retry:.0}s"
+            ),
+        });
+    }
+
+    let mut messages = Vec::with_capacity(response.messages.len());
+    for group in &response.messages {
+        // The match, or -- if nothing in the group is flagged, which happens on
+        // a channel search -- the first of them.
+        let chosen = group
+            .iter()
+            .find(|raw| {
+                serde_json::from_str::<Hit>(raw.get())
+                    .map(|h| h.hit)
+                    .unwrap_or(false)
+            })
+            .or_else(|| group.first());
+        let Some(raw) = chosen else { continue };
+        match serde_json::from_str::<Message>(raw.get()) {
+            Ok(message) => messages.push(std::sync::Arc::new(message)),
+            // One unparseable result must not cost the page.
+            Err(e) => tracing::debug!("a search result did not parse: {e}"),
+        }
+    }
+
+    Ok(SearchPage {
+        total: response.total_results,
+        messages,
+        offset: query.offset,
+    })
 }
 
 /// What everybody is posting today.

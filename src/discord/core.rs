@@ -505,6 +505,11 @@ impl Core {
             }
             Command::SaveSession => self.with_session(SessionStore::save_if_dirty),
 
+            Command::Search { id, scope, query } => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::search::search(&ops, id, scope, query).await });
+            }
+
             Command::FetchMedia(request) => {
                 if let Some(media) = &self.media {
                     media.fetch(request);

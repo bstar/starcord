@@ -7,6 +7,7 @@ starcord probe [--qr [--qr-invert]] [--token-from-stdin]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
                [--send TEXT] [--send-file PATH]... [--reply-to ID [--ping]]
+               [--search TEXT [--search-here]]
                [--react MESSAGE_ID EMOJI [--unreact]]
                [--media URL] [--gifs QUERY]
 ```
@@ -213,6 +214,37 @@ because nothing about it is different from where the message ends up.
 A file over `[media] max_attachment_mib` — 25 by default, which is what an
 account without Nitro is allowed — is refused before any request is made, with
 the size in the message.
+
+## Searching
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 --search "kettle" < token.txt
+```
+
+```
+[  2.51s] searching 9876543210 for "kettle"
+[  2.94s] 42 results, showing 25 from offset 0
+
+  1234567890 09:41  Alex: the kettle is on
+  1111111111 14:02  Jordan: kettle broke again
+  ...
+```
+
+Searches the whole server the channel is in; `--search-here` looks only in that
+channel. A DM has no server, so it is always the channel either way.
+
+Results are printed from the event that carried them and are **not** put in the
+message store. A search reaches back through a year of a channel nobody has
+open, and inserting what comes back would throw away the window somebody is
+reading. Jumping to a result is a separate thing — `Command::JumpTo`, which
+fetches the page around it properly.
+
+Searches are kept three hundred milliseconds apart by the core, the same gate
+the GIF picker uses and for the same reason.
+
+A server Discord has not finished indexing answers 202 with a wait rather than
+results, which would otherwise look like a search that found nothing. That case
+prints `the server is still indexing its messages`.
 
 ## Reacting
 

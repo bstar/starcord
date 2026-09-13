@@ -89,6 +89,17 @@ pub struct Probe {
     #[arg(long, requires = "reply_to")]
     pub ping: bool,
 
+    /// Search for messages and print what came back.
+    ///
+    /// Searches the whole server `--channel` is in, or just that channel with
+    /// `--search-here`.
+    #[arg(long, value_name = "TEXT", requires = "channel")]
+    pub search: Option<String>,
+
+    /// Make `--search` look only in `--channel` rather than the whole server.
+    #[arg(long, requires = "search")]
+    pub search_here: bool,
+
     /// React to a message in `--channel`.
     ///
     /// Takes a message id and an emoji: the character itself for a unicode one,
@@ -325,6 +336,31 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_search_needs_somewhere_to_look() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--search",
+            "kettle",
+            "--search-here",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(probe.search.as_deref(), Some("kettle"));
+                assert!(probe.search_here);
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--search", "kettle"]).is_err(),
+            "the scope comes from the channel, so there has to be one"
+        );
     }
 
     #[test]

@@ -123,14 +123,30 @@ pub enum SearchScope {
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
     pub content: String,
+    /// Narrow a guild-wide search to one channel.
+    pub channel: Option<ChannelId>,
     pub author: Option<UserId>,
+    /// How many results to skip; Discord pages these twenty-five at a time.
     pub offset: u32,
 }
 
+/// One page of search results.
+///
+/// The messages are carried rather than named, which is the one place an
+/// `Event` in this program does not merely point at `State`. They are not in
+/// `State`: a search reaches back through a year of a channel nobody has open,
+/// and inserting what comes back into the store would blow the window away and
+/// make what is on screen depend on what was last searched for. The overlay
+/// holds them; jumping to one is `Command::JumpTo`, which fetches the page
+/// around it properly.
 #[derive(Debug, Clone, Default)]
 pub struct SearchPage {
+    /// How many results there are altogether, not how many are in this page.
     pub total: u32,
-    pub message_ids: Vec<(ChannelId, MessageId)>,
+    pub messages: Vec<Arc<crate::discord::model::Message>>,
+    /// The offset this page starts at, so the next one can ask for the one
+    /// after it.
+    pub offset: u32,
 }
 
 /// What kind of thing an external program is being asked to open, so the right
