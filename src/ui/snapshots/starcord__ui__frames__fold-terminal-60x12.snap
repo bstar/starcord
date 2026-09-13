@@ -8,9 +8,9 @@ expression: "render(&mut app, 60, 12)"
 │○ Alex, Jordan [3]││                                      │
 │● Alex (1)        ││           choose a channel           │
 │                  ││                                      │
-│                  ││                                      │
 │                  │└──────────────────────────────────────┘
 │                  │┌═ compose ═───────────────────────────┐
 │                  ││                   attach  emoji  gif │
+│                  ││open a channel to write in it         │
 └──────────────────┘└──────────────────────────────────────┘
 ? help                          6 unread · @3  ▲ online  off

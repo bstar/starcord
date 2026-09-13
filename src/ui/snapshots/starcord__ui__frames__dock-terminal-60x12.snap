@@ -8,9 +8,9 @@ expression: "render(&mut app, 60, 12)"
 │▾ TEXT CHANNELS   ││                                      │
 │  # general (2)   ││           choose a channel           │
 │  # random        ││                                      │
-│  ! announcements ││                                      │
-│▾ ARCHIVE         │└──────────────────────────────────────┘
-│  # old-decisions │┌═ compose ═───────────────────────────┐
-│                  ││                   attach  emoji  gif │
+│  ! announcements │└──────────────────────────────────────┘
+│▾ ARCHIVE         │┌═ compose ═───────────────────────────┐
+│  # old-decisions ││                   attach  emoji  gif │
+│                  ││open a channel to write in it         │
 └──────────────────┘└──────────────────────────────────────┘
 ? help                          6 unread · @3  ▲ online  off

@@ -72,8 +72,12 @@ pub const LEFT_MAX_COLS: u16 = 50;
 pub const MEMBERS_MIN_COLS: u16 = 18;
 pub const MEMBERS_MAX_COLS: u16 = 40;
 /// Rows the chat and composer need before either is worth drawing.
+///
+/// Four each, and the same four: two borders, the header row the action words
+/// sit on, and one row of content. A panel with no content row is a box with a
+/// title.
 const CHAT_MIN_ROWS: u16 = 4;
-const COMPOSER_MIN_ROWS: u16 = 3;
+const COMPOSER_MIN_ROWS: u16 = 4;
 /// Rows a list in the left column needs: a border, a header and one entry.
 const LIST_MIN_ROWS: u16 = 4;
 
