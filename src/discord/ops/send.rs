@@ -19,16 +19,23 @@
 //!   in its place. The nonce means the echo cannot then duplicate it.
 //! - **The message is too long.** Refused before a request is built. On a user
 //!   account a rejected request is a line in somebody's ledger, and the length
-//!   is knowable without asking.
+//!   is knowable without asking. A file over the attachment cap is refused the
+//!   same way, and for the same reason.
+//!
+//! Attachments are staged before the message is posted; see [`super::upload`]
+//! for the two ways that can go. While it is happening the optimistic row says
+//! `Uploading`, with a byte count, because a twenty-megabyte picture on a slow
+//! link is otherwise indistinguishable from a wedged client.
 
 use rand::Rng as _;
 
-use crate::discord::handle::{Event, MessagesChange, Nonce, Note};
+use crate::discord::handle::{Event, MessagesChange, Nonce, Note, Upload};
 use crate::discord::http::api::{self, AllowedMentions, CreateMessage, ReplyTo, MAX_CONTENT};
 use crate::discord::model::Message;
 use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::state::messages::{PendingSend, PendingState};
 
+use super::upload::{self, Prepared, Staged};
 use super::Ops;
 
 /// How long to wait for the gateway echo before inserting the HTTP response.
@@ -50,30 +57,38 @@ pub async fn send_message(
     content: String,
     reply_to: Option<MessageId>,
     mention_author: bool,
+    attachments: Vec<Upload>,
 ) {
     let nonce = fresh_nonce();
 
     if content.chars().count() > MAX_CONTENT {
         // No optimistic row for something that was never going to send.
-        ops.note(Note::error(
+        refuse(
+            ops,
+            nonce,
             "too-long",
             format!("a message may be at most {MAX_CONTENT} characters"),
-        ));
-        ops.emit(Event::SendResult {
-            nonce,
-            result: Err(format!("longer than {MAX_CONTENT} characters")),
-        });
+        );
         return;
     }
 
+    // Reading the files and checking them against the cap happens before the
+    // row appears, so a file that was never going to send never looks as though
+    // it might.
+    let files = match upload::prepare(&attachments, ops.attachment_cap()).await {
+        Ok(files) => files,
+        Err(reason) => {
+            refuse(ops, nonce, "attachment", reason);
+            return;
+        }
+    };
+
     {
         let mut state = ops.state_mut();
-        state.messages_mut(channel).add_pending(PendingSend::new(
-            nonce,
-            content.clone(),
-            reply_to,
-            mention_author,
-        ));
+        state.messages_mut(channel).add_pending(
+            PendingSend::new(nonce, content.clone(), reply_to, mention_author)
+                .with_attachments(attachments),
+        );
     }
     ops.shared().sends.insert(nonce, channel);
     // The user has stopped typing, so the next keystroke should send a fresh
@@ -81,7 +96,25 @@ pub async fn send_message(
     super::typing::forget(ops, channel);
     ops.emit(Event::Messages(channel, MessagesChange::Pending(nonce)));
 
-    post(ops, channel, nonce, &content, reply_to, mention_author).await;
+    post(
+        ops,
+        channel,
+        nonce,
+        &content,
+        reply_to,
+        mention_author,
+        files,
+    )
+    .await;
+}
+
+/// Say no before anything is sent.
+fn refuse(ops: &Ops, nonce: Nonce, key: &'static str, reason: String) {
+    ops.note(Note::error(key, reason.clone()));
+    ops.emit(Event::SendResult {
+        nonce,
+        result: Err(reason),
+    });
 }
 
 /// `Command::RetrySend`.
@@ -108,10 +141,31 @@ pub async fn retry(ops: &Ops, nonce: Nonce) {
         }
     };
 
+    // The files are read again rather than kept: an upload slot belongs to one
+    // attempt, and a retry minutes later is a fresh three-request dance.
+    let files = match upload::prepare(&pending.attachments, ops.attachment_cap()).await {
+        Ok(files) => files,
+        Err(reason) => {
+            ops.state_mut()
+                .messages_mut(channel)
+                .fail_pending(nonce, reason.clone());
+            ops.emit(Event::Messages(channel, MessagesChange::Pending(nonce)));
+            ops.emit(Event::SendResult {
+                nonce,
+                result: Err(reason),
+            });
+            return;
+        }
+    };
+
     {
         let mut state = ops.state_mut();
         if let Some(row) = state.messages_mut(channel).pending_mut(nonce) {
-            row.state = PendingState::Sending;
+            row.state = if files.is_empty() {
+                PendingState::Sending
+            } else {
+                PendingState::Uploading { sent: 0, total: 0 }
+            };
         }
     }
     ops.emit(Event::Messages(channel, MessagesChange::Pending(nonce)));
@@ -123,6 +177,7 @@ pub async fn retry(ops: &Ops, nonce: Nonce) {
         &pending.content,
         pending.reply_to,
         pending.mention_author,
+        files,
     )
     .await;
 }
@@ -137,6 +192,7 @@ pub fn cancel(ops: &Ops, nonce: Nonce) {
     ops.emit(Event::Messages(channel, MessagesChange::Pending(nonce)));
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn post(
     ops: &Ops,
     channel: ChannelId,
@@ -144,8 +200,26 @@ async fn post(
     content: &str,
     reply_to: Option<MessageId>,
     mention_author: bool,
+    files: Vec<Prepared>,
 ) {
-    let body = CreateMessage {
+    // Whatever files there are go up first: a message that names a slot nothing
+    // was put in is a message with a broken attachment on it.
+    let staged = match upload::stage(ops, channel, nonce, &files).await {
+        Ok(staged) => staged,
+        Err(reason) => {
+            fail(ops, channel, nonce, reason);
+            return;
+        }
+    };
+
+    if !files.is_empty() {
+        let mut state = ops.state_mut();
+        if let Some(row) = state.messages_mut(channel).pending_mut(nonce) {
+            row.state = PendingState::Sending;
+        }
+    }
+
+    let mut body = CreateMessage {
         content,
         nonce: nonce.to_string(),
         message_reference: reply_to.map(|message_id| ReplyTo {
@@ -155,11 +229,24 @@ async fn post(
         }),
         allowed_mentions: AllowedMentions::new(mention_author),
         tts: false,
+        attachments: Vec::new(),
     };
 
-    let sent = ops
-        .rest(api::create_message(&ops.http, channel, &body))
-        .await;
+    let sent = match staged {
+        Staged::Uploaded(refs) => {
+            body.attachments = refs;
+            ops.rest(api::create_message(&ops.http, channel, &body))
+                .await
+        }
+        Staged::SendInline => {
+            body.attachments = upload::inline_refs(&files);
+            let parts = upload::inline(&files);
+            ops.rest(api::create_message_with_files(
+                &ops.http, channel, &body, &parts,
+            ))
+            .await
+        }
+    };
 
     match sent {
         Ok(message) => {
@@ -170,19 +257,21 @@ async fn post(
             });
             schedule_fallback(ops, channel, nonce, message);
         }
-        Err(e) => {
-            let reason = e.to_string();
-            tracing::warn!("could not send to {channel}: {reason}");
-            ops.state_mut()
-                .messages_mut(channel)
-                .fail_pending(nonce, reason.clone());
-            ops.emit(Event::Messages(channel, MessagesChange::Pending(nonce)));
-            ops.emit(Event::SendResult {
-                nonce,
-                result: Err(reason),
-            });
-        }
+        Err(e) => fail(ops, channel, nonce, e.to_string()),
     }
+}
+
+/// Leave the row on screen, marked failed, with the text still in it.
+fn fail(ops: &Ops, channel: ChannelId, nonce: Nonce, reason: String) {
+    tracing::warn!("could not send to {channel}: {reason}");
+    ops.state_mut()
+        .messages_mut(channel)
+        .fail_pending(nonce, reason.clone());
+    ops.emit(Event::Messages(channel, MessagesChange::Pending(nonce)));
+    ops.emit(Event::SendResult {
+        nonce,
+        result: Err(reason),
+    });
 }
 
 /// If the gateway echo has not arrived in ten seconds, use what the POST
@@ -309,7 +398,7 @@ mod tests {
 
         let h = harness(&server.uri());
         h.ops.state_mut().messages_mut(CHANNEL).set_at_latest(true);
-        send_message(&h.ops, CHANNEL, "hello".into(), None, false).await;
+        send_message(&h.ops, CHANNEL, "hello".into(), None, false, Vec::new()).await;
 
         let events: Vec<Event> = h.events.try_iter().collect();
         let pending = events
@@ -343,7 +432,7 @@ mod tests {
 
         let h = harness(&server.uri());
         h.ops.state_mut().messages_mut(CHANNEL).set_at_latest(true);
-        send_message(&h.ops, CHANNEL, "hello".into(), None, false).await;
+        send_message(&h.ops, CHANNEL, "hello".into(), None, false, Vec::new()).await;
 
         let nonce = pending_nonces(&h.ops)[0];
         let arrived: Message = serde_json::from_value(echo(500, &nonce.to_string())).unwrap();
@@ -377,7 +466,7 @@ mod tests {
             .await;
 
         let h = harness(&server.uri());
-        send_message(&h.ops, CHANNEL, "hello".into(), None, false).await;
+        send_message(&h.ops, CHANNEL, "hello".into(), None, false, Vec::new()).await;
 
         let nonce = pending_nonces(&h.ops)[0];
         {
@@ -416,7 +505,7 @@ mod tests {
             .await;
 
         let h = harness(&server.uri());
-        send_message(&h.ops, CHANNEL, "hello".into(), None, false).await;
+        send_message(&h.ops, CHANNEL, "hello".into(), None, false, Vec::new()).await;
         let nonce = pending_nonces(&h.ops)[0];
 
         cancel(&h.ops, nonce);
@@ -437,7 +526,15 @@ mod tests {
             .await;
 
         let h = harness(&server.uri());
-        send_message(&h.ops, CHANNEL, "x".repeat(MAX_CONTENT + 1), None, false).await;
+        send_message(
+            &h.ops,
+            CHANNEL,
+            "x".repeat(MAX_CONTENT + 1),
+            None,
+            false,
+            Vec::new(),
+        )
+        .await;
 
         assert!(
             pending_nonces(&h.ops).is_empty(),
@@ -534,7 +631,15 @@ mod tests {
             .await;
 
         let h = harness(&server.uri());
-        send_message(&h.ops, CHANNEL, "answer".into(), Some(MessageId(499)), true).await;
+        send_message(
+            &h.ops,
+            CHANNEL,
+            "answer".into(),
+            Some(MessageId(499)),
+            true,
+            Vec::new(),
+        )
+        .await;
 
         let requests = server.received_requests().await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();

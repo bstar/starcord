@@ -73,6 +73,13 @@ pub struct Probe {
     #[arg(long, value_name = "TEXT", requires = "channel")]
     pub send: Option<String>,
 
+    /// Attach a file to the message sent to `--channel`.
+    ///
+    /// May be given more than once. Works with or without `--send`: a message
+    /// with a file and no text is an ordinary message with a file in it.
+    #[arg(long, value_name = "PATH", requires = "channel")]
+    pub send_file: Vec<std::path::PathBuf>,
+
     /// Make `--send` a reply to this message.
     #[arg(long, value_name = "ID", requires = "send")]
     pub reply_to: Option<u64>,
@@ -255,6 +262,35 @@ mod tests {
             Some(Command::Probe(probe)) => assert!(!probe.legacy_lazy_request),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_file_needs_somewhere_to_go_and_does_not_need_text() {
+        let cli = Cli::parse_from([
+            "starcord",
+            "probe",
+            "--channel",
+            "1",
+            "--send-file",
+            "a.png",
+            "--send-file",
+            "b.png",
+        ]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert_eq!(probe.send_file.len(), 2);
+                assert!(
+                    probe.send.is_none(),
+                    "a message with a file and no text is an ordinary message"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--send-file", "a.png"]).is_err(),
+            "there is nowhere to send that"
+        );
     }
 
     #[test]

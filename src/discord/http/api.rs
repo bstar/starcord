@@ -85,6 +85,20 @@ pub struct ReplyTo {
     pub fail_if_not_exists: bool,
 }
 
+/// One file on an outgoing message.
+///
+/// `id` is a per-message index as a string — `"0"`, `"1"` — and not a snowflake.
+/// It is what pairs this entry with the slot the upload went to, and Discord is
+/// particular about it being a string.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttachmentRef {
+    pub id: String,
+    pub filename: String,
+    /// What `POST /channels/{id}/attachments` called the slot the bytes were
+    /// put in. Absent on the multipart path, where the bytes are in the request.
+    pub uploaded_filename: String,
+}
+
 /// `POST /channels/{id}/messages`.
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateMessage<'a> {
@@ -97,6 +111,11 @@ pub struct CreateMessage<'a> {
     pub message_reference: Option<ReplyTo>,
     pub allowed_mentions: AllowedMentions,
     pub tts: bool,
+    /// Files already uploaded. Omitted entirely when there are none: a message
+    /// carrying `"attachments": []` is a message Discord reads as "remove the
+    /// attachments", which is only meaningful on an edit.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<AttachmentRef>,
 }
 
 /// Post a message.
@@ -116,6 +135,105 @@ pub async fn create_message(
     }
     http.request(Route::CreateMessage(channel), Some(body))
         .await
+}
+
+/// One file, asking for somewhere to put itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttachmentSlotRequest<'a> {
+    pub filename: &'a str,
+    pub file_size: u64,
+    /// The same per-message index that comes back on `AttachmentRef`.
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CreateAttachments<'a> {
+    files: &'a [AttachmentSlotRequest<'a>],
+}
+
+/// Somewhere to put one file.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AttachmentSlot {
+    /// The index this slot answers, echoed back. A number here, not a string.
+    #[serde(default)]
+    pub id: u32,
+    /// A signed, short-lived URL on somebody else's storage. Never sent a
+    /// token; see `Http::put_bytes`.
+    #[serde(default)]
+    pub upload_url: String,
+    /// What to call the file when the message that carries it is posted.
+    #[serde(default)]
+    pub upload_filename: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AttachmentSlots {
+    #[serde(default)]
+    pub attachments: Vec<AttachmentSlot>,
+}
+
+/// Ask for somewhere to put files, before the message that carries them.
+///
+/// This is the first of the three requests an attachment takes. It can be
+/// refused — a 403 or a 404 here means the endpoint is not available to this
+/// account or this channel — and the caller then falls back to putting the
+/// bytes in the message itself. See `ops::upload`.
+pub async fn create_attachments(
+    http: &Http,
+    channel: ChannelId,
+    files: &[AttachmentSlotRequest<'_>],
+) -> Result<AttachmentSlots, HttpError> {
+    http.request(
+        Route::CreateAttachments(channel),
+        Some(&CreateAttachments { files }),
+    )
+    .await
+}
+
+/// One file, as it goes up inside the message.
+pub struct MultipartFile {
+    pub filename: String,
+    pub content_type: String,
+    pub bytes: std::sync::Arc<Vec<u8>>,
+}
+
+/// Post a message with the files inside it.
+///
+/// The older of Discord's two ways, and the fallback: the body is a multipart
+/// form whose `payload_json` part is the same JSON the ordinary path sends, and
+/// whose `files[n]` parts are the bytes. It is one request rather than three,
+/// which sounds better until the file is twenty megabytes and a 429 on the
+/// message route means sending all of them again.
+pub async fn create_message_with_files(
+    http: &Http,
+    channel: ChannelId,
+    body: &CreateMessage<'_>,
+    files: &[MultipartFile],
+) -> Result<Message, HttpError> {
+    if body.content.chars().count() > MAX_CONTENT {
+        return Err(HttpError::Status {
+            status: 400,
+            code: 50035,
+            message: format!("a message may be at most {MAX_CONTENT} characters"),
+        });
+    }
+    let payload = serde_json::to_string(body).map_err(HttpError::Decode)?;
+
+    http.request_multipart(Route::CreateMessage(channel), || {
+        let mut form = reqwest::multipart::Form::new().text("payload_json", payload.clone());
+        for (index, file) in files.iter().enumerate() {
+            let part = reqwest::multipart::Part::bytes(file.bytes.as_ref().clone())
+                .file_name(file.filename.clone())
+                .mime_str(&file.content_type)
+                .unwrap_or_else(|_| {
+                    reqwest::multipart::Part::bytes(file.bytes.as_ref().clone())
+                        .file_name(file.filename.clone())
+                });
+            form = form.part(format!("files[{index}]"), part);
+        }
+        form
+    })
+    .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -344,6 +462,7 @@ mod tests {
             message_reference: None,
             allowed_mentions: AllowedMentions::new(false),
             tts: false,
+            attachments: Vec::new(),
         };
         let value = serde_json::to_value(&body).unwrap();
         assert_eq!(value["content"], "hello");
@@ -375,6 +494,7 @@ mod tests {
                 }),
                 allowed_mentions: AllowedMentions::new(ping),
                 tts: false,
+                attachments: Vec::new(),
             };
             let value = serde_json::to_value(&body).unwrap();
             assert_eq!(value["message_reference"]["message_id"], "9");

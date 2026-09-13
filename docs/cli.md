@@ -6,7 +6,7 @@ starcord probe [--qr [--qr-invert]] [--token-from-stdin]
                [--no-store] [--offline] [--timeout SECONDS]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
-               [--send TEXT [--reply-to ID [--ping]]]
+               [--send TEXT] [--send-file PATH]... [--reply-to ID [--ping]]
                [--media URL] [--gifs QUERY]
 ```
 
@@ -181,6 +181,37 @@ message, or the optimistic row on screen becomes a second copy of it.
 
 `--reply-to ID` makes it a reply; `--ping` makes that reply notify the person
 being answered, which it does not do by default.
+
+### Sending a file
+
+```sh
+starcord probe --token-from-stdin --channel 1234567890 \
+  --send "look at this" --send-file ~/Pictures/cat.png < token.txt
+```
+
+```
+[  2.51s] sending 12 characters and 1 file(s) to 1234567890
+[  2.52s] pending as nonce 5722948177327149
+[  2.90s] uploaded 262144 of 481232 bytes
+[  3.11s] uploaded 481232 of 481232 bytes
+[  3.40s] accepted as 5000000000000000457
+[  3.44s] echoed back by the gateway
+  09:58  Sam: look at this [cat.png]
+```
+
+`--send-file` may be given more than once, and works with no `--send` at all.
+
+The file goes up in three requests: one to ask Discord for a slot, one `PUT` of
+the bytes to the URL it hands back, and one message naming the slot. The second
+of those goes to Google's storage rather than to Discord, so it carries no
+token — the same rule that governs every download. If the slot endpoint answers
+403 or 404, which happens on some channels and some accounts, the bytes go
+inside the message as a multipart form instead; nothing is printed differently,
+because nothing about it is different from where the message ends up.
+
+A file over `[media] max_attachment_mib` — 25 by default, which is what an
+account without Nitro is allowed — is refused before any request is made, with
+the size in the message.
 
 ### Exit status
 

@@ -148,6 +148,7 @@ impl Core {
         let ops = Ops::new(
             Arc::clone(&http),
             bridge.clone(),
+            Arc::new(config.media.clone()),
             Arc::clone(&rest),
             Arc::clone(&control),
             config.legacy_lazy_request,
@@ -435,18 +436,17 @@ impl Core {
                 mention_author,
                 attachments,
             } => {
-                if !attachments.is_empty() {
-                    // Uploads arrive with the media milestone. Refusing loudly
-                    // beats sending the text and quietly dropping the file.
-                    self.bridge.note(Note::warning(
-                        "no-uploads",
-                        "attachments are not supported yet; the text was not sent",
-                    ));
-                    return;
-                }
                 let ops = self.ops.clone();
                 tokio::spawn(async move {
-                    ops::send::send_message(&ops, channel, content, reply_to, mention_author).await
+                    ops::send::send_message(
+                        &ops,
+                        channel,
+                        content,
+                        reply_to,
+                        mention_author,
+                        attachments,
+                    )
+                    .await
                 });
             }
             Command::RetrySend(nonce) => {

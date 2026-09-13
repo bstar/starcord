@@ -91,6 +91,13 @@ pub enum Route {
     },
     /// Post a message.
     CreateMessage(ChannelId),
+    /// Ask for somewhere to put a file before the message that carries it.
+    ///
+    /// Its own bucket rather than the channel's message allowance: a message
+    /// with three pictures is one message and four requests, and counting the
+    /// three against the allowance that sends the message would mean a client
+    /// could not attach anything to three messages in a row.
+    CreateAttachments(ChannelId),
     EditMessage(ChannelId, MessageId),
     DeleteMessage(ChannelId, MessageId),
     /// The typing indicator, which Discord expects roughly every eight to ten
@@ -172,6 +179,7 @@ impl Route {
             Route::Me | Route::ChannelMessages { .. } | Route::Gifs(_) => reqwest::Method::GET,
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
+            | Route::CreateAttachments(_)
             | Route::Typing(_)
             | Route::Ack(_, _)
             | Route::RefreshAttachmentUrls => reqwest::Method::POST,
@@ -196,6 +204,9 @@ impl Route {
                 None => format!("/channels/{channel}/messages?limit={limit}"),
             }),
             Route::CreateMessage(channel) => Cow::Owned(format!("/channels/{channel}/messages")),
+            Route::CreateAttachments(channel) => {
+                Cow::Owned(format!("/channels/{channel}/attachments"))
+            }
             Route::EditMessage(channel, message) => {
                 Cow::Owned(format!("/channels/{channel}/messages/{message}"))
             }
@@ -256,6 +267,9 @@ impl Route {
             }
             Route::CreateMessage(channel) => {
                 Cow::Owned(format!("POST /channels/{channel}/messages"))
+            }
+            Route::CreateAttachments(channel) => {
+                Cow::Owned(format!("POST /channels/{channel}/attachments"))
             }
             Route::EditMessage(channel, _) => {
                 Cow::Owned(format!("PATCH /channels/{channel}/messages/:id"))

@@ -139,14 +139,15 @@ fn run_probe(options: cli::Probe) -> Result<()> {
     if let Some(channel) = options.channel.map(ChannelId) {
         open_channel(&handle, started, channel, deadline)?;
 
-        if let Some(text) = options.send.clone() {
+        if options.send.is_some() || !options.send_file.is_empty() {
             send_one(
                 &handle,
                 started,
                 channel,
-                text,
+                options.send.clone().unwrap_or_default(),
                 options.reply_to.map(MessageId),
                 options.ping,
+                options.send_file.clone(),
             );
         }
     }
@@ -476,6 +477,7 @@ fn open_channel(
 /// The echo is the point: it is what proves the nonce round-tripped and that
 /// the optimistic row on screen became the real message rather than a second
 /// copy of it.
+#[allow(clippy::too_many_arguments)]
 fn send_one(
     handle: &Handle,
     started: Instant,
@@ -483,16 +485,26 @@ fn send_one(
     text: String,
     reply_to: Option<MessageId>,
     ping: bool,
+    files: Vec<std::path::PathBuf>,
 ) {
     stamp(started);
-    println!("sending {} characters to {channel}", text.chars().count());
+    match files.len() {
+        0 => println!("sending {} characters to {channel}", text.chars().count()),
+        n => println!(
+            "sending {} characters and {n} file(s) to {channel}",
+            text.chars().count()
+        ),
+    }
 
     handle.send(discord::Command::SendMessage {
         channel,
         content: text,
         reply_to,
         mention_author: ping,
-        attachments: Vec::new(),
+        attachments: files
+            .into_iter()
+            .map(discord::handle::Upload::Path)
+            .collect(),
     });
 
     // Long enough to cover the send's own ten-second echo fallback.
@@ -509,6 +521,10 @@ fn send_one(
                         stamp(started);
                         println!("pending as nonce {n}");
                     }
+                }
+                Event::UploadProgress { sent, total, .. } => {
+                    stamp(started);
+                    println!("uploaded {sent} of {total} bytes");
                 }
                 Event::SendResult { nonce: n, result } => {
                     stamp(started);
