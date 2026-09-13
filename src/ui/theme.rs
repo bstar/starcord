@@ -313,18 +313,26 @@ pub fn registry() -> Registry<Theme> {
     Registry::new(THEME_PATHS)
 }
 
+/// A resolved built-in, for the tests in every other module that need
+/// something to draw with.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use starkit::theme::BUILTINS;
+pub mod tests_support {
+    use super::{Resolve as _, Theme, ThemeFile};
 
-    fn theme(id: &str) -> Theme {
-        let b = BUILTINS
+    pub fn theme(id: &str) -> Theme {
+        let b = starkit::theme::BUILTINS
             .iter()
             .find(|b| b.id == id)
             .unwrap_or_else(|| panic!("no built-in {id}"));
         Theme::resolve(&ThemeFile::parse(b.toml).unwrap())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tests_support::theme;
+    use super::*;
+    use starkit::theme::BUILTINS;
 
     /// The test the whole derivation exists to pass.
     ///

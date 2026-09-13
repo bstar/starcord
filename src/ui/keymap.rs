@@ -35,7 +35,7 @@
 use std::sync::LazyLock;
 
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::keymap::{Binding as KitBinding, Keymap, KeySpec, MouseHelp};
+use starkit::keymap::{Binding as KitBinding, Keymap, MouseHelp};
 
 pub type Binding = KitBinding<Action>;
 
@@ -920,6 +920,7 @@ pub fn composer_eats(k: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use starkit::keymap::KeySpec;
 
     fn plain(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
