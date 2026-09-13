@@ -21,14 +21,14 @@ expression: "render(&mut app, 100, 30)"
 │      │└────────────────────────┘│  │ link unfurl carries. The second is  ▐│                      │
 │      │┌═ messages ═────────────┐│  │ there so the wrapping has something ▐│                      │
 │      ││         friends  close ││  │ to do.                              ▐│                      │
-│      ││○ Wren of the Long Displ││  Alex  09:20                           ▐│                      │
-│      ││○ Alex, Jordan [3]      ││  https://tenor.invalid/view/a-cat-1234 ▐│                      │
-│      ││● Alex (1)              ││  5                                     ▐│                      │
-│      ││                        ││  [gif ▶ a cat, falling over]           ▐│                      │
+│      ││○ Wren of the Long Displ││▕ Alex  09:20                           ▐│                      │
+│      ││○ Alex, Jordan [3]      ││▕ https://tenor.invalid/view/a-cat-1234 ▐│                      │
+│      ││● Alex (1)              ││▕ 5                                     ▐│                      │
+│      ││                        ││▕ [gif ▶ a cat, falling over]           ▐│                      │
+│      ││                        ││  · here they are  (2 files, 37%)       ▐│                      │
 │      ││                        │└────────────────────────────────────────┘│                      │
 │      ││                        │┌═ compose ═─────────────────────────────┐│                      │
 │      ││                        ││                     attach  emoji  gif ││                      │
-│      ││                        ││hello @al                               ││                      │
-│      ││                        ││@ Alex                                  ││                      │
+│      ││                        ││message #general · First Guild          ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                                 compose  7 unread · @3  ▲ online  off
+? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off

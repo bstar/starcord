@@ -347,4 +347,47 @@ mod tests {
         assert_eq!(row_at(body, &v, 3), Some(2));
         assert_eq!(row_at(body, &v, 4), None);
     }
+
+    /// A thread hangs under the channel it belongs to, indented like a
+    /// category's children and marked with its own sigil.
+    ///
+    /// `State::channels_ordered` is what puts it there; what this asserts is
+    /// that the row builder keeps it rather than dropping it for not being a
+    /// plain text channel.
+    #[test]
+    fn a_thread_is_a_row_under_its_channel() {
+        use crate::discord::model::channel::ThreadMetadata;
+        let general = std::sync::Arc::new(crate::discord::model::Channel {
+            id: ChannelId(1),
+            kind: ChannelKind::GuildText,
+            name: Some("general".into()),
+            ..Default::default()
+        });
+        let thread = std::sync::Arc::new(crate::discord::model::Channel {
+            id: ChannelId(11),
+            kind: ChannelKind::PublicThread,
+            name: Some("about the deploy".into()),
+            parent_id: Some(ChannelId(1)),
+            thread_metadata: Some(ThreadMetadata {
+                archived: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let rows = rows(&[general, thread], &HashSet::new(), false, |_| {
+            crate::discord::state::Unread::default()
+        });
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        match &rows[1] {
+            Row::Channel {
+                name, kind, nested, ..
+            } => {
+                assert_eq!(name, "about the deploy");
+                assert!(kind.is_thread());
+                assert!(nested, "a thread is drawn under its channel");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(sigil(ChannelKind::PublicThread), '>');
+    }
 }

@@ -13,4 +13,4 @@ expression: "render(&mut app, 60, 12)"
 │                  ││                   attach  emoji  gif │
 │                  ││open a channel to write in it         │
 └──────────────────┘└──────────────────────────────────────┘
-? help                    chat  6 unread · @3  ▲ online  off
+? help                    chat  7 unread · @3  ▲ online  off

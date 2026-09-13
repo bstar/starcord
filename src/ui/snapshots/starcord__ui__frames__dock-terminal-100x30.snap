@@ -7,11 +7,11 @@ expression: "render(&mut app, 100, 30)"
 │@    1││# rules                 ││                                        ││REGULARS — 2          │
 │FG   2││▾ TEXT CHANNELS         ││                                        ││● Alex                │
 │SG   •││  # general (2)         ││                                        ││● Jo                  │
-│··    ││  # random              ││                                        ││ONLINE — 1            │
-│      ││  ! announcements       ││                                        ││● Sam                 │
-│      ││▾ ARCHIVE               ││                                        ││OFFLINE — 1           │
-│      ││  # old-decisions       ││                                        ││● Robin               │
-│      ││                        ││                                        ││                      │
+│··    ││  > about the deploy    ││                                        ││ONLINE — 1            │
+│      ││  # random              ││                                        ││● Sam                 │
+│      ││  ! announcements       ││                                        ││OFFLINE — 1           │
+│      ││▾ ARCHIVE               ││                                        ││● Robin               │
+│      ││  # old-decisions       ││                                        ││                      │
 │      ││                        ││                                        ││                      │
 │      ││                        ││                                        ││                      │
 │      ││                        ││                                        ││                      │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││open a channel to write in it           ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help                                                            chat  6 unread · @3  ▲ online  off
+? help                                                            chat  7 unread · @3  ▲ online  off

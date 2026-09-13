@@ -7,11 +7,11 @@ expression: "render(&mut app, 100, 30)"
 │@    1││# rules                 ││────── Sunday, 13 September 2026 ───────││REGULARS — 2          │
 │FG   2││▾ TEXT CHANNELS         ││───────────── new messages ─────────────││● Alex                │
 │SG   •││  # general (2)         ││  Alex  11:00                           ││● Jo                  │
-│··    ││  # random              ││  the picture I took                    ││ONLINE — 1            │
-│      ││  ! announcements       ││  [image 400x300 harbour.png]           ││● Sam                 │
-│      ││▾ ARCHIVE               ││  Jordan  11:01                         ││OFFLINE — 1           │
-│      ││  # old-decisions       ││  and one that moves                    ││● Robin               │
-│      ││                        ││  [image 96x96 cat.gif]                 ││                      │
+│··    ││  > about the deploy    ││  the picture I took                    ││ONLINE — 1            │
+│      ││  # random              ││  [image 400x300 harbour.png]           ││● Sam                 │
+│      ││  ! announcements       ││  Jordan  11:01                         ││OFFLINE — 1           │
+│      ││▾ ARCHIVE               ││  and one that moves                    ││● Robin               │
+│      ││  # old-decisions       ││  [image 96x96 cat.gif]                 ││                      │
 │      ││                        ││  Robin  11:02                          ││                      │
 │      ││                        ││  nice :pepe: one                       ││                      │
 │      ││                        ││  [:pepe: 3]                            ││                      │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││message #random · First Guild           ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #random · First Guild                                     chat  6 unread · @3  ▲ online  off
+? help  #random · First Guild                                     chat  7 unread · @3  ▲ online  off

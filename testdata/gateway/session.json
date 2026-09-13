@@ -30,7 +30,14 @@
   "harbour.png": "../media/harbour.png",
   "cat.gif": "../media/cat.gif",
   "thumb.png": "../media/harbour.png",
-  "emoji/700000000000000001": "../media/cat.gif"
+  "emoji/700000000000000001": "../media/cat.gif",
+  "tile-cat.gif": "../media/cat.gif",
+  "tile-cat.png": "../media/harbour.png",
+  "tile-wave.gif": "../media/cat.gif",
+  "tile-wave.png": "../media/harbour.png",
+  "tile-party.gif": "../media/cat.gif",
+  "tile-party.png": "../media/harbour.png",
+  "emoji/700000000000000002": "../media/cat.gif"
  },
  "messages": "../fixtures/messages_basic.json",
  "steps": [
@@ -127,7 +134,22 @@
         "permissions": "104189505"
        }
       ],
-      "emojis": [],
+      "emojis": [
+       {
+        "id": "700000000000000001",
+        "name": "pepe",
+        "animated": false,
+        "available": true,
+        "roles": []
+       },
+       {
+        "id": "700000000000000002",
+        "name": "blobwave",
+        "animated": true,
+        "available": true,
+        "roles": []
+       }
+      ],
       "channels": [
        {
         "id": "200000000000000005",
@@ -189,9 +211,32 @@
         "position": 0,
         "parent_id": "200000000000000020",
         "last_message_id": "500000000000000210"
+       },
+       {
+        "id": "500000000000000105",
+        "type": 11,
+        "name": "about the deploy",
+        "parent_id": "200000000000000011",
+        "last_message_id": "500000000000000140",
+        "thread_metadata": {
+         "archived": false,
+         "locked": false
+        }
        }
       ],
-      "threads": []
+      "threads": [
+       {
+        "id": "500000000000000105",
+        "type": 11,
+        "name": "about the deploy",
+        "parent_id": "200000000000000011",
+        "last_message_id": "500000000000000140",
+        "thread_metadata": {
+         "archived": false,
+         "locked": false
+        }
+       }
+      ]
      },
      {
       "id": "200000000000000002",
@@ -583,6 +628,35 @@
    }
   },
   {
+   "at_ms": 12000,
+   "dispatch": "MESSAGE_CREATE",
+   "data": {
+    "id": "500000000000000310",
+    "channel_id": "200000000000000012",
+    "guild_id": "200000000000000001",
+    "type": 0,
+    "content": "<@100000000000000001> could you look at this?",
+    "timestamp": "2026-09-13T14:41:00.000000+00:00",
+    "author": {
+     "id": "100000000000000002",
+     "username": "alex",
+     "global_name": "Alex",
+     "discriminator": "0",
+     "avatar": "alexface"
+    },
+    "mentions": [
+     {
+      "id": "100000000000000001",
+      "username": "sam",
+      "global_name": "Sam",
+      "discriminator": "0"
+     }
+    ],
+    "attachments": [],
+    "embeds": []
+   }
+  },
+  {
    "at_ms": 20000,
    "connection": "reconnecting",
    "reason": "the connection went away"
@@ -591,6 +665,38 @@
    "at_ms": 25000,
    "connection": "ready",
    "note": "reconnected"
+  }
+ ],
+ "gifs": [
+  {
+   "id": "g1",
+   "title": "a cat, waving",
+   "url": "https://tenor.invalid/view/cat-waving-1",
+   "src": "https://media.invalid/tile-cat.mp4",
+   "gif_src": "https://media.invalid/tile-cat.gif",
+   "preview": "https://media.invalid/tile-cat.png",
+   "width": 320,
+   "height": 240
+  },
+  {
+   "id": "g2",
+   "title": "a wave",
+   "url": "https://tenor.invalid/view/wave-2",
+   "src": "https://media.invalid/tile-wave.mp4",
+   "gif_src": "https://media.invalid/tile-wave.gif",
+   "preview": "https://media.invalid/tile-wave.png",
+   "width": 320,
+   "height": 240
+  },
+  {
+   "id": "g3",
+   "title": "a party",
+   "url": "https://tenor.invalid/view/party-3",
+   "src": "https://media.invalid/tile-party.mp4",
+   "gif_src": "https://media.invalid/tile-party.gif",
+   "preview": "https://media.invalid/tile-party.png",
+   "width": 320,
+   "height": 240
   }
  ]
 }

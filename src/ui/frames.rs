@@ -387,3 +387,113 @@ fn the_pictures_as_chips() {
     app.tick();
     insta::assert_snapshot!("pictures-chips-100x30", render(&mut app, 100, 30));
 }
+
+/// The emoji grid, filtered to the server's own.
+#[test]
+fn the_emoji_picker() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusComposer);
+    app.handle(Action::EmojiPicker);
+    for c in "pe".chars() {
+        app.key(starkit::crossterm::event::KeyEvent::from(
+            starkit::crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    insta::assert_snapshot!("picker-emoji-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// The GIF grid, with the tiles still `░` because nothing has been fetched.
+///
+/// Which is the state it is in for the first frame after it opens, every time:
+/// the tiles are asked for by being drawn, so the frame that places them is
+/// the frame before the one that has them.
+#[test]
+fn the_gif_picker() {
+    let (mut app, mut idle) = in_general("terminal");
+    app.handle(Action::FocusComposer);
+    app.handle(Action::GifPicker);
+    // The picker asks for what is trending on the tick after it opens; the
+    // replay answers, and the frame after that has titles to draw.
+    app.tick();
+    idle.pump();
+    app.tick();
+    insta::assert_snapshot!("picker-gif-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// The media viewer over the picture channel, drawing half blocks.
+#[test]
+fn the_media_viewer() {
+    let (mut app, _idle) = in_pictures("terminal");
+    app.handle(Action::FocusChat);
+    app.chat
+        .select(crate::discord::snowflake::MessageId(500000000000000201));
+    app.handle(Action::OpenMedia);
+    assert!(app.over.viewer.is_some(), "the viewer did not open");
+    insta::assert_snapshot!("viewer-halfblocks-100x30", render(&mut app, 100, 30));
+}
+
+/// The search overlay with a page of hits in it.
+#[test]
+fn the_search_overlay() {
+    let (mut app, mut idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    app.handle(Action::Search);
+    for c in "the".chars() {
+        app.key(starkit::crossterm::event::KeyEvent::from(
+            starkit::crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    app.key(starkit::crossterm::event::KeyEvent::from(
+        starkit::crossterm::event::KeyCode::Enter,
+    ));
+    app.tick();
+    idle.pump();
+    app.tick();
+    insta::assert_snapshot!("search-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// A message on its way out, with two files still going up.
+#[test]
+fn a_message_being_uploaded() {
+    use crate::discord::handle::{Nonce, Upload};
+    use crate::discord::state::messages::PendingSend;
+
+    let (mut app, idle) = in_general("terminal");
+    {
+        let mut state = idle.state().write().unwrap();
+        state.messages_mut(CHANNEL).add_pending(
+            PendingSend::new(Nonce(77), "here they are".into(), None, false).with_attachments(
+                vec![
+                    Upload::Path("testdata/media/harbour.png".into()),
+                    Upload::Path("testdata/media/cat.gif".into()),
+                ],
+            ),
+        );
+        state.touch();
+    }
+    app.apply(crate::discord::Event::UploadProgress {
+        nonce: Nonce(77),
+        sent: 3,
+        total: 8,
+    });
+    app.tick();
+    app.chat.to_bottom();
+    insta::assert_snapshot!(
+        "composer-uploading-terminal-100x30",
+        render(&mut app, 100, 30)
+    );
+}
+
+/// The right-click menu over a message that is not this account's.
+#[test]
+fn the_message_menu() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::FocusChat);
+    app.chat
+        .select(crate::discord::snowflake::MessageId(500000000000000105));
+    app.over.open_menu(crate::ui::overlays::menu::Menu::new(
+        crate::discord::snowflake::MessageId(500000000000000105),
+        false,
+    ));
+    insta::assert_snapshot!("menu-terminal-100x30", render(&mut app, 100, 30));
+}

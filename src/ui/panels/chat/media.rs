@@ -107,6 +107,14 @@ pub struct MediaStore {
     frame: u64,
     requests: Vec<MediaRequest>,
     cancels: Vec<MediaKey>,
+    /// The largest decode ever asked for, per picture.
+    ///
+    /// A picture is first fetched at the size of the slot that placed it, and
+    /// the media viewer wants it very much larger. Without this the viewer
+    /// would draw the thumbnail the message list fetched, blown up; with a
+    /// plain "ask again" it would ask on every frame for ever, because a
+    /// picture that is genuinely smaller than the box never grows.
+    asked: HashMap<MediaKey, (u32, u32)>,
 }
 
 impl MediaStore {
@@ -144,6 +152,39 @@ impl MediaStore {
             Decoded::Bytes(_) => return None,
         };
         Some((img.width(), img.height()))
+    }
+
+    /// Ask for this picture again, larger, if it has only been fetched small.
+    ///
+    /// For the media viewer, which covers the window: what the message list
+    /// asked for was sized to a slot a few rows tall.
+    pub fn want_bigger(&mut self, key: &MediaKey, cols: u16, rows: u16) {
+        let want = (
+            u32::from(cols).max(1) * PX_PER_COL,
+            u32::from(rows).max(1) * PX_PER_ROW,
+        );
+        let asked = self.asked.get(key).copied().unwrap_or((0, 0));
+        if want.0 <= asked.0 && want.1 <= asked.1 {
+            return;
+        }
+        self.asked
+            .insert(key.clone(), (want.0.max(asked.0), want.1.max(asked.1)));
+        let frame = self.frame;
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.seen = frame;
+            if matches!(entry.state, MediaState::Loading) {
+                return;
+            }
+        }
+        self.requests.push(MediaRequest {
+            key: key.clone(),
+            want: Want::Decoded {
+                max_w: want.0,
+                max_h: want.1,
+            },
+            priority: MediaPriority::Visible,
+            generation: self.generation,
+        });
     }
 
     /// Ask for a picture nothing said the size of.
@@ -233,15 +274,18 @@ impl MediaStore {
         entry.seen = frame;
         if matches!(entry.state, MediaState::Missing) {
             entry.state = MediaState::Loading;
+            let (max_w, max_h) = (
+                u32::from(cols).max(1) * PX_PER_COL,
+                u32::from(rows).max(1) * PX_PER_ROW,
+            );
             self.requests.push(MediaRequest {
                 key: key.clone(),
-                want: Want::Decoded {
-                    max_w: u32::from(cols).max(1) * PX_PER_COL,
-                    max_h: u32::from(rows).max(1) * PX_PER_ROW,
-                },
+                want: Want::Decoded { max_w, max_h },
                 priority: MediaPriority::Visible,
                 generation: self.generation,
             });
+            let asked = self.asked.entry(key.clone()).or_insert((0, 0));
+            *asked = (asked.0.max(max_w), asked.1.max(max_h));
             return MediaState::Loading;
         }
         entry.state.clone()
@@ -288,6 +332,7 @@ impl MediaStore {
     /// any more and the next frame will say what is.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.asked.clear();
         self.viewport_moved();
     }
 

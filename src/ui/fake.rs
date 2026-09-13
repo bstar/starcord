@@ -59,9 +59,11 @@ use serde::Deserialize;
 
 use crate::discord::auth::TokenStoreKind;
 use crate::discord::gateway::payload;
-use crate::discord::handle::{AuthEvent, Connection, HandleParts, MessagesChange, Nonce, Note};
+use crate::discord::handle::{
+    AuthEvent, Connection, HandleParts, MessagesChange, Nonce, Note, SearchPage,
+};
 use crate::discord::media::{decode, Decoded, MediaError, MediaKey, Want};
-use crate::discord::model::Message;
+use crate::discord::model::{GifPage, GifResult, Message};
 use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::state::{apply, State};
 use crate::discord::{Command, Event, Handle};
@@ -258,6 +260,10 @@ pub struct Session {
     /// fixture can be copied as a pair.
     #[serde(default)]
     pub messages: Option<String>,
+    /// What the GIF picker is answered with. Everything in it is a URL the
+    /// `media` table above also names, so the tiles are real pictures.
+    #[serde(default)]
+    pub gifs: Vec<GifResult>,
     /// Filled in by [`Session::read`], because the path is only known there.
     #[serde(skip)]
     pub conversations: Conversations,
@@ -303,10 +309,11 @@ impl Session {
 pub fn silent() -> (Handle, Idle) {
     let (command_tx, command_rx) = tokio::sync::mpsc::channel(16);
     let (event_tx, event_rx) = crossbeam_channel::bounded(16);
+    let state = Arc::new(RwLock::new(State::new()));
     let handle = Handle::from_parts(HandleParts {
         commands: command_tx,
         events: event_rx,
-        state: Arc::new(RwLock::new(State::new())),
+        state: Arc::clone(&state),
         status: Arc::new(ArcSwap::from_pointee(Connection::LoggedOut)),
         thread: None,
         dropped: Arc::new(AtomicU64::new(0)),
@@ -317,6 +324,10 @@ pub fn silent() -> (Handle, Idle) {
             commands: command_rx,
             events: event_tx,
             pictures: Media::default(),
+            gifs: Vec::new(),
+            conversations: Conversations::default(),
+            state,
+            served: Served::default(),
         },
     )
 }
@@ -331,29 +342,47 @@ pub struct Idle {
     commands: tokio::sync::mpsc::Receiver<Command>,
     events: crossbeam_channel::Sender<Event>,
     pictures: Media,
+    gifs: Vec<GifResult>,
+    conversations: Conversations,
+    /// The same `State` the handle reads, so a test can put something in it
+    /// that no command produces -- an upload halfway up the wire, say.
+    state: Arc<RwLock<State>>,
+    served: Served,
 }
 
 impl Idle {
+    /// The `State` behind the handle, for a test that has to put something
+    /// into it that no command produces.
+    pub fn state(&self) -> &Arc<RwLock<State>> {
+        &self.state
+    }
+
     /// Answer every command waiting, as far as a file can. Returns how many.
     ///
-    /// Only the media ones for now: everything else a test needs is already in
-    /// `State` before the first frame, and a picture cannot be, because what is
-    /// on screen is what decides which ones are asked for.
+    /// The same [`answer`] the replay thread uses, so a test and a run see the
+    /// same core. Nothing here is on a clock: a test that waited on one would
+    /// be a test that renders a different frame on a loaded machine.
     pub fn pump(&mut self) -> usize {
+        let sink = Sink {
+            tx: self.events.clone(),
+            dropped: Arc::new(AtomicU64::new(0)),
+            needs_refresh: std::sync::atomic::AtomicBool::new(false),
+        };
         let mut answered = 0;
         while let Ok(command) = self.commands.try_recv() {
-            if let Command::FetchMedia(request) = command {
-                let result = self.pictures.answer(&request.key, request.want);
-                if self
-                    .events
-                    .try_send(Event::Media {
-                        key: request.key,
-                        result,
-                    })
-                    .is_ok()
-                {
-                    answered += 1;
-                }
+            let before = self.events.len();
+            answer(
+                command,
+                &sink,
+                &self.state,
+                &self.conversations,
+                &self.pictures,
+                &self.gifs,
+                &mut self.served,
+                None,
+            );
+            if self.events.len() > before {
+                answered += 1;
             }
         }
         answered
@@ -404,6 +433,7 @@ pub fn loaded(session: &Session, upto_ms: u64) -> (Handle, Idle) {
     // only make the first frame depend on how many of them fitted.
     while event_rx.try_recv().is_ok() {}
 
+    let held = Arc::clone(&state);
     (
         Handle::from_parts(HandleParts {
             commands: command_tx,
@@ -417,6 +447,10 @@ pub fn loaded(session: &Session, upto_ms: u64) -> (Handle, Idle) {
             commands: command_rx,
             events: event_tx,
             pictures: session.pictures.clone(),
+            gifs: session.gifs.clone(),
+            conversations: session.conversations.clone(),
+            state: held,
+            served: Served::default(),
         },
     )
 }
@@ -479,6 +513,7 @@ fn run(
     // the interface, not the credential.
     let conversations = session.conversations.clone();
     let pictures = session.pictures.clone();
+    let gifs = session.gifs.clone();
     let mut served = Served::default();
     let mut signed_in = false;
     // The scan, on a clock, because the whole of what the code screen does is
@@ -553,6 +588,7 @@ fn run(
                     &state,
                     &conversations,
                     &pictures,
+                    &gifs,
                     &mut served,
                     user.as_deref(),
                 ),
@@ -660,6 +696,7 @@ fn answer(
     state: &Arc<RwLock<State>>,
     conversations: &Conversations,
     pictures: &Media,
+    gifs: &[GifResult],
     served: &mut Served,
     me: Option<&crate::discord::model::User>,
 ) {
@@ -714,10 +751,120 @@ fn answer(
         Command::LoadNewer(channel) => {
             sink.send(Event::Messages(channel, MessagesChange::Loading(false)));
         }
+        // The picker and the search box ask, and a replay that answered
+        // neither would be a replay that cannot show either of them working.
+        Command::GifTrending { id } | Command::GifSuggest { id, .. } => {
+            sink.send(Event::Gifs {
+                id,
+                result: Ok(GifPage {
+                    results: gifs.to_vec(),
+                    categories: Vec::new(),
+                    suggestions: Vec::new(),
+                }),
+            });
+        }
+        Command::GifSearch { id, query } => {
+            let needle = query.trim().to_lowercase();
+            let results: Vec<GifResult> = gifs
+                .iter()
+                .filter(|g| needle.is_empty() || g.title.to_lowercase().contains(&needle))
+                .cloned()
+                .collect();
+            sink.send(Event::Gifs {
+                id,
+                result: Ok(GifPage {
+                    results,
+                    categories: Vec::new(),
+                    suggestions: Vec::new(),
+                }),
+            });
+        }
+        Command::Search { id, scope, query } => {
+            let needle = query.content.trim().to_lowercase();
+            let only = match scope {
+                crate::discord::handle::SearchScope::Channel(channel) => Some(channel),
+                crate::discord::handle::SearchScope::Guild(_) => None,
+            };
+            let mut found: Vec<Arc<Message>> = Vec::new();
+            for (raw, page) in &conversations.channels {
+                let Ok(id) = raw.parse::<u64>() else { continue };
+                if only.is_some_and(|c| c.0 != id) {
+                    continue;
+                }
+                for msg in page.older.iter().chain(page.messages.iter()) {
+                    if msg.content.to_lowercase().contains(&needle) {
+                        found.push(Arc::new(msg.clone()));
+                    }
+                }
+            }
+            // Newest first, which is what Discord's own search returns.
+            found.sort_by_key(|m| std::cmp::Reverse(m.id));
+            let total = found.len() as u32;
+            let offset = query.offset.min(total);
+            let page: Vec<Arc<Message>> =
+                found.into_iter().skip(offset as usize).take(25).collect();
+            sink.send(Event::Search {
+                id,
+                result: Ok(SearchPage {
+                    total,
+                    messages: page,
+                    offset,
+                }),
+            });
+        }
+        Command::JumpTo { channel, message } => {
+            // The store is left knowing it is not at the bottom, which is what
+            // makes `G` a way back to the present rather than a no-op.
+            if let Some(page) = conversations.page(channel) {
+                let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                let store = guard.messages_mut(channel);
+                let mut all = page.older.clone();
+                all.extend(page.messages.clone());
+                store.replace(all, false);
+                store.set_open(true);
+                guard.touch();
+            }
+            let _ = message;
+            sink.send(Event::Messages(channel, MessagesChange::Replaced));
+        }
+        Command::AddReaction {
+            channel,
+            message,
+            emoji,
+        }
+        | Command::RemoveReaction {
+            channel,
+            message,
+            emoji,
+        } => {
+            // The chip toggles, whichever of the two commands arrived: the
+            // gateway would echo exactly one of them and the replay is the
+            // gateway here.
+            let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+            let partial = emoji.as_partial();
+            let mine = guard
+                .messages(channel)
+                .and_then(|s| s.get(message))
+                .map(|m| m.reactions.iter().any(|r| r.emoji == partial && r.me))
+                .unwrap_or(false);
+            let store = guard.messages_mut(channel);
+            if mine {
+                store.remove_reaction(message, &partial, true);
+            } else {
+                store.add_reaction(message, &partial, true);
+            }
+            guard.touch();
+            drop(guard);
+            sink.send(Event::Messages(channel, MessagesChange::Reactions(message)));
+        }
+        Command::OpenExternal { url, .. } => {
+            sink.send(Event::Note(Note::info(format!("would open {url}"))));
+        }
         Command::SendMessage {
             channel,
             content,
             reply_to,
+            attachments,
             ..
         } => {
             // The echo the gateway would send, built here so the optimistic
@@ -732,6 +879,37 @@ fn answer(
             };
             if let Some(me) = me {
                 message.author = me.clone();
+            }
+            // Whatever was attached comes back on the echo, as Discord's own
+            // would: a chip that vanished on send would look like a file that
+            // never went.
+            let nonce = Nonce(served.next_id);
+            for (n, upload) in attachments.iter().enumerate() {
+                let (filename, size) = match upload {
+                    crate::discord::handle::Upload::Path(path) => (
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "file".into()),
+                        std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+                    ),
+                    crate::discord::handle::Upload::Bytes { filename, data, .. } => {
+                        (filename.clone(), data.len() as u64)
+                    }
+                };
+                sink.send(Event::UploadProgress {
+                    nonce,
+                    sent: size,
+                    total: size.max(1),
+                });
+                message.attachments.push(crate::discord::model::Attachment {
+                    id: crate::discord::snowflake::AttachmentId(n as u64 + 1),
+                    filename: filename.clone(),
+                    size,
+                    url: format!("https://cdn.invalid/attachments/{filename}"),
+                    proxy_url: String::new(),
+                    content_type: None,
+                    ..Default::default()
+                });
             }
             if let Some(to) = reply_to {
                 message.kind = crate::discord::model::MessageKind::Reply;

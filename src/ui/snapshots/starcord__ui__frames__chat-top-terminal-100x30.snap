@@ -7,28 +7,28 @@ expression: "render(&mut app, 100, 30)"
 │@    1││# rules                 ││↑ older messages                        ▐│REGULARS — 2          │
 │FG   2││▾ TEXT CHANNELS         ││───── Saturday, 12 September 2026 ──────▐│● Alex                │
 │SG   •││  # general (2)         ││▕ Alex  10:00                           ▐│● Jo                  │
-│··    ││  # random              ││▕ the first thing anybody said          ▐│ONLINE — 1            │
-│      ││  ! announcements       ││  and the second, half a minute later   ▐│● Sam                 │
-│      ││▾ ARCHIVE               ││  and the third, which makes a group of ▐│OFFLINE — 1           │
-│      ││  # old-decisions       ││  three                                 ▐│● Robin               │
-│      ││                        ││  Robin joined                          ▐│                      │
+│··    ││  > about the deploy    ││▕ the first thing anybody said          ▐│ONLINE — 1            │
+│      ││  # random              ││  and the second, half a minute later   ▐│● Sam                 │
+│      ││  ! announcements       ││  and the third, which makes a group of ▐│OFFLINE — 1           │
+│      ││▾ ARCHIVE               ││  three                                 ▐│● Robin               │
+│      ││  # old-decisions       ││  Robin joined                          ▐│                      │
 │      ││                        ││  Jordan  10:10                         ▐│                      │
 │      ││                        ││  here is the thing I meant             ▐│                      │
 │      ││                        ││  ▏ rust                                ▐│                      │
 │      ││                        ││  ▏ fn main() {                         ▐│                      │
-│      ││                        ││  ▏     println!("hello");              ▐│                      │
+│      ││                        ││  ▏     println!("hello");              ││                      │
 │      ││                        ││  ▏ }                                   ││                      │
-│      │└────────────────────────┘│────── Sunday, 13 September 2026 ───────││                      │
-│      │┌═ messages ═────────────┐│───────────── new messages ─────────────││                      │
-│      ││         friends  close ││ ╭ ↩ @Alex: the first thing anybody sa… ││                      │
-│      ││○ Wren of the Long Displ││  Alex  09:00                           ││                      │
-│      ││○ Alex, Jordan [3]      ││  yes, that one                         ││                      │
-│      ││● Alex (1)              ││  [👍  3] [:pepe: 1]                     ││                      │
+│      │└────────────────────────┘│  ⌸ thread · about the deploy           ││                      │
+│      │┌═ messages ═────────────┐│────── Sunday, 13 September 2026 ───────││                      │
+│      ││         friends  close ││───────────── new messages ─────────────││                      │
+│      ││○ Wren of the Long Displ││ ╭ ↩ @Alex: the first thing anybody sa… ││                      │
+│      ││○ Alex, Jordan [3]      ││  Alex  09:00                           ││                      │
+│      ││● Alex (1)              ││  yes, that one                         ││                      │
+│      ││                        ││  [👍  3] [:pepe: 1]                     ││                      │
 │      ││                        ││  Jordan  09:05                         ││                      │
-│      ││                        ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││                      │
 │      ││                        │└────────────────────────────────────────┘│                      │
 │      ││                        │┌═ compose ═─────────────────────────────┐│                      │
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││message #general · First Guild          ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                           chat  ↓ 3 new  6 unread · @3  ▲ online  off
+? help  #general · First Guild                           chat  ↓ 3 new  7 unread · @3  ▲ online  off

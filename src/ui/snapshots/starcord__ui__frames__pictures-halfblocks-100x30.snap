@@ -7,11 +7,11 @@ expression: "render(&mut app, 100, 30)"
 │ @   1││# rules                 ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                   ││REGULARS — 2          │
 │      ││▾ TEXT CHANNELS         ││▀▀▀▀ Jordan  11:01                      ││● Alex                │
 │▀▀▀▀ 2││  # general (2)         ││▀▀▀▀ and one that moves                 ││● Jo                  │
-│▀▀▀▀  ││  # random              ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││ONLINE — 1            │
-│▀▀▀▀ •││  ! announcements       ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││● Sam                 │
-│▀▀▀▀  ││▾ ARCHIVE               ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││OFFLINE — 1           │
-│ ··   ││  # old-decisions       ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││● Robin               │
-│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ▐│                      │
+│▀▀▀▀  ││  > about the deploy    ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││ONLINE — 1            │
+│▀▀▀▀ •││  # random              ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││● Sam                 │
+│▀▀▀▀  ││  ! announcements       ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││OFFLINE — 1           │
+│ ··   ││▾ ARCHIVE               ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ││● Robin               │
+│      ││  # old-decisions       ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ▐│                      │
 │      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀                       ▐│                      │
 │      ││                        ││▀▀▀▀ Robin  11:02                       ▐│                      │
 │      ││                        ││▀▀▀▀ nice ▀▀ one                        ▐│                      │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││message #random · First Guild           ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #random · First Guild                             chat  6 unread · @3  ▲ online  half blocks
+? help  #random · First Guild                             chat  7 unread · @3  ▲ online  half blocks

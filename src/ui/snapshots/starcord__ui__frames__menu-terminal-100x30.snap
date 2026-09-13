@@ -10,22 +10,22 @@ expression: "render(&mut app, 100, 30)"
 │··    ││  > about the deploy    ││  yes, that one                         ││ONLINE — 1            │
 │      ││  # random              ││  [👍  3] [:pepe: 1]                     ││● Sam                 │
 │      ││  ! announcements       ││  Jordan  09:05                         ││OFFLINE — 1           │
-│      ││▾ ARCHIVE╔═ jump to ════════════════════════════════════════════════════╗in               │
-│      ││  # old-d║› gen                                                         ║                 │
-│      ││         ║                                                              ║                 │
-│      ││         ║#general                                           First Guild║                 │
-│      ││         ║@Wren of the Long Display Name                          friend║                 │
-│      ││         ╚════════════════════════════════════════ enter go · esc close ╝                 │
-│      ││                        ││  https://example.invalid/page          ▐│                      │
-│      ││                        ││  │ A page title                        ▐│                      │
-│      │└────────────────────────┘│  │ Two sentences of description, as a  ▐│                      │
-│      │┌═ messages ═────────────┐│  │ link unfurl carries. The second is  ▐│                      │
-│      ││         friends  close ││  │ there so the wrapping has something ▐│                      │
-│      ││○ Wren of the Long Displ││  │ to do.                              ▐│                      │
-│      ││○ Alex, Jordan [3]      ││▕ Alex  09:20                           ▐│                      │
-│      ││● Alex (1)              ││▕ https://tenor.invalid/view/a-cat-1234 ▐│                      │
-│      ││                        ││▕ 5                                     ▐│                      │
-│      ││                        ││▕ [gif ▶ a cat, falling over]           ▐│                      │
+│      ││▾ ARCHIVE               ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││● Robin               │
+│      ││  # old-decisions       ││  want it                               ││                      │
+│      ││               ╔═ message ════════════════════════════════════════╗│                      │
+│      ││               ║what can be done                                  ║│                      │
+│      ││               ║ reply  r                                         ║│                      │
+│      ││               ║ reply, no ping  R                                ║│                      │
+│      ││               ║ react  +                                         ║│                      │
+│      ││               ║ copy the text  y                                 ║│                      │
+│      │└───────────────║ open elsewhere  o                                ║│                      │
+│      │┌═ messages ═───║ copy a link  ctrl+y                              ║│                      │
+│      ││         friend║                                                  ║│                      │
+│      ││○ Wren of the L╚════════════════════════ enter change · esc close ╝│                      │
+│      ││○ Alex, Jordan [3]      ││  Alex  09:20                           ▐│                      │
+│      ││● Alex (1)              ││  https://tenor.invalid/view/a-cat-1234 ▐│                      │
+│      ││                        ││  5                                     ▐│                      │
+│      ││                        ││  [gif ▶ a cat, falling over]           ▐│                      │
 │      ││                        │└────────────────────────────────────────┘│                      │
 │      ││                        │┌═ compose ═─────────────────────────────┐│                      │
 │      ││                        ││                     attach  emoji  gif ││                      │

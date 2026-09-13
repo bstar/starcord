@@ -304,7 +304,7 @@ impl Overlays {
                     Key::Insert(text)
                 }
                 picker::Action::ToGif => {
-                    picker.to_gif();
+                    picker.switch_to_gifs();
                     Key::Taken
                 }
                 picker::Action::Quit => Key::Quit,

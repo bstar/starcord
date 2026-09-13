@@ -9,8 +9,8 @@ expression: "render(&mut app, 100, 30)"
 │SG   •││ ║  alt+1         focus servers        double-click         open the attachment ║         │
 │··    ││ ║  alt+2         focus channels       click a reaction     add or remove yours ║         │
 │      ││ ║  alt+3         focus messages       click a link         open it             ║         │
-│      ││▾║  alt+4         focus chat           click the ↩ line     go to the quoted    ║         │
-│      ││ ║  alt+5 / i     write a message      click ↓ n new        jump to the newest  ║         │
+│      ││ ║  alt+4         focus chat           click the ↩ line     go to the quoted    ║         │
+│      ││▾║  alt+5 / i     write a message      click ↓ n new        jump to the newest  ║         │
 │      ││ ║  alt+6         focus members        right-click          what can be done    ║         │
 │      ││ ║  up / k        up one               drag the scrollbar   scroll to anywhere  ║         │
 │      ││ ║  down / j      down one             lists                                    ║         │

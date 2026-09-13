@@ -7,13 +7,13 @@ expression: "render(&mut app, 100, 30)"
 │@    1││# rules                 ││───────────── new messages ─────────────││REGULARS — 2          │
 │FG   2││▾ TEXT CHANNELS         ││ ╭ ↩ @Alex: the first thing anybody sa… ││● Alex                │
 │SG   •││  # general (2)         ││  Alex  09:00                           ││● Jo                  │
-│··    ││  # random              ││  yes, that one                         ││ONLINE — 1            │
-│      ││  ! announcements       ││  [👍  3] [:pepe: 1]                     ││● Sam                 │
-│      ││▾ ARCHIVE               ││  Jordan  09:05                         ││OFFLINE — 1           │
-│      ││  # old-decisions       ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││● Robin               │
-│      ││                        ││  want it                               ││                      │
+│··    ││  > about the deploy    ││  yes, that one                         ││ONLINE — 1            │
+│      ││  # random              ││  [👍  3] [:pepe: 1]                     ││● Sam                 │
+│      ││  ! announcements       ││  Jordan  09:05                         ││OFFLINE — 1           │
+│      ││▾ ARCHIVE               ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││● Robin               │
+│      ││  # old-decisions       ││  want it                               ││                      │
 │      ││                        ││  Alex  09:10                           ││                      │
-│      ││                        ││  the picture I took                    ▐│                      │
+│      ││                        ││  the picture I took                    ││                      │
 │      ││               ╔═ delete this message ════════════════════════════╗│                      │
 │      ││               ║here is the thing I meant                         ║│                      │
 │      ││               ║                                                  ║│                      │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││message #general · First Guild          ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                                    chat  6 unread · @3  ▲ online  off
+? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off

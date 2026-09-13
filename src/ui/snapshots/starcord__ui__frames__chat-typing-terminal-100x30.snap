@@ -7,11 +7,11 @@ expression: "render(&mut app, 100, 30)"
 │@    1││# rules                 ││ ╭ ↩ @Alex: the first thing anybody sa… ││REGULARS — 2          │
 │FG   2││▾ TEXT CHANNELS         ││  Alex  09:00                           ││● Alex                │
 │SG   •││  # general (2)         ││  yes, that one                         ││● Jo                  │
-│··    ││  # random              ││  [👍  3] [:pepe: 1]                     ││ONLINE — 1            │
-│      ││  ! announcements       ││  Jordan  09:05                         ││● Sam                 │
-│      ││▾ ARCHIVE               ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││OFFLINE — 1           │
-│      ││  # old-decisions       ││  want it                               ││● Robin               │
-│      ││                        ││  Alex  09:10                           ││                      │
+│··    ││  > about the deploy    ││  [👍  3] [:pepe: 1]                     ││ONLINE — 1            │
+│      ││  # random              ││  Jordan  09:05                         ││● Sam                 │
+│      ││  ! announcements       ││  @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││OFFLINE — 1           │
+│      ││▾ ARCHIVE               ││  want it                               ││● Robin               │
+│      ││  # old-decisions       ││  Alex  09:10                           ││                      │
 │      ││                        ││  the picture I took                    ││                      │
 │      ││                        ││  [image 1024x768 harbour.png]          ││                      │
 │      ││                        ││  Jordan  09:15                         ▐│                      │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 │      ││                        ││                     attach  emoji  gif ││                      │
 │      ││                        ││message #general · First Guild          ││                      │
 └──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                                    chat  6 unread · @3  ▲ online  off
+? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off

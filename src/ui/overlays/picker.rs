@@ -255,7 +255,7 @@ impl Picker {
     /// The query goes, because `pep` is a good way to find an emoji and a poor
     /// way to find a GIF, and what was typed to narrow one list is rarely what
     /// would narrow the other.
-    pub fn to_gif(&mut self) {
+    pub fn switch_to_gifs(&mut self) {
         self.kind = Kind::Gif;
         self.query.clear();
         self.gifs.clear();

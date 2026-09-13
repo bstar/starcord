@@ -1748,13 +1748,21 @@ impl App {
     fn uploading(&self) -> usize {
         use crate::discord::state::messages::PendingState;
         let state = self.core.state();
-        let channels: Vec<ChannelId> = state
+        let mut channels: Vec<ChannelId> = state
             .guilds_ordered()
             .iter()
             .flat_map(|g| state.channels_ordered(g.id))
             .chain(state.dms_ordered())
             .map(|c| c.id)
             .collect();
+        // And the one that is open, which is where an upload started and which
+        // is not always in a list: a thread the channel list has not been told
+        // about is still somewhere a file can be sent.
+        if let Some(open) = self.nav.channel {
+            if !channels.contains(&open) {
+                channels.push(open);
+            }
+        }
         channels
             .into_iter()
             .filter_map(|id| state.messages(id))
@@ -2649,6 +2657,14 @@ impl App {
         if places.is_empty() {
             return;
         }
+        // An overlay's picture is far larger than the slot the message list
+        // fetched it for, so it is asked for again at the size it is about to
+        // be drawn at. Bounded: the size only ever grows.
+        for place in &places {
+            self.chat
+                .media
+                .want_bigger(&place.key, place.rect.width, place.rect.height);
+        }
         let painted = chat::media::paint(
             &places,
             &mut self.look.graphics,
@@ -2984,6 +3000,112 @@ mod tests {
 
         a.key(KeyEvent::from(KeyCode::Esc));
         assert_eq!(a.layout.focus(), PanelId::Chat);
+    }
+
+    /// Closing an overlay asks for a whole frame rather than a diff.
+    ///
+    /// The bug this prevents: an overlay blanks the cells it covers, and if
+    /// the terminal is holding a character this program's buffer does not know
+    /// about, the diff will never repaint that cell. It shows as a box left
+    /// behind after the switcher closes.
+    #[test]
+    fn closing_an_overlay_asks_for_a_full_repaint() {
+        let mut a = app();
+        a.login = None;
+        a.handle(Action::Help);
+        assert!(!a.repaint, "opening one does not need it");
+        a.handle(Action::CloseOverlay);
+        assert!(a.repaint, "closing one does");
+
+        a.repaint = false;
+        a.handle(Action::Redraw);
+        assert!(a.repaint, "and ctrl+l asks for one at any time");
+    }
+
+    /// Every row of the message menu reaches the action it names.
+    #[test]
+    fn the_message_menu_does_what_its_rows_say() {
+        let mut a = app();
+        a.login = None;
+        a.nav.channel = Some(ChannelId(1));
+        a.composer.open(ChannelId(1));
+
+        a.overlay_asked(overlays::Key::Menu(Choice::Reply, MessageId(5)));
+        // There is no such message in this empty core, so the reply cannot be
+        // set up -- what is asserted is that the menu reached the dispatcher
+        // rather than doing nothing at all.
+        assert!(a.note.is_some(), "the menu row did nothing");
+
+        // And the picker rows open the picker.
+        a.overlay_asked(overlays::Key::Menu(Choice::React, MessageId(5)));
+        assert!(a.note.is_some());
+    }
+
+    /// What the emoji picker chose lands in the composer at the caret, and the
+    /// composer is where the keyboard goes next.
+    #[test]
+    fn an_emoji_from_the_picker_is_inserted_and_not_sent() {
+        let mut a = app();
+        a.login = None;
+        a.nav.channel = Some(ChannelId(1));
+        a.composer.open(ChannelId(1));
+        a.composer.input.set_text("well ");
+        a.composer.input.set_cursor(5);
+
+        a.overlay_asked(overlays::Key::Insert("<:pepe:1>".into()));
+        assert_eq!(a.composer.text(), "well <:pepe:1>");
+        assert_eq!(a.layout.focus(), PanelId::Composer);
+    }
+
+    /// A chip comes off when its `×` is clicked, and a send carries what is
+    /// left.
+    #[test]
+    fn an_attachment_is_a_chip_that_can_be_taken_off_again() {
+        let mut a = app();
+        a.login = None;
+        a.nav.channel = Some(ChannelId(1));
+        a.composer.open(ChannelId(1));
+        a.composer
+            .attach(composer::Pending::clipboard(vec![0; 8], (2, 2)));
+        assert_eq!(a.composer.attachments.len(), 1);
+        // A file with nothing typed beside it is still something unsent.
+        assert_eq!(a.composer.unsent(), 1);
+
+        let taken = a.composer.take_attachments();
+        assert_eq!(taken.len(), 1);
+        assert!(a.composer.attachments.is_empty());
+    }
+
+    /// Quitting while a file is halfway up the wire asks first, and says so in
+    /// its own words rather than the draft ones.
+    #[test]
+    fn quitting_during_an_upload_asks_first() {
+        use crate::discord::handle::{Nonce, Upload};
+        use crate::discord::state::messages::PendingSend;
+
+        let (core, idle) = fake::silent();
+        let mut a = App::new(
+            core,
+            Config::default(),
+            PathBuf::from("/nonexistent/config.toml"),
+            None,
+            Graphics::disabled(),
+        );
+        a.login = None;
+        a.nav.channel = Some(ChannelId(1));
+        {
+            let mut state = idle.state().write().unwrap();
+            state.messages_mut(ChannelId(1)).add_pending(
+                PendingSend::new(Nonce(1), String::new(), None, false)
+                    .with_attachments(vec![Upload::Path("testdata/media/cat.gif".into())]),
+            );
+            state.touch();
+        }
+        assert_eq!(a.uploading(), 1);
+        a.handle(Action::Quit);
+        assert!(!a.quit, "it quit over an upload in flight");
+        let confirm = a.over.confirm.as_ref().expect("it asked");
+        assert!(confirm.body.contains("still being sent"), "{confirm:?}");
     }
 
     /// A settings change reaches the running program even when the file
