@@ -498,8 +498,7 @@ impl ChatState {
         if self.list.is_at_end() || count == 0 {
             return;
         }
-        let anchor = self.list.anchor() + count;
-        self.list.scroll_to(anchor);
+        self.list.prepended(count);
         self.follow_end = false;
         self.cursor += count;
     }

@@ -147,6 +147,23 @@ impl Settings {
         self.step(delta.signum() as isize);
     }
 
+    /// What a click landed on.
+    ///
+    /// Through STAR/KIT's own hit test, which measures the list the same way
+    /// the widget draws it: a row that scrolled out of sight is not a row
+    /// anything can click, and the two answers cannot drift because there is
+    /// only one of them. A click off the list closes the overlay, which is
+    /// what clicking outside a dialogue has always meant here.
+    pub fn click(&mut self, area: Rect, x: u16, y: u16) -> Action {
+        match settings::hit(area, Setting::ALL.len(), self.scroll, x, y) {
+            Some(index) => {
+                self.cursor = index;
+                Action::Change(self.selected(), true)
+            }
+            None => Action::Close,
+        }
+    }
+
     pub fn rows(&self, cfg: &Config) -> Vec<settings::Row> {
         Setting::ALL
             .iter()

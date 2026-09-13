@@ -40,11 +40,11 @@ none of the four is a direct dependency: a widget built against a second copy
 of ratatui does not satisfy a signature expecting the first, and the compiler
 reports that as two versions carrying the same number.
 
-`src/paths.rs` and `src/logging.rs` stay local rather than becoming wrappers.
-`starkit::paths::Paths` has no `session_file()` or `media_cache_dir()`, and the
-core takes `crate::paths::Paths` by value throughout, so the swap is a change to
-the shared type rather than a change to an import. Until then the local file is
-the extension.
+`src/paths.rs` is a name for `starkit::paths::Paths` and nothing else, since
+0.2 gave the shared type the `session_file()` and `media_cache_dir()` it was
+missing. Keep the name: the core takes `crate::paths::Paths` by value
+throughout, and `PATHS` is the one place this application's three identifying
+strings are written down. `src/logging.rs` stays local.
 
 `image` is a direct dependency as well as STAR/KIT's re-export: the media core
 decodes with it and needs the four formats Discord serves. Cargo unifies the

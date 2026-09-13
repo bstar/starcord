@@ -27,7 +27,7 @@ expression: "render(&mut app, 100, 30)"
 │      ││ ║  alt+up        previous unread      click the state      reconnect now       ║         │
 │      ││ ║  alt+down      next unread                                                   ║         │
 │      ││ ║  ctrl+k        jump to anything                                              ║         │
-│      ││ ║  ctrl+f        search, also /                                                ║         │
+│      ││ ║  ctrl+f / /    search                                                        ║         │
 │      ││ ║  lists                                                                       ║         │
 │      ││ ║  h / l         fold, unfold                                                  ║         │
 └──────┘└─║  chat                                                                        ║─────────┘

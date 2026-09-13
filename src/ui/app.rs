@@ -269,20 +269,7 @@ impl App {
         let mut app = App::new(core, cfg, cfg_path, session_path, graphics);
 
         let mut term = term::init()?;
-        // Focus reporting, which STAR/KIT's `term::init` does not turn on: it
-        // is what stops a client in a background window from acknowledging
-        // somebody else's mentions. A terminal that does not support it simply
-        // never sends the events, and the flag stays true, which is the state
-        // this had before the escape was written.
-        let _ = starkit::crossterm::execute!(
-            std::io::stdout(),
-            starkit::crossterm::event::EnableFocusChange
-        );
         let result = app.event_loop(&mut term);
-        let _ = starkit::crossterm::execute!(
-            std::io::stdout(),
-            starkit::crossterm::event::DisableFocusChange
-        );
         term::restore()?;
         app.core.send(Command::SaveSession);
         app.core.send(Command::Shutdown);
@@ -1687,7 +1674,17 @@ impl App {
             match m.kind {
                 MouseEventKind::ScrollDown => self.over.scroll(3),
                 MouseEventKind::ScrollUp => self.over.scroll(-3),
-                MouseEventKind::Down(MouseButton::Left) => self.over.close(),
+                MouseEventKind::Down(MouseButton::Left) => {
+                    match self.over.click(full, m.column, m.row) {
+                        overlays::Key::Quit => self.quit = true,
+                        overlays::Key::Confirmed(pending) => self.confirmed(pending),
+                        overlays::Key::Jump(target) => self.jump(target),
+                        overlays::Key::Setting(setting, forward) => {
+                            self.change_setting(setting, forward)
+                        }
+                        overlays::Key::Taken | overlays::Key::Ignored => {}
+                    }
+                }
                 _ => {}
             }
             return;
@@ -1695,7 +1692,6 @@ impl App {
         let Some(regions) = self.layout.last.clone() else {
             return;
         };
-        let _ = full;
         let (x, y) = (m.column, m.row);
 
         match m.kind {

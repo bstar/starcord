@@ -330,8 +330,8 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         action: Action::Search,
-        keys: "ctrl+f",
-        label: "search, also /",
+        keys: "ctrl+f / /",
+        label: "search",
         group: "navigation",
     },
     // -- lists -------------------------------------------------------------
@@ -791,51 +791,15 @@ fn copy_binding(b: &Binding) -> Binding {
 /// have it. A panel only ever adds meaning; it never swallows a key it has no
 /// use for, or the global bindings would stop working panel by panel.
 pub fn module(m: Module, k: KeyEvent) -> Option<Action> {
-    let k = normalise(k);
     MODULES
         .iter()
         .find(|(id, _)| *id == m)
         .and_then(|(_, map)| map.resolve(k))
 }
 
-/// The keys the table's own syntax cannot spell.
-///
-/// [`starkit::keymap::alternatives`] separates a binding's keys on `/` and
-/// `,`, so a binding *on* one of those characters cannot be written in the
-/// column that is also what the help overlay prints. There is exactly one, it
-/// is the search key every other client uses, and it is handled here beside
-/// the table rather than in the dispatcher, where it would be a second place a
-/// key is decided. The label on `Action::Search` says so, and there is a test.
-const UNSPELLABLE: &[(char, Action)] = &[('/', Action::Search)];
-
 /// The global table, tried after the focused panel has declined.
 pub fn resolve(k: KeyEvent) -> Option<Action> {
-    let k = normalise(k);
-    if !k
-        .modifiers
-        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-    {
-        if let KeyCode::Char(c) = k.code {
-            if let Some((_, action)) = UNSPELLABLE.iter().find(|(want, _)| *want == c) {
-                return Some(*action);
-            }
-        }
-    }
     GLOBAL.resolve(k)
-}
-
-/// Spell an arriving key the way [`KeySpec::parse`] spells a written one.
-///
-/// `KeySpec::parse` turns `shift+tab` into `BackTab` with no modifier, because
-/// that is what most terminals send. Some send `Tab` with the shift flag
-/// instead, and the two have to end up as the same key or the binding works in
-/// one terminal and not the next.
-fn normalise(mut k: KeyEvent) -> KeyEvent {
-    if k.code == KeyCode::Tab && k.modifiers.contains(KeyModifiers::SHIFT) {
-        k.code = KeyCode::BackTab;
-        k.modifiers -= KeyModifiers::SHIFT;
-    }
-    k
 }
 
 /// Where a two-key sequence stands.
@@ -969,12 +933,26 @@ pub fn document() -> String {
             out.push_str(&format!("\n## {group}\n\n_{scope}_\n\n"));
             out.push_str("| key | what it does |\n|---|---|\n");
         }
-        out.push_str(&format!("| `{}` | {} |\n", b.keys, b.label));
+        // Padded to the same column the `?` overlay uses, so the file reads as
+        // a table in an editor as well as in a browser, and so there is one
+        // number rather than two.
+        let keys = format!("`{}`", b.keys);
+        out.push_str(&format!(
+            "| {keys:<width$} | {} |\n",
+            b.label,
+            width = starkit::keymap::KEYS_COLUMN
+        ));
     }
 
     out.push_str("\n## the mouse\n\n| where | gesture | what it does |\n|---|---|---|\n");
     for m in MOUSE {
-        out.push_str(&format!("| {} | {} | {} |\n", m.group, m.gesture, m.label));
+        out.push_str(&format!(
+            "| {:<8} | {:<width$} | {} |\n",
+            m.group,
+            m.gesture,
+            m.label,
+            width = starkit::keymap::GESTURE_COLUMN
+        ));
     }
     out
 }
@@ -1123,22 +1101,27 @@ mod tests {
     /// A bare arrow moves one and a shifted one moves ten. A convention rather
     /// than an opinion: it is what the rest of the key scheme is built on, and
     /// a module that breaks it makes the whole thing unguessable.
-    /// The one key the table cannot spell, spelled.
+    /// `/` is the search key every other client has, and it is also the
+    /// character the key column separates alternatives on. It is written in
+    /// the column rather than handled beside the table, which is what keeps
+    /// the help overlay and the dispatcher reading from one place.
     #[test]
-    fn the_slash_reaches_search_even_though_the_table_cannot_write_it() {
+    fn the_slash_is_in_the_key_column_and_reaches_search() {
         assert_eq!(resolve(plain('/')), Some(Action::Search));
         assert_eq!(
             resolve(with(KeyCode::Char('f'), KeyModifiers::CONTROL)),
             Some(Action::Search),
-            "and so does the spelling that fits in the column"
+            "and so does the other spelling"
         );
         let search = BINDINGS
             .iter()
             .find(|b| b.action == Action::Search)
             .expect("search is in the table");
-        assert!(
-            search.label.contains('/'),
-            "the help has to print the key it cannot put in the key column"
+        let spellings: Vec<&str> = starkit::keymap::alternatives(search.keys).collect();
+        assert_eq!(
+            spellings,
+            vec!["ctrl+f", "/"],
+            "the help prints the keys it dispatches on"
         );
     }
 

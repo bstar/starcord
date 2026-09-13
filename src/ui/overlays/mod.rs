@@ -188,6 +188,25 @@ impl Overlays {
         }
     }
 
+    /// A click, while something is open.
+    ///
+    /// Only the settings list has anything to click; everything else closes,
+    /// which is what a click outside a dialogue has always meant.
+    pub fn click(&mut self, area: Rect, x: u16, y: u16) -> Key {
+        let Some(settings) = &mut self.settings else {
+            self.close();
+            return Key::Taken;
+        };
+        match settings.click(area, x, y) {
+            settings::Action::Change(setting, forward) => Key::Setting(setting, forward),
+            settings::Action::Close => {
+                self.settings = None;
+                Key::Taken
+            }
+            _ => Key::Taken,
+        }
+    }
+
     /// The wheel, while something is open.
     pub fn scroll(&mut self, delta: i16) {
         if self.help {

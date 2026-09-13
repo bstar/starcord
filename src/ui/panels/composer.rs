@@ -502,15 +502,10 @@ impl Composer {
         next.push_str(&item.insert);
         next.push_str(&tail);
         self.input.set_text(next);
-        // `set_text` leaves the caret at the end, and STAR/KIT's `TextInput`
-        // has no way to put it anywhere else, so it is walked back over the
-        // tail. Listed as a 0.2 want; the tail is a few characters and this is
-        // a keystroke, not a frame.
-        let steps = starkit::wrap::clusters(&tail).count();
-        for _ in 0..steps {
-            self.input
-                .handle(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-        }
+        // Just past what was inserted, so typing carries on where the name
+        // ended rather than at the end of a message somebody was in the
+        // middle of.
+        self.input.set_cursor(complete.start + item.insert.len());
     }
 
     // -- drawing -----------------------------------------------------------
