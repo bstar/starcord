@@ -65,8 +65,10 @@ fn run_probe(options: cli::Probe) -> Result<()> {
         },
         // A pasted token is logged in explicitly below, so that the failure is
         // reported against the token that was given rather than against a
-        // stored one that happened to be there.
-        auto_connect: !options.token_from_stdin,
+        // stored one that happened to be there. A scanned login is the same:
+        // the point of asking for one is to get a new token, not to find an
+        // old one in the keyring.
+        auto_connect: !options.token_from_stdin && !options.qr,
         discover_build: !options.offline,
         legacy_lazy_request: options.legacy_lazy_request,
         record_gateway,
@@ -80,11 +82,15 @@ fn run_probe(options: cli::Probe) -> Result<()> {
     };
 
     let handle = Handle::spawn(config, PATHS).context("starting the Discord core")?;
-    if let Some(token) = token {
+    let started = Instant::now();
+
+    if options.qr {
+        handle.send(discord::Command::StartRemoteAuth);
+        await_scan(&handle, started, options.qr_invert)?;
+    } else if let Some(token) = token {
         handle.send(discord::Command::LoginWithToken(token));
     }
 
-    let started = Instant::now();
     let deadline = started + Duration::from_secs(options.timeout);
     let mut ready = false;
     let mut failure: Option<String> = None;
@@ -160,6 +166,82 @@ fn run_probe(options: cli::Probe) -> Result<()> {
         println!("{dropped} events were dropped on the way to this report");
     }
     Ok(())
+}
+
+/// How long to wait for somebody to find their phone.
+///
+/// Two code lifetimes and some slack: a code lasts about two and a half
+/// minutes, and the core regenerates once on its own before giving up. Not
+/// `--timeout`, which defaults to forty-five seconds and is about how long
+/// READY should take — a different question with a different answer.
+const SCAN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// Put a code on screen and wait for the phone.
+///
+/// Returns once the account is signed in; the core connects on its own from
+/// there, so the caller's READY loop takes over.
+fn await_scan(handle: &Handle, started: Instant, invert: bool) -> Result<()> {
+    let deadline = Instant::now() + SCAN_TIMEOUT;
+    let mut shown = 0usize;
+
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Auth(AuthEvent::QrReady {
+                    url,
+                    matrix,
+                    expires_in,
+                    ..
+                }) => {
+                    shown += 1;
+                    stamp(started);
+                    if shown > 1 {
+                        println!("the first code expired; here is another");
+                    } else {
+                        println!("scan this with the Discord app");
+                    }
+                    println!();
+                    print!("{}", cli::render_qr(&matrix, invert));
+                    println!();
+                    println!("  {url}");
+                    println!(
+                        "  waiting for a scan; it expires in {}s",
+                        expires_in.as_secs()
+                    );
+                    println!();
+                }
+                Event::Auth(AuthEvent::QrScanned { username, .. }) => {
+                    stamp(started);
+                    println!("scanned by {username}; confirm it on the phone");
+                }
+                Event::Auth(AuthEvent::LoggedIn { user, stored_in }) => {
+                    stamp(started);
+                    println!(
+                        "LoggedIn as {} ({}), token in {}",
+                        user.display_name(),
+                        user.tag(),
+                        stored_in.describe()
+                    );
+                    return Ok(());
+                }
+                Event::Auth(AuthEvent::Failed(reason)) => {
+                    anyhow::bail!("the scanned login failed: {reason}");
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                }
+                Event::Status(status) => report_status(started, &status),
+                _ => {}
+            }
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    anyhow::bail!(
+        "nobody scanned the code within {} minutes",
+        SCAN_TIMEOUT.as_secs() / 60
+    )
 }
 
 /// Fetch one picture and say what came back.
@@ -628,6 +710,8 @@ fn report_auth(started: Instant, auth: &AuthEvent) -> Option<String> {
             None
         }
         AuthEvent::QrReady { url, .. } => {
+            // Only reached without `--qr`, which nothing asks for; the code is
+            // drawn by `await_scan`.
             println!("scan {url}");
             None
         }

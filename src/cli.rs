@@ -82,6 +82,22 @@ pub struct Probe {
     #[arg(long, requires = "reply_to")]
     pub ping: bool,
 
+    /// Sign in by scanning a code with the Discord phone app.
+    ///
+    /// Prints the login URL, draws the code, and waits. The password is never
+    /// typed and the token never appears on screen; it goes straight into the
+    /// keyring, or into `credentials.toml` when there is none.
+    #[arg(long, conflicts_with = "token_from_stdin")]
+    pub qr: bool,
+
+    /// Draw the code for a light terminal background.
+    ///
+    /// The default assumes a dark one, where the light modules of the code have
+    /// to be the bright cells. On a light background that is inside out, and a
+    /// camera will not read it.
+    #[arg(long, requires = "qr")]
+    pub qr_invert: bool,
+
     /// Fetch one picture, decode it, and print what it is.
     ///
     /// No account and no gateway: media comes off a CDN and carries no token,
@@ -98,6 +114,61 @@ pub struct Probe {
     /// one that went out is printed.
     #[arg(long)]
     pub legacy_lazy_request: bool,
+}
+
+/// Draw a QR matrix with half-block characters.
+///
+/// Two cells per module across and one half-block down, because a terminal cell
+/// is about twice as tall as it is wide and a camera will not read a code that
+/// is twice as tall as it is square.
+///
+/// The polarity is the part worth explaining. A scanner needs the *dark*
+/// modules dark, and in a terminal the dark thing is the background, so the
+/// light modules are what gets painted. That is inside out on a light
+/// background, which is what `invert` is for. The four-module quiet zone is
+/// part of the code rather than decoration: without it a scanner has nothing to
+/// find the edges against.
+pub fn render_qr(matrix: &[Vec<bool>], invert: bool) -> String {
+    const QUIET: usize = 4;
+
+    if matrix.is_empty() {
+        return String::new();
+    }
+    let size = matrix.len();
+    let span = size + QUIET * 2;
+
+    let dark = |x: usize, y: usize| -> bool {
+        if x < QUIET || y < QUIET || x >= QUIET + size || y >= QUIET + size {
+            // The quiet zone is light, everywhere outside the code.
+            return false;
+        }
+        matrix[y - QUIET].get(x - QUIET).copied().unwrap_or(false)
+    };
+    let lit = |x: usize, y: usize| -> bool {
+        if invert {
+            dark(x, y)
+        } else {
+            !dark(x, y)
+        }
+    };
+
+    let mut out = String::new();
+    let mut y = 0;
+    while y < span {
+        for x in 0..span {
+            let glyph = match (lit(x, y), lit(x, y + 1)) {
+                (true, true) => '\u{2588}',
+                (true, false) => '\u{2580}',
+                (false, true) => '\u{2584}',
+                (false, false) => ' ',
+            };
+            out.push(glyph);
+            out.push(glyph);
+        }
+        out.push('\n');
+        y += 2;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -197,6 +268,78 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_scanned_login_and_a_pasted_one_are_not_both() {
+        let cli = Cli::parse_from(["starcord", "probe", "--qr"]);
+        match cli.command {
+            Some(Command::Probe(probe)) => {
+                assert!(probe.qr);
+                assert!(!probe.qr_invert);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--qr", "--token-from-stdin"]).is_err(),
+            "there is only one login per run"
+        );
+        assert!(
+            Cli::try_parse_from(["starcord", "probe", "--qr-invert"]).is_err(),
+            "there is nothing to invert"
+        );
+    }
+
+    /// A square code, drawn twice as wide per module so that it comes out
+    /// square on screen, with the quiet zone a scanner needs.
+    #[test]
+    fn a_code_is_drawn_square_with_its_quiet_zone() {
+        // A five-by-five code with one dark module in the middle.
+        let mut matrix = vec![vec![false; 5]; 5];
+        matrix[2][2] = true;
+
+        let drawn = render_qr(&matrix, false);
+        let lines: Vec<&str> = drawn.lines().collect();
+
+        // Five modules plus four of quiet on each side is thirteen, which is
+        // seven half-block rows and twenty-six cells across.
+        assert_eq!(lines.len(), 7, "{drawn}");
+        for line in &lines {
+            assert_eq!(line.chars().count(), 26, "{line:?}");
+        }
+
+        // The quiet zone is light, and light is what gets painted.
+        assert!(lines[0].chars().all(|c| c == '\u{2588}'), "{:?}", lines[0]);
+        // The one dark module is somewhere in the middle row.
+        assert!(
+            drawn.contains('\u{2580}') || drawn.contains('\u{2584}') || drawn.contains(' '),
+            "the dark module was not drawn"
+        );
+    }
+
+    /// On a light background the whole thing is inside out, which no camera
+    /// will read.
+    #[test]
+    fn inverting_swaps_what_is_painted() {
+        let mut matrix = vec![vec![false; 5]; 5];
+        matrix[2][2] = true;
+
+        let dark_terminal = render_qr(&matrix, false);
+        let light_terminal = render_qr(&matrix, true);
+        assert_ne!(dark_terminal, light_terminal);
+        assert_eq!(
+            dark_terminal.lines().count(),
+            light_terminal.lines().count()
+        );
+
+        // With a light background the quiet zone is drawn as nothing at all.
+        assert!(light_terminal.lines().next().unwrap().trim().is_empty());
+    }
+
+    #[test]
+    fn an_empty_matrix_draws_nothing_rather_than_panicking() {
+        assert_eq!(render_qr(&[], false), "");
+        assert_eq!(render_qr(&[], true), "");
     }
 
     #[test]
