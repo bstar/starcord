@@ -29,28 +29,35 @@ in the same commit.
 ## STAR/KIT
 
 The shared foundation — paths, logging, private file writes, themes, the dock
-layout engine, terminal images — lives in `starkit`, the crate STAR/AMP uses
-too. The dependency is commented out in `Cargo.toml` for now, and `src/paths.rs`
-and `src/logging.rs` carry local copies of the two pieces the core needs, with
-the same signatures.
+layout engine, text entry, wrapping, terminal images — lives in `starkit`, the
+crate STAR/AMP uses too. It is a git dependency pinned to a tag, and the flake
+takes it from the revision `Cargo.lock` names through
+`cargoLock.allowBuiltinFetchGit`.
 
-Two things block the swap, neither of them the crate being unfinished. A path
-dependency on a sibling checkout cannot be built by the flake, whose `src` is
-this directory, so it waits for the git dependency and
-`cargoLock.allowBuiltinFetchGit`. And `starkit::paths::Paths` has no
-`session_file()` or `media_cache_dir()`; either those move upstream or the local
-file keeps them as an extension over the shared type.
+It is also the one copy of `ratatui`, `crossterm`, `ratatui-image` and `image`
+in the tree. Everything under `src/ui/` reaches them through `starkit::`, and
+none of the four is a direct dependency: a widget built against a second copy
+of ratatui does not satisfy a signature expecting the first, and the compiler
+reports that as two versions carrying the same number.
 
-Once `starkit` is a git dependency, a local checkout is used through an
-uncommitted `.cargo/config.toml`:
+`src/paths.rs` and `src/logging.rs` stay local rather than becoming wrappers.
+`starkit::paths::Paths` has no `session_file()` or `media_cache_dir()`, and the
+core takes `crate::paths::Paths` by value throughout, so the swap is a change to
+the shared type rather than a change to an import. Until then the local file is
+the extension.
+
+A local checkout is used through an uncommitted `.cargo/config.toml`:
 
 ```toml
 [patch."https://github.com/bstar/starkit"]
 starkit = { path = "../starkit" }
 ```
 
-`.gitignore` already covers it. Every public `starkit` item has two consumers;
-check STAR/AMP before changing a signature.
+`.gitignore` already covers it, and it has to be taken away again before
+anything is committed: with the patch in place `cargo` rewrites the `starkit`
+entry in `Cargo.lock` to the path, and a lock file with no git source in it is
+one the flake cannot build. Every public `starkit` item has two consumers; check
+STAR/AMP before changing a signature.
 
 ## Nothing under src/discord/ draws
 
