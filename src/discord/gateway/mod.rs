@@ -288,7 +288,6 @@ async fn connect_once(
     let mut heartbeat: Option<tokio::time::Interval> = None;
     let mut awaiting_ack = false;
     let mut identified = false;
-    let mut resuming = session.is_some();
     let ready_deadline = tokio::time::Instant::now() + READY_TIMEOUT;
 
     loop {
@@ -423,7 +422,6 @@ async fn connect_once(
 
                         let text = match session.as_ref() {
                             Some(existing) => {
-                                resuming = true;
                                 serde_json::to_string(&Outgoing::new(
                                     OpCode::Resume,
                                     Resume {
@@ -434,7 +432,6 @@ async fn connect_once(
                                 ))
                             }
                             None => {
-                                resuming = false;
                                 serde_json::to_string(&Outgoing::new(
                                     OpCode::Identify,
                                     Identify {
@@ -547,11 +544,9 @@ async fn connect_once(
                             _ => {}
                         }
 
-                        if !identified && resuming {
-                            // A resume replays what was missed before RESUMED
-                            // arrives. Those dispatches are real and are
-                            // applied.
-                        }
+                        // A resume replays what was missed before RESUMED
+                        // arrives, so a dispatch before the handshake finished
+                        // is real and is applied like any other.
                         bridge.apply(dispatch);
                     }
 

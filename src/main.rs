@@ -95,10 +95,7 @@ fn run_probe(options: cli::Probe) -> Result<()> {
             }
         }
 
-        if ready && !options.follow {
-            break;
-        }
-        if failure.is_some() {
+        if ready || failure.is_some() {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
