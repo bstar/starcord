@@ -107,6 +107,15 @@ pub struct Probe {
     #[arg(long, value_name = "URL")]
     pub media: Option<String>,
 
+    /// Search the GIF picker and print what came back.
+    ///
+    /// An empty string asks for what is trending. Prints a title and the link
+    /// that would be posted for each result, which is the whole of what the
+    /// picker sends: posting a GIF is an ordinary message whose content is that
+    /// link.
+    #[arg(long, value_name = "QUERY")]
+    pub gifs: Option<String>,
+
     /// Subscribe to member lists with op 14 rather than op 37.
     ///
     /// Which opcode a user-account session is expected to send is one of the

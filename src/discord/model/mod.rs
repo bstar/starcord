@@ -22,6 +22,7 @@
 //! — and assert only that the result is an `Ok` or an `Err` and never a panic.
 
 pub mod channel;
+pub mod gif;
 pub mod guild;
 pub mod message;
 pub mod presence;
@@ -36,7 +37,9 @@ pub mod user;
 #[allow(unused_imports)]
 pub use channel::{Channel, ChannelKind};
 #[allow(unused_imports)]
-pub use guild::{Guild, Role};
+pub use gif::{GifCategory, GifPage, GifResult};
+#[allow(unused_imports)]
+pub use guild::{Emoji, Guild, Role};
 #[allow(unused_imports)]
 pub use message::{
     Attachment, Embed, EmbedKind, EmbedMedia, Message, MessageKind, MessageReference, PartialEmoji,

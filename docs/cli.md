@@ -7,7 +7,7 @@ starcord probe [--qr [--qr-invert]] [--token-from-stdin]
                [--legacy-lazy-request]
                [--channel ID] [--follow]
                [--send TEXT [--reply-to ID [--ping]]]
-               [--media URL]
+               [--media URL] [--gifs QUERY]
 ```
 
 `--verbose` raises the log level to debug. It goes to the log file at
@@ -76,6 +76,7 @@ want when checking somebody else's report against your own account.
 | `--offline` | Do not look up the current web-client build number; use the pinned one. Also what the tests use, because a test suite has no business making a request to a CDN. |
 | `--legacy-lazy-request` | Send op 14 rather than op 37 for member-list subscriptions. Same body either way. |
 | `--media URL` | Fetch and decode one picture and exit. See below. |
+| `--gifs QUERY` | Ask the GIF picker and print the results. An empty string asks for what is trending. |
 | `--qr-invert` | Draw the login code for a light terminal background. |
 
 ## Signing in by scanning
@@ -221,6 +222,38 @@ frame delays 90ms to 90ms
 Anything the decoder had to do differently is printed after the answer rather
 than hidden — an animation past the three-hundred-frame cap comes back as its
 first frame and says so.
+
+## Asking the GIF picker
+
+```sh
+starcord probe --token-from-stdin --gifs "cat" < token.txt
+```
+
+```
+[  2.10s] searching gifs for "cat"
+[  2.44s] 20 results
+
+  Cat Typing                               https://tenor.com/view/cat-typing-gif-16043823
+  Cat Stare                                https://tenor.com/view/cat-stare-gif-14192285
+  ...
+```
+
+The link is what gets printed because the link is what gets *sent*: posting a
+GIF is an ordinary message whose entire content is that URL, which Discord then
+unfurls into a `gifv` embed. There is no separate "post a GIF" request, and
+nothing in `Command` pretends otherwise.
+
+`--gifs ""` asks for trending instead, which also prints the category names the
+picker would show as shortcuts.
+
+Requests are kept three hundred milliseconds apart by the core rather than by
+whatever is calling it, so a picker that searches on every keystroke sends one
+request per pause and not one per letter. A request still waiting when a newer
+one arrives is dropped: by the time its answer came back nobody would want it.
+
+Which service is behind the picker is configuration — `[gifs] provider`,
+`media_format` and `locale` — because Discord proxies a third party here and
+has announced a change of provider for 2026.
 
 ### Recording fixtures
 

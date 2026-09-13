@@ -452,7 +452,7 @@ pub enum Event {
     },
     Gifs {
         id: RequestId,
-        result: Result<Vec<String>, String>,
+        result: Result<crate::discord::model::GifPage, String>,
     },
     Search {
         id: RequestId,
@@ -483,6 +483,8 @@ pub struct DiscordConfig {
     pub record_gateway: Option<PathBuf>,
     /// `[media]`: cache size, attachment cap, and the player argv.
     pub media: crate::discord::media::MediaConfig,
+    /// `[gifs]`: which service the picker asks, and in what format.
+    pub gifs: crate::discord::gifs::GifProvider,
 }
 
 impl Default for DiscordConfig {
@@ -495,6 +497,7 @@ impl Default for DiscordConfig {
             discover_build: true,
             record_gateway: None,
             media: crate::discord::media::MediaConfig::default(),
+            gifs: crate::discord::gifs::GifProvider::default(),
         }
     }
 }

@@ -6,10 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::discord::model::gif::{GifPage, GifResult, Suggestion, Trending};
 use crate::discord::model::{Message, User};
 use crate::discord::snowflake::{ChannelId, MessageId};
 
-use super::route::{History, Route, PAGE};
+use super::route::{GifProvider, GifRequest, History, Route, PAGE};
 use super::{Http, HttpError};
 
 /// The longest message this client will send.
@@ -251,6 +252,48 @@ pub async fn refresh_attachment_urls(
         }),
     )
     .await
+}
+
+/// What everybody is posting today.
+pub async fn gifs_trending(http: &Http, provider: &GifProvider) -> Result<GifPage, HttpError> {
+    let route = Route::Gifs(GifRequest::Trending);
+    let path = route.path_with(provider).into_owned();
+    let trending: Trending = http.request_at(route, &path, None::<&()>).await?;
+    Ok(GifPage {
+        categories: trending.categories().to_vec(),
+        results: trending.into_results(),
+        suggestions: Vec::new(),
+    })
+}
+
+/// GIFs matching some text.
+pub async fn gifs_search(
+    http: &Http,
+    provider: &GifProvider,
+    query: &str,
+) -> Result<GifPage, HttpError> {
+    let route = Route::Gifs(GifRequest::Search(query.to_string()));
+    let path = route.path_with(provider).into_owned();
+    let results: Vec<GifResult> = http.request_at(route, &path, None::<&()>).await?;
+    Ok(GifPage {
+        results,
+        ..Default::default()
+    })
+}
+
+/// Search *terms* matching some text, for completing what is being typed.
+pub async fn gifs_suggest(
+    http: &Http,
+    provider: &GifProvider,
+    prefix: &str,
+) -> Result<GifPage, HttpError> {
+    let route = Route::Gifs(GifRequest::Suggest(prefix.to_string()));
+    let path = route.path_with(provider).into_owned();
+    let suggestions: Vec<Suggestion> = http.request_at(route, &path, None::<&()>).await?;
+    Ok(GifPage {
+        suggestions: suggestions.into_iter().map(Suggestion::into_text).collect(),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]

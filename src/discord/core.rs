@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::discord::auth::remote::{self, Authenticated};
 use crate::discord::auth::{Token, TokenStore};
 use crate::discord::gateway::{self, Bridge, Control, GatewayConfig};
+use crate::discord::gifs::{Ask, Gifs};
 use crate::discord::handle::{
     AuthEvent, Command, Connection, DiscordConfig, Event, EventSink, Note,
 };
@@ -113,6 +114,8 @@ struct Core {
     /// it, so it is a task; but what it produces -- a token to store, a
     /// connection to open -- is `&mut self` work that only this loop may do.
     internal: Option<mpsc::Sender<Internal>>,
+    /// The GIF picker, which has its own spacing rule and no other state.
+    gifs: Gifs,
     session: Arc<std::sync::Mutex<SessionStore>>,
     token: Option<Token>,
     presence: PresenceStatus,
@@ -150,6 +153,12 @@ impl Core {
             config.legacy_lazy_request,
         );
 
+        let gifs = Gifs::new(
+            Arc::clone(&http),
+            config.gifs.clone(),
+            bridge.events.clone(),
+        );
+
         Ok(Self {
             config,
             paths,
@@ -161,6 +170,7 @@ impl Core {
             media: None,
             remote: None,
             internal: None,
+            gifs,
             session: Arc::new(std::sync::Mutex::new(SessionStore::load(paths))),
             gateway: None,
             token: None,
@@ -490,6 +500,12 @@ impl Core {
                 }
             }
 
+            // The picker's own task, because `run` sleeps out the gap between
+            // two searches and the command loop must not sleep with it.
+            Command::GifTrending { id } => self.ask_gifs(id, Ask::Trending),
+            Command::GifSearch { id, query } => self.ask_gifs(id, Ask::Search(query)),
+            Command::GifSuggest { id, prefix } => self.ask_gifs(id, Ask::Suggest(prefix)),
+
             other => {
                 let total = self.unhandled.fetch_add(1, Ordering::Relaxed) + 1;
                 tracing::debug!(
@@ -498,6 +514,11 @@ impl Core {
                 );
             }
         }
+    }
+
+    fn ask_gifs(&self, id: crate::discord::handle::RequestId, ask: Ask) {
+        let gifs = self.gifs.clone();
+        tokio::spawn(async move { gifs.run(id, ask).await });
     }
 
     async fn login(&mut self, token: Token) {

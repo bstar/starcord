@@ -223,7 +223,24 @@ impl Http {
         route: Route,
         body: Option<&(impl Serialize + ?Sized)>,
     ) -> Result<T, HttpError> {
-        let bytes = self.request_bytes(route, body).await?;
+        let path = route.path().into_owned();
+        self.request_at(route, &path, body).await
+    }
+
+    /// The same, with the path given rather than derived.
+    ///
+    /// One route has a path that depends on configuration: the GIF endpoints
+    /// carry the provider, which is a setting rather than part of the route's
+    /// identity. The *bucket* still comes from the route, which is the point —
+    /// changing provider must not invent a second allowance for a request
+    /// Discord counts as one.
+    pub async fn request_at<T: DeserializeOwned>(
+        &self,
+        route: Route,
+        path: &str,
+        body: Option<&(impl Serialize + ?Sized)>,
+    ) -> Result<T, HttpError> {
+        let bytes = self.request_bytes(route, path, body).await?;
         if bytes.is_empty() {
             // 204 No Content. `null` is the only JSON an empty body can mean,
             // and it deserialises into `()` and into every `Option`.
@@ -235,10 +252,11 @@ impl Http {
     async fn request_bytes(
         &self,
         route: Route,
+        path: &str,
         body: Option<&(impl Serialize + ?Sized)>,
     ) -> Result<Vec<u8>, HttpError> {
         let key = route.bucket().into_owned();
-        let url = format!("{}{}", self.base, route.path());
+        let url = format!("{}{}", self.base, path);
         let mut backoff = self.retry.server_error_backoff;
 
         for attempt in 1..=self.retry.attempts {

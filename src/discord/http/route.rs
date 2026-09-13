@@ -18,6 +18,25 @@ use std::borrow::Cow;
 
 use crate::discord::snowflake::{ChannelId, MessageId};
 
+/// The characters that may appear in a path segment or a query value as they
+/// stand. Everything else is percent-encoded.
+///
+/// RFC 3986's unreserved set and nothing more. It is spelled out rather than
+/// taken from one of `percent_encoding`'s named sets because the thing being
+/// encoded is somebody's search text and somebody's emoji, and a set that
+/// happens to leave `&`, `?` or `/` alone would let either of them rewrite the
+/// request.
+pub const ESCAPE: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
+/// Percent-encode a value that came from outside this program.
+pub fn escape(value: &str) -> impl std::fmt::Display + '_ {
+    percent_encoding::utf8_percent_encode(value, ESCAPE)
+}
+
 /// The API this client speaks. v9 rather than v10: the user-account payloads
 /// this client relies on — the READY shape above all — are v9's, and v10
 /// changed them in ways no user client has followed.
@@ -79,6 +98,15 @@ pub enum Route {
     Typing(ChannelId),
     /// Mark a message, and everything before it, read.
     Ack(ChannelId, MessageId),
+    /// The GIF picker's three requests.
+    ///
+    /// One bucket for all of them, because that is how Discord counts them:
+    /// they are not channel routes and there is no major parameter to separate
+    /// them by. The provider is in the query rather than in the variant because
+    /// it is configuration -- Discord is moving from Tenor to other services in
+    /// 2026, and a client with the name compiled in would have to be rebuilt.
+    Gifs(GifRequest),
+
     /// Re-sign a batch of expired attachment URLs.
     ///
     /// Not a channel route, despite what it fetches: Discord counts it against
@@ -87,10 +115,61 @@ pub enum Route {
     RefreshAttachmentUrls,
 }
 
+/// Which of the picker's three questions is being asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GifRequest {
+    /// What everybody is posting today. No query.
+    Trending,
+    /// GIFs matching some text.
+    Search(String),
+    /// Search *terms* matching some text, for completing what is being typed.
+    Suggest(String),
+}
+
+impl GifRequest {
+    fn leaf(&self) -> &'static str {
+        match self {
+            GifRequest::Trending => "trending",
+            GifRequest::Search(_) => "search",
+            GifRequest::Suggest(_) => "suggest",
+        }
+    }
+
+    fn query(&self) -> Option<&str> {
+        match self {
+            GifRequest::Trending => None,
+            GifRequest::Search(q) | GifRequest::Suggest(q) => Some(q),
+        }
+    }
+}
+
+/// Which service is behind the picker, and how it should answer.
+///
+/// Data rather than constants. Discord proxies a third party here and has
+/// announced a change of provider; a client that hard-codes `tenor` is a client
+/// that stops returning results on the day that happens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GifProvider {
+    pub name: String,
+    /// `gif`, `mp4` or `tinygif`. What comes back in `src`.
+    pub media_format: String,
+    pub locale: String,
+}
+
+impl Default for GifProvider {
+    fn default() -> Self {
+        Self {
+            name: "tenor".into(),
+            media_format: "gif".into(),
+            locale: "en-US".into(),
+        }
+    }
+}
+
 impl Route {
     pub fn method(&self) -> reqwest::Method {
         match self {
-            Route::Me | Route::ChannelMessages { .. } => reqwest::Method::GET,
+            Route::Me | Route::ChannelMessages { .. } | Route::Gifs(_) => reqwest::Method::GET,
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
             | Route::Typing(_)
@@ -128,7 +207,38 @@ impl Route {
                 Cow::Owned(format!("/channels/{channel}/messages/{message}/ack"))
             }
             Route::RefreshAttachmentUrls => Cow::Borrowed("/attachments/refresh-urls"),
+            // The provider is not on the `Route`: it is configuration, and a
+            // bucket that carried it would count Tenor and Giphy separately
+            // against an allowance Discord counts as one. `path_with` is what
+            // builds the request; this is the shape of it.
+            Route::Gifs(request) => Cow::Owned(format!("/gifs/{}", request.leaf())),
         }
+    }
+
+    /// The path for a GIF request, with the configured provider in it.
+    ///
+    /// Separate from [`Route::path`] because the provider changes what is
+    /// *fetched* without changing what is *counted*, and the bucket is derived
+    /// from the other one.
+    pub fn path_with(&self, provider: &GifProvider) -> Cow<'static, str> {
+        let Route::Gifs(request) = self else {
+            return self.path();
+        };
+        let mut path = format!(
+            "/gifs/{}?provider={}",
+            request.leaf(),
+            escape(&provider.name)
+        );
+        if let Some(query) = request.query() {
+            path.push_str(&format!("&q={}", escape(query)));
+        }
+        // `suggest` answers with search terms rather than pictures, so asking
+        // it for a media format is asking a question it has no answer to.
+        if !matches!(request, GifRequest::Suggest(_)) {
+            path.push_str(&format!("&media_format={}", escape(&provider.media_format)));
+        }
+        path.push_str(&format!("&locale={}", escape(&provider.locale)));
+        Cow::Owned(path)
     }
 
     /// The key this route's allowance is counted under.
@@ -158,6 +268,7 @@ impl Route {
                 Cow::Owned(format!("POST /channels/{channel}/messages/:id/ack"))
             }
             Route::RefreshAttachmentUrls => Cow::Borrowed("POST /attachments/refresh-urls"),
+            Route::Gifs(request) => Cow::Owned(format!("GET /gifs/{}", request.leaf())),
         }
     }
 

@@ -24,6 +24,7 @@
 pub mod auth;
 pub mod core;
 pub mod gateway;
+pub mod gifs;
 pub mod handle;
 pub mod http;
 pub mod markdown;

@@ -132,6 +132,10 @@ fn run_probe(options: cli::Probe) -> Result<()> {
 
     report_ready(&handle);
 
+    if let Some(query) = options.gifs.clone() {
+        report_gifs(&handle, started, &query);
+    }
+
     if let Some(channel) = options.channel.map(ChannelId) {
         open_channel(&handle, started, channel, deadline)?;
 
@@ -351,6 +355,68 @@ fn probe_media(url: &str) -> Result<()> {
         }
         Ok(())
     })
+}
+
+/// Ask the picker and print the answers.
+///
+/// An empty query asks for what is trending. The link is printed rather than
+/// the picture: it is the thing that would be sent, and the pictures are
+/// somebody else's host.
+fn report_gifs(handle: &Handle, started: Instant, query: &str) {
+    use discord::handle::RequestId;
+
+    let id = RequestId(1);
+    stamp(started);
+    if query.is_empty() {
+        println!("asking for trending gifs");
+        handle.send(discord::Command::GifTrending { id });
+    } else {
+        println!("searching gifs for {query:?}");
+        handle.send(discord::Command::GifSearch {
+            id,
+            query: query.to_string(),
+        });
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        for event in handle.drain() {
+            match event {
+                Event::Gifs { id: got, result } if got == id => {
+                    stamp(started);
+                    match result {
+                        Ok(page) => {
+                            println!("{} results", page.results.len());
+                            println!();
+                            for gif in &page.results {
+                                let title = if gif.title.is_empty() {
+                                    "(untitled)"
+                                } else {
+                                    &gif.title
+                                };
+                                println!("  {:<40} {}", truncate(title, 40), gif.url);
+                            }
+                            if !page.categories.is_empty() {
+                                println!();
+                                let names: Vec<&str> =
+                                    page.categories.iter().map(|c| c.name.as_str()).collect();
+                                println!("categories: {}", names.join(", "));
+                            }
+                        }
+                        Err(e) => println!("the picker returned nothing: {e}"),
+                    }
+                    return;
+                }
+                Event::Note(note) => {
+                    stamp(started);
+                    println!("{:?}: {}", note.level, note.text);
+                }
+                _ => {}
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    println!("the picker did not answer within fifteen seconds");
 }
 
 /// Open a channel, wait for its history, and print it.
