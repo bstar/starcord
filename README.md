@@ -10,15 +10,11 @@ A terminal client for Discord that feels like Winamp. Real-time chat with your
 friends and servers; the account, the servers and the settings stay in
 Discord's own app.
 
-<!--
-  The screenshot goes here, as docs/screenshot.png, the way STAR/AMP's README
-  carries one. There is no picture yet: the interface is still being built, and
-  a screenshot of a half-drawn window would have to be retaken every week.
-  Take it in kitty, with pictures on, and link it the same way STAR/AMP does.
--->
+<!-- The screenshot goes here, as docs/screenshot.png, the way STAR/AMP's
+     README carries one. There is no picture yet: the window is still being
+     built, and one of a half-drawn window would be retaken every week. -->
 
-[Status and the numbers](docs/status.md) says how much of that is built today,
-honestly, area by area.
+[Status](docs/status.md) says how much of that is built today, area by area.
 
 ## Get it
 
@@ -60,10 +56,9 @@ keyring. [Signing in](docs/auth.md) has both routes in full, and
 - **Pictures, in the terminal.** Attachments, avatars, custom emoji and
   animated GIFs are drawn as real pixels in kitty, WezTerm, Ghostty and foot,
   and as half-blocks where there is no graphics protocol.
-- **Emoji, reactions and a GIF picker.** Type `:name:` and complete it; react
-  with a key; search the GIF picker and post what it finds.
-- **Attachments, including what is on your clipboard.** Attach a file by path,
-  or paste an image straight out of the clipboard into the composer.
+- **Emoji, reactions, GIFs and attachments.** Type `:name:` and complete it;
+  react with a key; search the GIF picker and post what it finds; attach a file
+  by path, or paste an image straight out of the clipboard.
 - **Notifications.** A bell and a line in the status bar for a mention or a DM,
   and a desktop notification when you ask for one.
 - **Search.** A channel or a whole server, and jumping to a result opens the
@@ -78,7 +73,7 @@ Linux on x86_64 and aarch64, and macOS on Apple Silicon.
 
 Voice, video, screen share, server administration, account settings and friend
 requests. Use the Discord app for those. None of them is missing because it is
-hard; they are the things a terminal cannot do honestly, and the things a
+hard: they are the things a terminal cannot do honestly, and the things a
 client that signs in as a person should not be automating.
 
 ## Read more
