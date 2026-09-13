@@ -45,7 +45,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends ca-certificates curl git
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and install it
         # A slim container defaults to `sh -e`, which has no pipefail and
         # cannot source these scripts.
