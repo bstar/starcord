@@ -124,12 +124,23 @@ not leave it as folklore.
   `{id, properties, channels, ...}`. Both stay supported whatever the first
   recording shows, because Discord has shipped both.
 - **`op 37` versus `op 14`** for member-list subscriptions. 37 is what the web
-  client sends today; 14 is kept behind `legacy_lazy_request`.
+  client sends today; 14 is kept behind `legacy_lazy_request`, and
+  `starcord probe --channel <id> --legacy-lazy-request` sends it. Either way the
+  opcode that went out is printed, because a subscription Discord ignores looks
+  exactly like one it accepted: no error comes back, the member list simply
+  never arrives.
 - **The exact IDENTIFY payload**, in particular whether `capabilities` as sent
   here changes the READY shape.
 - **The pinned build number.** `PINNED_BUILD_NUMBER` in `props.rs` is a
   last-resort fallback behind live discovery and a 24-hour cache; the comment
   there records when it was taken and from where.
+
+There is one more, added with the message milestone: **whether a `nonce` sent
+on a `POST /messages` comes back on the gateway echo** as well as in the
+response body. The optimistic-send path assumes it does, and falls back to the
+response body after ten seconds if no echo carrying it arrives.
+`starcord probe --channel <id> --send "…"` prints both, so a live session says
+which happened.
 
 `STARCORD_RECORD_GATEWAY=<dir> starcord probe --token-from-stdin` writes every
 dispatch as `<seq>_<event>.json`. `testdata/gateway/README.md` has the scrub

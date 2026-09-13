@@ -21,3 +21,7 @@ the kind of thing that goes stale the moment it moves away from the code:
   terminal exists.
 - `testdata/gateway/README.md` explains that the READY fixture is synthetic,
   and how to record and scrub a real one.
+- `src/discord/markdown/mod.rs` explains what the parser guarantees, and
+  `emoji.rs` says plainly that its grapheme clustering is an approximation that
+  goes away when STAR/KIT's `wrap::clusters` is available.
+- `src/session.rs` explains why `session.toml` is mode 0600.
