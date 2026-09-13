@@ -16,7 +16,7 @@ use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::panels::rgb;
+use super::panels::{rgb, width_of};
 use super::theme::Theme;
 use crate::discord::handle::{Connection, NoteLevel};
 
@@ -108,7 +108,7 @@ pub fn fields(area: Rect, v: &View<'_>) -> Vec<(Hit, Rect)> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    let help_w = HELP.chars().count() as u16;
+    let help_w = width_of(HELP);
     if area.width < help_w {
         return out;
     }
@@ -123,12 +123,12 @@ pub fn fields(area: Rect, v: &View<'_>) -> Vec<(Hit, Rect)> {
     ));
 
     let right = v.right();
-    let right_w = (right.chars().count() as u16).min(area.width.saturating_sub(help_w + 2));
+    let right_w = width_of(&right).min(area.width.saturating_sub(help_w + 2));
     if right_w > 0 {
         // Only the connection half of the right field is clickable: the unread
         // count is a fact rather than a button.
         let word = connection_word(v.connection);
-        let word_w = (word.chars().count() as u16).min(right_w);
+        let word_w = width_of(&word).min(right_w);
         out.push((
             Hit::Connection,
             Rect {
@@ -198,14 +198,18 @@ pub fn render(area: Rect, buf: &mut Buffer, v: &View<'_>) {
                     Some(NoteLevel::Info) => base.fg(rgb(t.accent)),
                     None => base,
                 };
-                let text: String = middle.chars().take(usize::from(rect.width)).collect();
-                buf.set_string(rect.x, rect.y, text, style);
+                buf.set_string(
+                    rect.x,
+                    rect.y,
+                    super::panels::fit(&middle, rect.width),
+                    style,
+                );
             }
             Hit::Connection => {
                 // The whole right-hand field is drawn from its own left edge,
                 // which is where the unread count lives; the clickable part is
                 // only the connection word inside it.
-                let x = area.x + area.width - right.chars().count() as u16;
+                let x = area.x + area.width.saturating_sub(width_of(&right));
                 let style = match v.connection {
                     Connection::Ready { .. } => base.fg(rgb(t.ok)),
                     Connection::AuthFailed(_) | Connection::Offline => base.fg(rgb(t.error)),
