@@ -1,5 +1,5 @@
 {
-  description = "starcord — a Winamp-feel terminal Discord client";
+  description = "STAR/CORD — a Winamp-feel terminal Discord client";
 
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-unstable";
@@ -8,7 +8,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     # Explicit rather than eachDefaultSystem, which would also claim systems
-    # nobody has built this on. aarch64-darwin only, as in staramp: nixpkgs
+    # nobody has built this on. aarch64-darwin only, as in STAR/AMP: nixpkgs
     # 26.11 dropped x86_64-darwin outright, and naming it fails *evaluation*
     # with a release note rather than merely failing to build.
     flake-utils.lib.eachSystem [
@@ -83,7 +83,7 @@
           ];
 
           shellHook = ''
-            echo "starcord devshell · rustc $(rustc --version | cut -d' ' -f2)"
+            echo "STAR/CORD devshell · rustc $(rustc --version | cut -d' ' -f2)"
           '';
         };
       });

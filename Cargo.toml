@@ -81,6 +81,13 @@ rustls = { version = "0.23", default-features = false, features = [
     "tls12",
 ] }
 
+# The trust anchors, for the websocket and the REST client alike. Mozilla's CA
+# list compiled in, rather than the host's store: this only ever dials Discord,
+# a container with no `ca-certificates` package should still connect, and the
+# two transports disagreeing about what they trust is the kind of difference
+# that is only discovered in somebody else's deployment.
+webpki-roots = "1"
+
 # The gateway is `compress=zlib-stream`: one deflate context shared across every
 # frame for the life of the connection, which no per-message decompressor can
 # do.

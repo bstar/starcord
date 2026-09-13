@@ -23,7 +23,7 @@ unmaintained = "workspace"
 # Everything in the tree today, and nothing else. Adding a dependency under a
 # licence not on this list is meant to stop CI and be a decision.
 #
-# The list is shorter than staramp's because there is no ffmpeg and no C in
+# The list is shorter than STAR/AMP's because there is no ffmpeg and no C in
 # here at all. One entry is worth knowing about --
 #
 #   CDLA-Permissive-2.0   webpki-roots. It is not code: it is Mozilla's CA
@@ -62,7 +62,7 @@ wildcards = "deny"
 
 [sources]
 # Nothing from a git URL or a private registry: everything comes from crates.io,
-# so a compromised or vanished repository cannot reach a build. starkit will be
+# so a compromised or vanished repository cannot reach a build. `starkit` will be
 # the one exception, and gets an explicit `allow-git` entry when it does.
 unknown-registry = "deny"
 unknown-git = "deny"

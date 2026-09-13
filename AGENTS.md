@@ -26,15 +26,16 @@ and nothing in the tree runs bindgen. A change that adds a `-sys` crate has to
 add the library to `flake.nix` and the apt line to `.github/workflows/ci.yml`
 in the same commit.
 
-## starkit
+## STAR/KIT
 
 The shared foundation — paths, logging, private file writes, themes, the dock
-layout engine, terminal images — lives in `starkit`, which staramp uses too.
+layout engine, terminal images — lives in `starkit`, the crate STAR/AMP uses
+too.
 While it is being built the dependency is commented out in `Cargo.toml` and
 `src/paths.rs` and `src/logging.rs` carry local copies of the two pieces the
 core needs, with the same signatures. Deleting them is the whole of the swap.
 
-Once starkit is a git dependency, a local checkout is used through an
+Once `starkit` is a git dependency, a local checkout is used through an
 uncommitted `.cargo/config.toml`:
 
 ```toml
@@ -42,8 +43,8 @@ uncommitted `.cargo/config.toml`:
 starkit = { path = "../starkit" }
 ```
 
-`.gitignore` already covers it. Every public starkit item has two consumers;
-check staramp before changing a signature.
+`.gitignore` already covers it. Every public `starkit` item has two consumers;
+check STAR/AMP before changing a signature.
 
 ## Nothing under src/discord/ draws
 
@@ -82,7 +83,7 @@ session gets handed to somebody else.
 
 ## The account-safety boundary
 
-starcord signs in as a user account, because there is no other way for a
+STAR/CORD signs in as a user account, because there is no other way for a
 terminal client to read your DMs. The position it takes is that the client does
 only what a person at the keyboard does, and that is enforced by what `Command`
 can express rather than by intention:
@@ -94,7 +95,7 @@ can express rather than by intention:
   `X-Super-Properties` header, the `User-Agent` and the remote-auth socket's
   headers, so they cannot drift apart and describe two different clients.
 - IDENTIFY presence is `online` with no activities. No Rich Presence — that is
-  staramp's job, over the local desktop IPC socket, with no token involved.
+  STAR/AMP's job, over the local desktop IPC socket, with no token involved.
 - Typing is sent at most every nine seconds per channel, acks are coalesced to
   the highest id per channel per second and never sent for a channel the user
   is not looking at, member ranges are requested only for the open guild, and
@@ -131,7 +132,7 @@ from the documented field lists, and says so.
 
 ## Tests
 
-In-module `#[cfg(test)]`, as in staramp. Anything that parses foreign input
+In-module `#[cfg(test)]`, as in STAR/AMP. Anything that parses foreign input
 gets a proptest as well as table tests — the inflater, the model
 deserialisers, the markdown parser. `cargo test` must pass on a machine that
 has never logged in; anything needing an account is gated on

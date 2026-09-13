@@ -1,7 +1,7 @@
-# starcord
+# STAR/CORD
 
 A Winamp-feel terminal Discord client, built on the same foundation as
-[staramp](https://github.com/bstar/staramp): dockable panels, a theme engine
+[STAR/AMP](https://github.com/bstar/staramp): dockable panels, a theme engine
 that follows the rest of the desktop, and pictures in the terminal where the
 terminal can draw them.
 
@@ -31,7 +31,7 @@ system libraries to install.
 
 ## Account safety
 
-starcord signs in as a user account, the way discordo, endcord and Vesktop do,
+STAR/CORD signs in as a user account, the way discordo, endcord and Vesktop do,
 because there is no other way for a terminal client to read your DMs. It does
 only what a person at the keyboard does: no bulk requests, no scraping, no
 automation of anything you did not press a key for. Read
