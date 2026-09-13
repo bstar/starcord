@@ -16,9 +16,14 @@ categories = ["command-line-utilities"]
 # already proven in STAR/AMP. Only what a chat client needs: `wsz` is a Winamp
 # skin format nothing here reads.
 #
-# Commented out until the crate exists on disk. `src/paths.rs` and
-# `src/logging.rs` carry local copies of the two pieces M1 needs, with the same
-# signatures, so swapping this in is a delete and an import change.
+# Commented out, and not because the crate is missing -- it exists and its
+# `paths` and `logging` match the local copies in `src/paths.rs` and
+# `src/logging.rs` signature for signature. Two things have to happen first.
+# A path dependency on a sibling checkout cannot be built by the flake, whose
+# `src` is this directory, so the cutover waits for the git dependency and
+# `cargoLock.allowBuiltinFetchGit`. And `Paths` there has no `session_file()`
+# or `media_cache_dir()`, which this needs; either they move upstream or the
+# local file keeps them as an extension.
 # starkit = { path = "../starkit", default-features = false, features = ["image", "gif", "net"] }
 
 # CLI

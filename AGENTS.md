@@ -30,10 +30,16 @@ in the same commit.
 
 The shared foundation — paths, logging, private file writes, themes, the dock
 layout engine, terminal images — lives in `starkit`, the crate STAR/AMP uses
-too.
-While it is being built the dependency is commented out in `Cargo.toml` and
-`src/paths.rs` and `src/logging.rs` carry local copies of the two pieces the
-core needs, with the same signatures. Deleting them is the whole of the swap.
+too. The dependency is commented out in `Cargo.toml` for now, and `src/paths.rs`
+and `src/logging.rs` carry local copies of the two pieces the core needs, with
+the same signatures.
+
+Two things block the swap, neither of them the crate being unfinished. A path
+dependency on a sibling checkout cannot be built by the flake, whose `src` is
+this directory, so it waits for the git dependency and
+`cargoLock.allowBuiltinFetchGit`. And `starkit::paths::Paths` has no
+`session_file()` or `media_cache_dir()`; either those move upstream or the local
+file keeps them as an extension over the shared type.
 
 Once `starkit` is a git dependency, a local checkout is used through an
 uncommitted `.cargo/config.toml`:
