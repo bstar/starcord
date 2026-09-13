@@ -156,6 +156,45 @@ rand = "0.9"
 # measuring a family of four as four people and ruining the line.
 emojis = "0.9"
 
+# Decoding pictures. Attachments, avatars, custom emoji and GIFs all arrive as
+# bytes somebody else produced, so the formats are named explicitly rather than
+# taken as a default: png, jpeg, webp and gif are what Discord serves, and every
+# other decoder in the crate is one more parser reading hostile input for no
+# reason. This becomes STAR/KIT's re-export when that dependency lands, so that
+# the core and the terminal image pipeline cannot end up on two versions.
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+] }
+
+# Naming a cached file by its URL. A hash rather than the URL itself because an
+# attachment URL is a signed thing hundreds of characters long, and because a
+# path built out of somebody else's string is a path that can escape the
+# directory it was meant to be in.
+blake3 = "1"
+
+# The QR login. RSA-2048 with OAEP-SHA256 is what Discord's remote-auth gateway
+# speaks: this client generates the key, Discord encrypts a nonce, a ticket and
+# finally the token to it, and nothing but this process can read any of them.
+rsa = "0.9"
+sha2 = "0.10"
+# `rsa` 0.9 takes its randomness through `rand_core` 0.6, which is a different
+# crate version from the `rand` 0.9 used for jitter and nonces. `getrandom` is
+# what makes `OsRng` exist there; a key generated from anything else is not a
+# key.
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+# Turning the login URL into the square the phone reads. Only the matrix is
+# produced here -- drawing it is the terminal's business, and the core does not
+# draw -- but generating it here is also what proves the URL encodes at all.
+qrcode = { version = "0.14", default-features = false }
+
+# Handing a plain link to whatever the desktop uses for links. Video and images
+# go to the configured player instead, by argv and never through a shell.
+webbrowser = "1"
+
 [dev-dependencies]
 # `start_paused` runtimes, so the rate limiter's sleeps are asserted rather
 # than waited out.
