@@ -1,9 +1,11 @@
 //! STAR/CORD — a Winamp-feel terminal Discord client.
 
 mod cli;
+mod config;
 mod discord;
 mod logging;
 mod paths;
+mod ui;
 
 use std::io::Read as _;
 use std::io::Write as _;
