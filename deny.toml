@@ -19,6 +19,32 @@ yanked = "deny"
 # is its parent's decision, not ours, and cannot be fixed here.
 unmaintained = "workspace"
 
+# One exception, and it is the only one.
+#
+#   RUSTSEC-2023-0071  The Marvin attack against `rsa` 0.9: RSA decryption there
+#                      is not constant time, so an attacker who can watch the
+#                      timing of many decryptions with one key may recover it.
+#                      There is no fixed release -- RustCrypto's constant-time
+#                      rewrite is unfinished -- and no other pure-Rust crate
+#                      implements RSA-OAEP, so this is "use it or have no QR
+#                      login".
+#
+#                      What the advisory needs and this does not give it: a
+#                      long-lived key and an attacker who can make it decrypt
+#                      repeatedly while timing the answers. The key here is
+#                      generated for one login attempt, decrypts exactly three
+#                      payloads -- a nonce, the scanner's name, the token --
+#                      and is dropped when the socket closes, which is within
+#                      six minutes either way. The only party who could issue
+#                      those decryptions is Discord's own remote-auth gateway,
+#                      and what it would recover is a key that has already
+#                      delivered everything it protects and is about to cease
+#                      to exist.
+#
+#                      Revisit when `rsa` 0.10 ships; the fix is a version bump
+#                      and deleting this paragraph.
+ignore = ["RUSTSEC-2023-0071"]
+
 [licenses]
 # Everything in the tree today, and nothing else. Adding a dependency under a
 # licence not on this list is meant to stop CI and be a decision.
