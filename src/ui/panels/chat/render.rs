@@ -827,9 +827,12 @@ impl<'a> Writer<'a> {
                         row: self.row(),
                         col: self.col,
                         key: MediaKey::Emoji {
+                            // Two cells. The CDN serves powers of two, and
+                            // thirty-two pixels is more than a pair of cells
+                            // can show at any font anybody reads at.
                             id: *id,
                             animated: *animated,
-                            size: 48,
+                            size: 32,
                         },
                         name: name.clone(),
                     });
@@ -1123,7 +1126,7 @@ impl<'a> Writer<'a> {
                     key: MediaKey::Emoji {
                         id,
                         animated: reaction.emoji.animated,
-                        size: 48,
+                        size: 32,
                     },
                     name: reaction.emoji.name.clone().unwrap_or_default(),
                 });
