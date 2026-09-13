@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- STAR/CORD. A star over a speech bubble, matching STAR/AMP's star over an analyzer. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" rx="48" fill="#121216"/>
+  <path fill="#a78bfa"
+        d="M128 26 L145.6 71.7 L194.6 74.4 L156.5 105.3 L169.1 152.6
+           L128 126 L86.9 152.6 L99.5 105.3 L61.4 74.4 L110.4 71.7 Z"/>
+  <g fill="#6d4fd6">
+    <rect x="44" y="166" width="168" height="54" rx="16"/>
+    <path d="M72 220 L72 242 L104 220 Z"/>
+  </g>
+  <g fill="#121216">
+    <circle cx="92"  cy="193" r="9"/>
+    <circle cx="128" cy="193" r="9"/>
+    <circle cx="164" cy="193" r="9"/>
+  </g>
+</svg>

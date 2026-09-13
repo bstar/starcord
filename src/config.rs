@@ -25,6 +25,52 @@ pub struct Config {
     pub notify: Notify,
     pub compose: Compose,
     pub channels: Channels,
+    pub auth: Auth,
+    pub gifs: Gifs,
+}
+
+/// Where the token is kept.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Store {
+    /// The keyring if there is one, the mode-0600 file if there is not.
+    #[default]
+    Auto,
+    /// Refuse to write a file; a machine with no keyring asks every time.
+    Keyring,
+    File,
+    /// Keep nothing. Every run asks.
+    None,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Auth {
+    pub store: Store,
+}
+
+/// Which service the GIF picker asks, and how.
+///
+/// Configuration rather than a constant because Discord proxies a third party
+/// here and has announced a change of provider. A client that hard-coded one
+/// would stop returning results on the day that happens.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Gifs {
+    pub provider: String,
+    /// `gif`, `mp4` or `tinygif`.
+    pub media_format: String,
+    pub locale: String,
+}
+
+impl Default for Gifs {
+    fn default() -> Self {
+        Self {
+            provider: "tenor".into(),
+            media_format: "gif".into(),
+            locale: "en-US".into(),
+        }
+    }
 }
 
 /// How the whole window looks.
@@ -208,7 +254,12 @@ impl Animate {
 #[serde(default)]
 pub struct Media {
     pub animate: Animate,
-    pub cache_mb: u64,
+    /// How large the on-disk cache may grow before the oldest files are swept.
+    pub cache_max_mib: u64,
+    /// The largest attachment worth downloading. Twenty-five is what an
+    /// account without Nitro may upload, so it is the size of the largest file
+    /// most people will ever be sent.
+    pub max_attachment_mib: u64,
     /// Where `s` in the media viewer puts a file. `~` is expanded.
     pub save_dir: String,
     /// argv, never a shell line: a file name with a space in it is a file name
@@ -220,9 +271,11 @@ impl Default for Media {
     fn default() -> Self {
         Self {
             animate: Animate::Focused,
-            cache_mb: 256,
+            cache_max_mib: 512,
+            max_attachment_mib: 25,
             save_dir: "~/Downloads".into(),
-            player: vec!["mpv".into()],
+            // `--` so that a file called `-x` is a file rather than an option.
+            player: vec!["mpv".into(), "--".into()],
         }
     }
 }
@@ -231,6 +284,9 @@ impl Default for Media {
 #[serde(default)]
 pub struct Notify {
     pub enabled: bool,
+    /// Say nothing about the channel already on screen while the terminal has
+    /// focus: the reader is looking at it.
+    pub only_when_unfocused: bool,
     /// Only DMs, not every mention in every server.
     pub dms_only: bool,
     pub bell: bool,
@@ -243,6 +299,7 @@ impl Default for Notify {
     fn default() -> Self {
         Self {
             enabled: true,
+            only_when_unfocused: true,
             dms_only: false,
             bell: true,
             desktop: false,
@@ -319,6 +376,43 @@ impl Config {
     pub fn save_dir(&self) -> PathBuf {
         expand_tilde(&self.media.save_dir)
     }
+
+    /// What the core is told, out of what the file says.
+    ///
+    /// The two structs are separate on purpose — nothing under `src/discord/`
+    /// reads a config file, and nothing here knows what a gateway is — so this
+    /// is the one place the words in `config.toml` become the core's settings.
+    /// A key added to one and not carried across here is a key that does
+    /// nothing, which is the failure this function exists to make visible in
+    /// one screenful.
+    pub fn core(&self) -> crate::discord::handle::DiscordConfig {
+        use crate::discord::auth::StorePreference;
+        crate::discord::handle::DiscordConfig {
+            store: match self.auth.store {
+                Store::Auto => StorePreference::Auto,
+                Store::Keyring => StorePreference::Keyring,
+                Store::File => StorePreference::File,
+                Store::None => StorePreference::None,
+            },
+            media: crate::discord::media::MediaConfig {
+                cache_max_mib: self.media.cache_max_mib,
+                max_attachment_mib: self.media.max_attachment_mib,
+                player: self.media.player.clone(),
+            },
+            gifs: crate::discord::http::route::GifProvider {
+                name: self.gifs.provider.clone(),
+                media_format: self.gifs.media_format.clone(),
+                locale: self.gifs.locale.clone(),
+            },
+            notify: crate::discord::notify::NotifyConfig {
+                enabled: self.notify.enabled,
+                only_when_unfocused: self.notify.only_when_unfocused,
+                dms_only: self.notify.dms_only,
+            },
+            locale: self.gifs.locale.clone(),
+            ..Default::default()
+        }
+    }
 }
 
 fn expand_tilde(text: &str) -> PathBuf {
@@ -391,13 +485,22 @@ spoilers = "hidden"
 [media]
 # When an animated picture may move: always, focused, or never.
 animate = "focused"
-cache_mb = 256
+# How large the media cache may grow, in mebibytes, before the oldest files
+# are swept.
+cache_max_mib = 512
+# The largest attachment worth downloading. Twenty-five is what an account
+# without Nitro may upload.
+max_attachment_mib = 25
 save_dir = "~/Downloads"
-# Arguments, never a shell line. The file is appended to this list.
-player = ["mpv"]
+# Arguments, never a shell line. The file is appended to this list, and `--`
+# is what keeps a file called `-x` a file rather than an option.
+player = ["mpv", "--"]
 
 [notify]
 enabled = true
+# Say nothing about the channel already on screen while the terminal has
+# focus: you are looking at it.
+only_when_unfocused = true
 # Only direct messages, rather than every mention in every server.
 dms_only = false
 bell = true
@@ -416,6 +519,21 @@ typing_indicator = true
 # Voice channels in the channel list. Off, because this client cannot join one
 # and a row that does nothing is worse than no row at all.
 show_voice = false
+
+[auth]
+# Where the token is kept: "auto" uses the OS keyring if there is one and a
+# mode-0600 file if there is not, "keyring" refuses to write a file, "file"
+# always writes one, and "none" keeps nothing and asks every run.
+store = "auto"
+
+[gifs]
+# Which service Discord proxies for the picker, and in what shape. This is
+# configuration rather than a constant because Discord has announced a change
+# of provider, and a client that hard-coded one would stop returning results
+# on the day it happens.
+provider = "tenor"
+media_format = "gif"
+locale = "en-US"
 "#;
 
 #[cfg(test)]
@@ -475,5 +593,73 @@ mod tests {
         assert!(dir.is_absolute(), "{dir:?}");
         assert!(dir.ends_with("Downloads"));
         assert_eq!(expand_tilde("/tmp/x"), PathBuf::from("/tmp/x"));
+    }
+
+    /// Everything the file says that the core has to be told reaches it.
+    ///
+    /// The two structs are separate on purpose, and the cost of that is that
+    /// a key can be added to one and silently not carried to the other. This
+    /// is the test that says it was: every non-default value set here comes
+    /// back out the far side.
+    #[test]
+    fn every_setting_the_core_reads_is_carried_across() {
+        let cfg = Config {
+            auth: Auth { store: Store::File },
+            media: Media {
+                cache_max_mib: 77,
+                max_attachment_mib: 9,
+                player: vec!["mpv".into(), "--no-config".into()],
+                ..Media::default()
+            },
+            gifs: Gifs {
+                provider: "klipy".into(),
+                media_format: "tinygif".into(),
+                locale: "fr".into(),
+            },
+            notify: Notify {
+                enabled: false,
+                only_when_unfocused: false,
+                dms_only: true,
+                ..Notify::default()
+            },
+            ..Config::default()
+        };
+        let core = cfg.core();
+
+        assert_eq!(core.store, crate::discord::auth::StorePreference::File);
+        assert_eq!(core.media.cache_max_mib, 77);
+        assert_eq!(core.media.max_attachment_mib, 9);
+        assert_eq!(core.media.player, vec!["mpv", "--no-config"]);
+        assert_eq!(core.gifs.name, "klipy");
+        assert_eq!(core.gifs.media_format, "tinygif");
+        assert_eq!(core.gifs.locale, "fr");
+        assert_eq!(core.locale, "fr");
+        assert!(!core.notify.enabled);
+        assert!(!core.notify.only_when_unfocused);
+        assert!(core.notify.dms_only);
+    }
+
+    /// And the defaults agree, so a file that says nothing gets the same
+    /// client as a file that writes out the template.
+    #[test]
+    fn the_defaults_are_the_cores_defaults() {
+        let core = Config::default().core();
+        let theirs = crate::discord::handle::DiscordConfig::default();
+        assert_eq!(core.media.cache_max_mib, theirs.media.cache_max_mib);
+        assert_eq!(
+            core.media.max_attachment_mib,
+            theirs.media.max_attachment_mib
+        );
+        assert_eq!(core.media.player, theirs.media.player);
+        assert_eq!(core.gifs.name, theirs.gifs.name);
+        assert_eq!(core.gifs.media_format, theirs.gifs.media_format);
+        assert_eq!(core.gifs.locale, theirs.gifs.locale);
+        assert_eq!(core.notify.enabled, theirs.notify.enabled);
+        assert_eq!(
+            core.notify.only_when_unfocused,
+            theirs.notify.only_when_unfocused
+        );
+        assert_eq!(core.notify.dms_only, theirs.notify.dms_only);
+        assert_eq!(core.store, theirs.store);
     }
 }

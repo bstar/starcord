@@ -8,6 +8,7 @@ on:
       - '**/*.md'
       - 'docs/**'
       - 'LICENSE'
+      - 'LICENSES/**'
       - '.editorconfig'
       - '.github/ISSUE_TEMPLATE/**'
   pull_request:
@@ -32,6 +33,9 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # First, and cheap: the version lives in Cargo.toml, Cargo.lock and the
+      # PKGBUILD, and only the first of those is generated from anything.
+      - run: ./scripts/check-version.sh
       - run: cargo fmt --check
       # dead_code is allowed rather than denied: the Discord core lands
       # milestone by milestone, complete and tested, ahead of the UI that will
@@ -48,6 +52,10 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Still nothing to install. `keyring` selects its Apple Keychain backend
+      # here and builds against the SDK stdenv already provides, and
+      # `notify-rust` reaches the Notification Center the same way, so there is
+      # no Homebrew line and no LIBCLANG_PATH to set.
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: clippy

@@ -1,0 +1,65 @@
+name: debian
+
+# Documentation-only changes do not rebuild anything.
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'LICENSES/**'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore: *docs
+  workflow_call:
+  workflow_dispatch:
+
+# Nothing here needs write access. Declared rather than inherited, so a change
+# to the repository default cannot quietly widen what a workflow may do.
+permissions:
+  contents: read
+
+jobs:
+  deb:
+    # One package per Debian generation, built and then installed in the image
+    # it was built in. There is no ffmpeg here to make a package release-
+    # specific, so they differ only in the glibc version cargo-deb's $auto
+    # resolution writes into Depends -- but building one and testing it in a
+    # different release is exactly the bug that list exists to catch.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:bookworm-slim
+            suffix: bookworm
+          - image: debian:trixie-slim
+            suffix: trixie
+          - image: ubuntu:24.04
+            suffix: ubuntu24.04
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl git
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build and install it
+        # A slim container defaults to `sh -e`, which has no pipefail and
+        # cannot source these scripts.
+        shell: bash
+        run: |
+          . scripts/dist/deps-debian.sh
+          . "$HOME/.cargo/env"
+          cargo install cargo-deb --locked
+          cargo deb --deb-revision "1~${{ matrix.suffix }}" --output dist/
+          # Building it is not the same as it working: this is where a wrong
+          # dependency list shows up.
+          apt-get install -y -qq ./dist/*.deb
+          starcord --version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: starcord-deb-${{ matrix.suffix }}
+          path: dist/*.deb

@@ -280,3 +280,31 @@ strip = true
 # build, or nothing can be tested without a release compile.
 [profile.dev.package."*"]
 opt-level = 2
+
+[package.metadata.deb]
+maintainer = "bstar <bob@dinicolas.com>"
+copyright = "2026, bstar"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+A terminal Discord client built to feel like Winamp: dockable panels, sixteen
+themes, and pictures drawn where the terminal can draw them. Real-time chat
+with friends and servers, DMs and threads, emoji, reactions and GIFs. Voice,
+video and server administration stay in Discord's own app."""
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/starcord", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/starcord/README.md", "644"],
+    ["packaging/starcord.desktop", "usr/share/applications/starcord.desktop", "644"],
+    ["packaging/starcord.png", "usr/share/icons/hicolor/256x256/apps/starcord.png", "644"],
+    ["packaging/starcord.svg", "usr/share/icons/hicolor/scalable/apps/starcord.svg", "644"],
+]
+# $auto resolves the real sonames from the built binary, which here is the C
+# runtime and libgcc and nothing else -- so the package has to be built on a
+# Debian-like host. Building it on NixOS produces a package with no dependency
+# information at all.
+depends = "$auto"
+# Messages are full of emoji, and only the terminal's font can draw the unicode
+# ones. A Recommends rather than a Depends: a chat client should not refuse to
+# install over a missing glyph.
+recommends = "fonts-noto-color-emoji"

@@ -53,9 +53,7 @@ fn run_tui(replay: Option<std::path::PathBuf>) -> Result<()> {
 
     let core = match &replay {
         Some(path) => ui::fake::replay(path).context("starting the replay core")?,
-        None => {
-            Handle::spawn(DiscordConfig::default(), PATHS).context("starting the Discord core")?
-        }
+        None => Handle::spawn(cfg.core(), PATHS).context("starting the Discord core")?,
     };
 
     // A replay must not touch the real session file: restoring a channel from

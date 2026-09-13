@@ -23,6 +23,7 @@ comment.
 ## What CI will run
 
 ```sh
+./scripts/check-version.sh
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings -A dead_code
 cargo test --all
@@ -36,6 +37,20 @@ an error.
 Tests that need a real Discord account are gated behind `STARCORD_TEST_TOKEN`
 and skip cleanly when it is unset, so `cargo test` works on a machine that has
 never logged in.
+
+All of it in one line before you push:
+
+```sh
+nix develop -c sh -c './scripts/check-version.sh \
+  && cargo fmt --check \
+  && cargo clippy --all-targets -- -D warnings -A dead_code \
+  && cargo test --all \
+  && cargo deny check'
+```
+
+If you touched a workflow, `nix shell nixpkgs#actionlint -c actionlint
+.github/workflows/*.yml` as well. Its shellcheck pass catches the `run:` blocks
+nothing else reads.
 
 ## Three rules that are not visible from the type system
 
@@ -58,6 +73,71 @@ DMs to people who are not already friends, no bulk anything, no profile
 scraping. Those are deliberately absent from `Command` rather than merely
 unimplemented, and a pull request that adds one needs an argument that starts
 with why a human would have pressed a key for it.
+
+## Packaging
+
+`options=(!lto)` in `packaging/PKGBUILD` must stay. makepkg turns LTO on by
+default, which leaves the C and assembly that `ring` and `blake3` compile as
+bitcode that rustc's linker cannot read, and their symbols come back undefined.
+The release profile does its own LTO regardless. There is a CI job whose whole
+purpose is to catch this coming back.
+
+`scripts/build-dist.sh` builds every release artifact locally, in containers.
+It has to be containers: cargo-deb's `$auto` dependency resolution reads a dpkg
+database, makepkg is not packaged for most systems, and a binary built on NixOS
+asks for a loader no other distribution has.
+
+The icon is `packaging/starcord.svg`, and `packaging/starcord.png` is that file
+at 256x256. If you change one, regenerate the other:
+
+```sh
+nix shell nixpkgs#librsvg -c rsvg-convert -w 256 -h 256 \
+  -o packaging/starcord.png packaging/starcord.svg
+```
+
+## Taking a new STAR/KIT
+
+Its own commit, "Take STAR/KIT 0.Y", and nothing else in it:
+
+1. Change the `tag` and the `version` requirement on the `starkit` dependency
+   in `Cargo.toml`.
+2. `cargo update -p starkit` so `Cargo.lock` records the new revision.
+3. Run the checks above. STAR/KIT's own CI has a job that builds both of its
+   consumers against the tip of the library, so a break should have been caught
+   there first, but the version this repository actually pins is the one that
+   matters.
+
+Keeping it separate is the point: what arrived with the new version is then one
+diff to read rather than a line buried in a feature commit. STAR/KIT is 0.x, so
+a minor bump may change an API and a patch bump may not.
+
+To work on STAR/KIT and this at the same time, check it out beside this
+repository and point the build at it with an untracked `.cargo/config.toml`:
+
+```toml
+[patch."https://github.com/bstar/starkit"]
+starkit = { path = "../starkit" }
+```
+
+It is in `.gitignore`, because a committed one points CI at a path that does
+not exist. It also rewrites `Cargo.lock`, so do not use it and `nix build` in
+the same tree. Delete it once the change is tagged and this repository has
+taken the new tag.
+
+## Releasing
+
+1. Bump `version` in `Cargo.toml` and `pkgver` in `packaging/PKGBUILD`, and
+   reset `pkgrel=1`.
+2. `cargo update -w` so `Cargo.lock` follows. The Arch build uses `--frozen`,
+   so a stale lockfile fails it with an error that points at the lockfile
+   rather than at the bump.
+3. `./scripts/check-version.sh`
+4. Add the release to `CHANGELOG.md`.
+5. Tag `vX.Y.Z` and push it. The release workflow builds everything, starts the
+   AppImage on eight distributions, and opens a draft release with the assets,
+   their checksums and build provenance attached.
+6. Read the draft, replace the generated notes with the changelog entry, and
+   publish it.
 
 ## Commit messages
 

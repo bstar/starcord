@@ -1,0 +1,60 @@
+name: arch
+
+# Documentation-only changes do not rebuild anything.
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'LICENSES/**'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore: *docs
+  workflow_call:
+  workflow_dispatch:
+
+# Nothing here needs write access. Declared rather than inherited, so a change
+# to the repository default cannot quietly widen what a workflow may do.
+permissions:
+  contents: read
+
+jobs:
+  arch:
+    # Arch is packaged from a PKGBUILD nothing else exercises, and makepkg's
+    # own flags are what break it: LTO is on by default there, which leaves the
+    # C and assembly that `ring` and `blake3` compile as bitcode that rustc's
+    # linker cannot resolve. `options=(!lto)` is the fix, and building here is
+    # the only way it stays fixed.
+    #
+    # The result is uploaded for inspection and is deliberately not released:
+    # the AUR is where an Arch package belongs, with a PKGBUILD carrying a real
+    # checksum for a released tarball.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm base-devel git jq rust
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Resolve the version
+        id: v
+        run: echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> "$GITHUB_OUTPUT"
+      - name: Build and install the package
+        env:
+          VER: ${{ steps.v.outputs.version }}
+        run: |
+          useradd -m build
+          cp -r packaging /home/build/pkg
+          # Build this checkout rather than a released tarball.
+          tar -czf "/home/build/pkg/starcord-$VER.tar.gz" \
+            --transform "s,^\.,starcord-$VER," --exclude=./.git .
+          sed -i "s|^source=.*|source=(\"starcord-$VER.tar.gz\")|" /home/build/pkg/PKGBUILD
+          chown -R build:build /home/build/pkg
+          su build -c 'cd /home/build/pkg && makepkg --nodeps --noconfirm'
+          pacman -U --noconfirm /home/build/pkg/starcord-*-x86_64.pkg.tar.zst
+          starcord --version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: starcord-arch
+          path: /home/build/pkg/*.pkg.tar.zst

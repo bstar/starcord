@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=starcord
+GenericName=Terminal Discord Client
+Comment=Chat with your friends and servers in a terminal
+Exec=starcord
+Icon=starcord
+Terminal=true
+Categories=Network;InstantMessaging;Chat;
+Keywords=discord;chat;messaging;terminal;winamp;
