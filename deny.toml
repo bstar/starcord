@@ -62,7 +62,12 @@ wildcards = "deny"
 
 [sources]
 # Nothing from a git URL or a private registry: everything comes from crates.io,
-# so a compromised or vanished repository cannot reach a build. `starkit` will be
-# the one exception, and gets an explicit `allow-git` entry when it does.
+# so a compromised or vanished repository cannot reach a build.
 unknown-registry = "deny"
 unknown-git = "deny"
+
+# The one exception, named rather than allowed by loosening the rule above.
+# STAR/KIT is this project's other half and is pinned to a tag; it is not
+# published to crates.io because its API is whatever its two consumers need and
+# a version on a registry would suggest otherwise.
+allow-git = ["https://github.com/bstar/starkit"]

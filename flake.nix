@@ -36,6 +36,12 @@
             version = cargoToml.package.version;
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
+            # STAR/KIT is a git dependency pinned to a tag, and a lock file
+            # entry for one carries no hash for Nix to check. This lets the
+            # builtin fetcher take it from the revision the lock file names,
+            # which is what makes `nix build` work without a second copy of
+            # every git dependency's hash in this file.
+            cargoLock.allowBuiltinFetchGit = true;
 
             meta = with pkgsFor.lib; {
               description = "A Winamp-feel terminal Discord client";
