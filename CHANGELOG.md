@@ -181,3 +181,32 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   survive. The settings overlay writes the same way.
 - **`docs/keys-and-mouse.md`**, generated from the key table rather than
   written beside it, with a test that fails when the two disagree.
+- **Pictures, where the terminal can draw one.** Inline images and the first
+  frame of an animation, avatars in the gutter, server icons in the rail,
+  custom emoji inline and on reaction chips, and a thumbnail against the right
+  edge of a link card. The rows are reserved from the size the picture says it
+  is, before any bytes arrive, so nothing reflows when they do and a reader's
+  place is kept. `[ui] graphics = "off"` leaves the chip that names the file,
+  `"blocks"` draws two pixels to a cell in any terminal at all, and a
+  rectangle a scroll has cut is drawn as blocks unless the protocol tolerates
+  a clipped placement — kitty does; sixel and iTerm2 would paint over what is
+  below the panel.
+- **A code to scan, instead of a token to paste.** The login screen draws the
+  remote-auth matrix as a picture where there is a graphics protocol and as
+  half blocks where there is not, both black on white whatever the theme is,
+  because a scanner is looking for contrast rather than for taste. It counts
+  down, replaces a code nobody scanned, names whoever scanned it, and puts a
+  failure's close code on the screen in full rather than shortening it to
+  "login failed". A terminal too short for the code gives the URL instead:
+  half a code scans as nothing.
+- **`starcord --replay` shows real pictures and plays a whole QR login.** The
+  fixture carries three tiny synthetic files and a map from what a media key
+  boils down to; the scripted login has no stored token, a code, a phone
+  reading it three seconds later and a session three seconds after that.
+
+### Changed
+
+- **The day rule is held to a contrast the date on it can be read at.** It was
+  the one `[chat]` role taken from the panel chrome with no floor under it, and
+  on one of the sixteen themes it resolved to 1.46:1. The legibility test now
+  walks it, and walks the desktop's own palette as well where one is set.

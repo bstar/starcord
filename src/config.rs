@@ -447,6 +447,8 @@ theme = "catppuccin-mocha"
 # How pictures are drawn: auto, kitty, blocks, or off. "auto" asks the
 # terminal, which is right nearly everywhere; insist on kitty over ssh or
 # inside a multiplexer, where the question sometimes goes unanswered.
+# "blocks" draws two pixels to a cell and works in any terminal; "off" draws
+# no picture at all and leaves the chip that names the file.
 graphics = "auto"
 # Blank cells around the whole layout, for a terminal whose window has none.
 padding_x = 0

@@ -20,7 +20,7 @@ defaults. Editing one key never means writing the other six.
 | Key | Does |
 | --- | --- |
 | `[ui] theme` | a theme id, or `"system"` to follow the desktop. Default `"catppuccin-mocha"`. See [Theming](#theming) |
-| `[ui] graphics` | how pictures are drawn: `auto`, `kitty`, `blocks`, `off`. Default `auto` |
+| `[ui] graphics` | how pictures are drawn: `auto` asks the terminal, `kitty` insists on the kitty protocol, `blocks` (also spelled `halfblocks`) draws two pixels to a cell in any terminal at all, `off` draws no picture and leaves the chip that names the file. Default `auto` |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the whole layout, for a terminal whose window has none. Default `0` |
 
 ### The panels
@@ -44,7 +44,7 @@ layout you arrange is the layout you get next time.
 | `[chat] show_avatars` | draw avatars beside the first message of a block. Default `true` |
 | `[chat] timestamps` | `off`, `short` (`14:32`, the default) or `full` (`2026-09-13 14:32`) |
 | `[chat] group_window_secs` | how far apart two messages from one person can be and still be drawn as one block. Default `420` |
-| `[chat] max_image_rows` | rows an inline picture may take. `0` draws a chip with the file name instead. Default `12` |
+| `[chat] max_image_rows` | rows an inline picture may take. The rows are worked out from the size the picture says it is and the shape of a terminal cell, then held to this; `0` draws a chip with the file name instead. Default `12` |
 | `[chat] emoji_images` | draw custom emoji as pictures rather than as `:name:`. Default `true` |
 | `[chat] show_embeds` | draw link previews. Default `true` |
 | `[chat] spoilers` | `"hidden"` (default) covers a spoiler until it is asked for; `"shown"` never covers one |
