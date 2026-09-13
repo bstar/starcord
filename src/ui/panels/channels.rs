@@ -12,7 +12,7 @@ use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, rgb, DmTab};
+use super::{empty, fit, rgb};
 use crate::discord::model::ChannelKind;
 use crate::discord::snowflake::ChannelId;
 use crate::ui::theme::Theme;
@@ -52,16 +52,21 @@ impl Row {
     }
 }
 
-/// The glyph in front of a channel's name.
+/// The mark in front of a channel's name.
 ///
-/// One character each, and the same ones Discord's own client uses, because
-/// somebody arriving from it should not have to learn a second alphabet.
+/// **One column each, and ASCII.** The obvious thing to reach for is the
+/// loudspeaker and the speech bubble Discord's own client uses, and they are
+/// wrong here for a reason worth writing down: an emoji is two columns wide in
+/// a terminal that has the font for it and one in a terminal that does not, so
+/// a channel list built out of them is a channel list whose rows are a
+/// different width on different machines, and on half of them the last cell
+/// lands on the panel border. `#` is what a channel is called anyway.
 fn sigil(kind: ChannelKind) -> char {
     match kind {
-        ChannelKind::GuildAnnouncement => '\u{1f4e2}',
-        ChannelKind::GuildForum | ChannelKind::GuildMedia => '\u{2637}',
-        ChannelKind::GuildVoice | ChannelKind::GuildStageVoice => '\u{1f50a}',
-        k if k.is_thread() => '\u{21b3}',
+        ChannelKind::GuildAnnouncement => '!',
+        ChannelKind::GuildForum | ChannelKind::GuildMedia => '=',
+        ChannelKind::GuildVoice | ChannelKind::GuildStageVoice => '~',
+        k if k.is_thread() => '>',
         _ => '#',
     }
 }
@@ -75,9 +80,6 @@ pub struct View<'a> {
     /// The channel currently open, which is marked whether or not the cursor
     /// is on it.
     pub open: Option<ChannelId>,
-    /// Set when the DM list has folded in here and this panel is carrying both
-    /// lists behind a tab.
-    pub folded_tab: Option<DmTab>,
 }
 
 /// Build the flat row list for one guild.
@@ -145,7 +147,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
         empty(body, buf, t, "no channels");
         return;
     }
-    let width = usize::from(body.width);
+    let width = body.width;
 
     for (index, row) in v
         .rows
@@ -213,8 +215,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                     t.row_cursor_bg
                 }));
         }
-        let text: String = text.chars().take(width).collect();
-        buf.set_string(body.x, y, format!("{text:width$}"), style);
+        buf.set_string(body.x, y, fit(&text, width), style);
     }
 }
 
@@ -309,6 +310,21 @@ mod tests {
         assert_ne!(sigil(ChannelKind::GuildForum), '#');
         assert_ne!(sigil(ChannelKind::GuildVoice), '#');
         assert_ne!(sigil(ChannelKind::PublicThread), '#');
+        // And every one of them is one column wide, which is the property the
+        // rows depend on.
+        for kind in [
+            ChannelKind::GuildText,
+            ChannelKind::GuildAnnouncement,
+            ChannelKind::GuildForum,
+            ChannelKind::GuildMedia,
+            ChannelKind::GuildVoice,
+            ChannelKind::GuildStageVoice,
+            ChannelKind::PublicThread,
+            ChannelKind::Unknown(99),
+        ] {
+            let mark = sigil(kind);
+            assert!(mark.is_ascii(), "{kind:?} is marked with {mark:?}");
+        }
     }
 
     #[test]
@@ -322,7 +338,6 @@ mod tests {
             scroll: 1,
             focused: true,
             open: None,
-            folded_tab: None,
         };
         let body = Rect::new(0, 2, 20, 2);
         assert_eq!(row_at(body, &v, 1), None);

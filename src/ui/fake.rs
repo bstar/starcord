@@ -158,6 +158,49 @@ pub struct Idle {
     _events: crossbeam_channel::Sender<Event>,
 }
 
+/// A core that is already at a moment in the timeline, with no thread at all.
+///
+/// Everything with `at_ms <= upto` is applied before the handle is handed
+/// back, and the status is whatever the last of them left. For snapshots and
+/// for tests that want a populated `State` rather than a conversation: a
+/// replay runs on a clock, and a test that waited on one would be a test that
+/// renders a different frame on a loaded machine.
+pub fn loaded(session: &Session, upto_ms: u64) -> (Handle, Idle) {
+    let (command_tx, command_rx) = tokio::sync::mpsc::channel(16);
+    let (event_tx, event_rx) = crossbeam_channel::bounded(4096);
+    let state = Arc::new(RwLock::new(State::new()));
+    let status = Arc::new(ArcSwap::from_pointee(Connection::LoggedOut));
+    let dropped = Arc::new(AtomicU64::new(0));
+
+    let sink = Sink {
+        tx: event_tx.clone(),
+        dropped: Arc::clone(&dropped),
+        needs_refresh: std::sync::atomic::AtomicBool::new(false),
+    };
+    for step in session.steps.iter().filter(|s| s.at_ms <= upto_ms) {
+        play(step, &sink, &state, &status);
+    }
+    // The events are thrown away: the caller is about to read `State`, which
+    // is the truth, and a queue of notifications about how it got there would
+    // only make the first frame depend on how many of them fitted.
+    while event_rx.try_recv().is_ok() {}
+
+    (
+        Handle::from_parts(HandleParts {
+            commands: command_tx,
+            events: event_rx,
+            state,
+            status,
+            thread: None,
+            dropped,
+        }),
+        Idle {
+            _commands: command_rx,
+            _events: event_tx,
+        },
+    )
+}
+
 /// A handle backed by a recorded session.
 pub fn replay(path: &Path) -> Result<Handle> {
     let session = Session::read(path)?;
@@ -495,6 +538,43 @@ mod tests {
             e,
             Event::Messages(_, MessagesChange::Loading(false))
         )));
+    }
+
+    /// The same fixture, with no clock in it.
+    #[test]
+    fn a_loaded_core_is_ready_before_anybody_asks() {
+        let (handle, _idle) = loaded(&fixture(), 1_000);
+        assert!(handle.status().is_ready());
+        assert!(handle.state().me().is_some());
+        assert!(handle.state().guild_count() >= 3);
+        assert_eq!(handle.drain().count(), 0, "it queues nothing to replay");
+
+        // And the presences from the first second are in, which is what makes
+        // a drawn frame the same one every time.
+        let alex = handle
+            .state()
+            .dms_ordered()
+            .iter()
+            .flat_map(|c| c.recipient_ids())
+            .find(|id| {
+                handle.state().presence(*id) == crate::discord::model::PresenceStatus::Online
+            })
+            .is_some();
+        assert!(alex, "no presence was applied");
+    }
+
+    /// Stopping before a step means the step did not happen.
+    #[test]
+    fn a_loaded_core_stops_where_it_was_told_to() {
+        let (early, _idle) = loaded(&fixture(), 0);
+        assert!(early.status().is_ready(), "READY is at zero");
+        let any_online = early
+            .state()
+            .dms_ordered()
+            .iter()
+            .flat_map(|c| c.recipient_ids())
+            .any(|id| early.state().presence(id) == crate::discord::model::PresenceStatus::Online);
+        assert!(!any_online, "the presences are all after zero");
     }
 
     #[test]

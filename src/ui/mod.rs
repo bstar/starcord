@@ -13,6 +13,8 @@
 pub mod app;
 pub mod core_ext;
 pub mod fake;
+#[cfg(test)]
+mod frames;
 pub mod keymap;
 pub mod layout;
 pub mod login;

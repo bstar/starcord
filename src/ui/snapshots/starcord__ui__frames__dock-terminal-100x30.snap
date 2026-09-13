@@ -1,0 +1,34 @@
+---
+source: src/ui/frames.rs
+expression: "render(&mut app, 100, 30)"
+---
+┌──────┐┌═ First Guild ═─────────┐┌═ chat ═────────────────────────────────┐┌═ members ═───────────┐
+│      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
+│@    1││# rules                 ││                                        ││                      │
+│FG   2││▾ TEXT CHANNELS         ││                                        ││                      │
+│SG   •││  # general (2)         ││                                        ││                      │
+│··    ││  # random              ││                                        ││                      │
+│      ││  ! announcements       ││                                        ││                      │
+│      ││▾ ARCHIVE               ││                                        ││                      │
+│      ││  # old-decisions       ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││            choose a channel            ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││                                        ││     members soon     │
+│      │└────────────────────────┘│                                        ││                      │
+│      │┌═ messages ═────────────┐│                                        ││                      │
+│      ││         friends  close ││                                        ││                      │
+│      ││○ Wren of the Long Displ││                                        ││                      │
+│      ││○ Alex, Jordan [3]      ││                                        ││                      │
+│      ││● Alex (1)              ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        ││                                        ││                      │
+│      ││                        │└────────────────────────────────────────┘│                      │
+│      ││                        │┌═ compose ═─────────────────────────────┐│                      │
+│      ││                        ││                     attach  emoji  gif ││                      │
+└──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
+? help                                                                  6 unread · @3  ▲ online  off

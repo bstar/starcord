@@ -252,13 +252,13 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         action: Action::CursorUpBig,
-        keys: "shift+up / K",
+        keys: "shift+up/K",
         label: "up ten",
         group: "navigation",
     },
     Binding {
         action: Action::CursorDownBig,
-        keys: "shift+down / J",
+        keys: "shift+down/J",
         label: "down ten",
         group: "navigation",
     },
@@ -447,8 +447,14 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         action: Action::Newline,
-        keys: "shift+enter / alt+enter",
+        keys: "shift+enter",
         label: "new line",
+        group: "composer",
+    },
+    Binding {
+        action: Action::Newline,
+        keys: "alt+enter",
+        label: "new line as well",
         group: "composer",
     },
     Binding {
@@ -666,7 +672,7 @@ pub const MOUSE: &[MouseHelp] = &[
     },
     MouseHelp {
         gesture: "click, wheel",
-        label: "choose, and change server",
+        label: "choose one",
         group: "lists",
     },
     MouseHelp {
@@ -977,12 +983,25 @@ mod tests {
         }
     }
 
-    /// The help's key column is padded to 14 and the overlay draws two columns
-    /// over at most 80, so a label past 19 characters wraps onto a second line
-    /// and the list silently loses its last entries.
+    /// Nothing in the table is wide enough to wrap in the help overlay.
+    ///
+    /// It draws two columns over at most eighty: keys padded to fourteen with
+    /// their labels beside them, gestures padded to twenty-one with theirs. A
+    /// key string of fourteen leaves no gap before its label and the two run
+    /// together; a label past the column's width wraps, pushes everything
+    /// below it down, and the end of the list is silently lost off the bottom.
+    /// Both were visible on the first screenshot of it, which is why the
+    /// numbers are asserted rather than remembered.
     #[test]
-    fn no_label_is_long_enough_to_wrap() {
+    fn nothing_in_the_table_overruns_its_column() {
         for b in BINDINGS {
+            let keys = b.keys.chars().count();
+            assert!(
+                keys <= 13,
+                "{:?} is {keys} wide and leaves no gap before {:?}",
+                b.keys,
+                b.label
+            );
             assert!(
                 b.label.chars().count() <= 19,
                 "{:?} is {} characters and would wrap",
@@ -992,8 +1011,14 @@ mod tests {
         }
         for m in MOUSE {
             assert!(
-                m.label.chars().count() <= 26,
+                m.gesture.chars().count() <= 19,
                 "{:?} is {} characters",
+                m.gesture,
+                m.gesture.chars().count()
+            );
+            assert!(
+                m.label.chars().count() <= 19,
+                "{:?} is {} characters and would wrap",
                 m.label,
                 m.label.chars().count()
             );

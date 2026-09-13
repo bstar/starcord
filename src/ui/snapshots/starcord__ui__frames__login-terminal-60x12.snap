@@ -1,0 +1,16 @@
+---
+source: src/ui/frames.rs
+expression: "render(&mut app, 60, 12)"
+---
+  ┌──────────────────────────────────────────────────────┐
+  │ STAR/CORD                                            │
+  │                                                      │
+  │ sign in                                              │
+  │                                                      │
+  │ 1   scan a code with the phone app                   │
+  │ 2   paste a token                                    │
+  │                                                      │
+  │ q   quit                                             │
+  │                                                      │
+  │ scanning is the safer of the two: no                 │
+  └──────────────────────────────────────────────────────┘

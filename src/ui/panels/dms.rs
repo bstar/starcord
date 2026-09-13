@@ -9,7 +9,7 @@ use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, rgb, DmTab};
+use super::{empty, fit, rgb, DmTab};
 use crate::discord::model::PresenceStatus;
 use crate::discord::snowflake::{ChannelId, UserId};
 use crate::ui::theme::Theme;
@@ -96,7 +96,8 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
         );
         return;
     }
-    let width = usize::from(body.width);
+    let width = body.width;
+    let rest_width = width.saturating_sub(1);
 
     for (index, row) in v
         .rows
@@ -110,11 +111,10 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
 
         match row {
             Row::Section { label } => {
-                let text: String = label.to_uppercase().chars().take(width).collect();
                 buf.set_string(
                     body.x,
                     y,
-                    format!("{text:width$}"),
+                    fit(&label.to_uppercase(), width),
                     Style::default().fg(rgb(t.row_meta_fg)),
                 );
             }
@@ -161,15 +161,11 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                 let dot_style = Style::default()
                     .fg(rgb(presence_colour(t, *presence)))
                     .bg(style.bg.unwrap_or(rgb(t.panel_bg)));
-                let rest: String = format!(" {title}{badge}")
-                    .chars()
-                    .take(width.saturating_sub(1))
-                    .collect();
                 buf.set_string(body.x, y, presence_glyph(*presence).to_string(), dot_style);
                 buf.set_string(
                     body.x + 1,
                     y,
-                    format!("{rest:w$}", w = width.saturating_sub(1)),
+                    fit(&format!(" {title}{badge}"), rest_width),
                     style,
                 );
             }
@@ -183,17 +179,8 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                 let dot_style = Style::default()
                     .fg(rgb(presence_colour(t, *presence)))
                     .bg(style.bg.unwrap_or(rgb(t.panel_bg)));
-                let rest: String = format!(" {name}")
-                    .chars()
-                    .take(width.saturating_sub(1))
-                    .collect();
                 buf.set_string(body.x, y, presence_glyph(*presence).to_string(), dot_style);
-                buf.set_string(
-                    body.x + 1,
-                    y,
-                    format!("{rest:w$}", w = width.saturating_sub(1)),
-                    style,
-                );
+                buf.set_string(body.x + 1, y, fit(&format!(" {name}"), rest_width), style);
             }
         }
     }

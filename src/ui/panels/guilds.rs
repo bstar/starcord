@@ -9,7 +9,7 @@ use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, rgb};
+use super::{empty, fit, rgb, width_of};
 use crate::config::GuildsStyle;
 use crate::discord::snowflake::GuildId;
 use crate::ui::theme::Theme;
@@ -35,6 +35,13 @@ impl Row {
     pub fn initials(&self) -> String {
         if self.id.is_none() {
             return "@".into();
+        }
+        // An unavailable server arrives as an id and nothing else -- no name,
+        // no channels -- so there are no initials to take. Two dots rather
+        // than two blanks, because a blank row reads as a drawing fault and
+        // this one is a Discord outage.
+        if self.name.trim().is_empty() {
+            return "\u{b7}\u{b7}".into();
         }
         let mut words = self
             .name
@@ -80,7 +87,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
         empty(body, buf, t, "—");
         return;
     }
-    let width = usize::from(body.width);
+    let width = body.width;
     for (line, row) in v
         .rows
         .iter()
@@ -129,13 +136,10 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
             (n, _) => n.to_string(),
         };
         let initials = row.initials();
-        let used = initials.chars().count() + mark.chars().count();
-        let gap = width.saturating_sub(used).max(1);
-        let text: String = format!("{initials}{:gap$}{mark}", "", gap = gap)
-            .chars()
-            .take(width)
-            .collect();
-        buf.set_string(body.x, y, format!("{text:width$}"), style);
+        let used = width_of(&initials) + width_of(&mark);
+        let gap = usize::from(width.saturating_sub(used).max(1));
+        let text = format!("{initials}{:gap$}{mark}", "", gap = gap);
+        buf.set_string(body.x, y, fit(&text, width), style);
     }
 
     // The list style is a later milestone; the rail is what M1 draws and
@@ -162,7 +166,6 @@ mod tests {
         assert_eq!(row("Some Long Server").initials(), "SL");
         assert_eq!(row("announcements").initials(), "an");
         assert_eq!(row("A").initials(), "A");
-        assert_eq!(row("  ").initials(), "  ");
     }
 
     /// A server named in a script with no case, or with an emoji, still gets
@@ -171,6 +174,15 @@ mod tests {
     fn initials_survive_a_name_that_is_not_latin() {
         assert_eq!(row("日本語のサーバー").initials(), "日本");
         assert_eq!(row("🎮 Gaming").initials(), "🎮G");
+    }
+
+    /// A server Discord is having an outage in arrives as an id and nothing
+    /// else, so there is no name to take initials from. A blank row would read
+    /// as a drawing fault rather than as an outage.
+    #[test]
+    fn an_unnamed_server_still_gets_two_cells() {
+        assert_eq!(row("").initials(), "\u{b7}\u{b7}");
+        assert_eq!(row("   ").initials(), "\u{b7}\u{b7}");
     }
 
     #[test]

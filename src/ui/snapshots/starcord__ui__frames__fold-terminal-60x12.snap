@@ -1,0 +1,16 @@
+---
+source: src/ui/frames.rs
+expression: "render(&mut app, 60, 12)"
+---
+┌═ messages ═──────┐┌═ chat ═──────────────────────────────┐
+│  channels  close ││          search  pins  zen  settings │
+│○ Wren of the Long││                                      │
+│○ Alex, Jordan [3]││                                      │
+│● Alex (1)        ││           choose a channel           │
+│                  ││                                      │
+│                  ││                                      │
+│                  │└──────────────────────────────────────┘
+│                  │┌═ compose ═───────────────────────────┐
+│                  ││                   attach  emoji  gif │
+└──────────────────┘└──────────────────────────────────────┘
+? help                          6 unread · @3  ▲ online  off

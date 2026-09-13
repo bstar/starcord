@@ -26,10 +26,17 @@
 //!
 //! ## Graphics before the terminal
 //!
-//! `Graphics::probe` writes a capability query and reads the answer off stdin.
-//! Once raw mode is on, that answer arrives interleaved with whatever is being
-//! typed. So the probe happens in [`run`], before `term::init`, and STAR/KIT
-//! asserts it.
+//! The probe writes a capability query and reads the answer off stdin. Once raw
+//! mode is on, that answer arrives interleaved with whatever is being typed. So
+//! it happens in [`App::run`], before `term::init`, and STAR/KIT asserts the
+//! ordering.
+//!
+//! It is `probe_if_tty` rather than `probe`, and not only because output that
+//! has been piped somewhere should not be asked questions. `probe_if_tty` also
+//! drains stdin afterwards, and a late reply left sitting there is eaten by the
+//! backend's own cursor-position query on the way into the alternate screen --
+//! which then times out, and the first frame never arrives. That is a hang with
+//! no message in it, so it is worth the sentence.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -52,7 +59,7 @@ use super::keymap::{self, Action, PrefixKey};
 use super::layout::{Drag, LayoutState, Regions};
 use super::login::{LoginScreen, Outcome, Stage};
 use super::overlays::{self, Overlays};
-use super::panels::{self, channels, dms, guilds, rgb, DmTab, PanelId};
+use super::panels::{self, channels, dms, guilds, rgb, DmTab, Fold, PanelId};
 use super::status;
 use super::theme::Theme;
 use super::{core_ext, layout};
@@ -91,6 +98,8 @@ pub struct Nav {
     pub dm_cursor: usize,
     pub dm_scroll: usize,
     pub dm_tab: DmTab,
+    /// Which list the channel panel is showing while it is carrying both.
+    pub fold: Fold,
     pub collapsed: HashSet<ChannelId>,
 }
 
@@ -189,7 +198,7 @@ impl App {
         cfg_path: PathBuf,
         session_path: Option<PathBuf>,
     ) -> Result<()> {
-        let graphics = Graphics::probe(Mode::parse(&cfg.ui.graphics));
+        let graphics = Graphics::probe_if_tty(Mode::parse(&cfg.ui.graphics));
         graphics.log_capabilities();
         let mut app = App::new(core, cfg, cfg_path, session_path, graphics);
 
@@ -204,15 +213,7 @@ impl App {
         while !self.quit {
             self.last_frame = Instant::now();
 
-            // Collected before they are applied: `drain` borrows the handle
-            // and `apply` takes the whole app. Bounded, so that a burst of
-            // gateway traffic cannot starve the draw -- whatever is left is
-            // still true next frame, because an event carries no data.
-            let batch: Vec<Event> = self.core.drain().take(DRAIN_CAP).collect();
-            for ev in batch {
-                self.apply(ev);
-            }
-            self.refresh();
+            self.tick();
 
             term.draw(|f| self.draw(f.area(), f.buffer_mut()))?;
 
@@ -233,6 +234,23 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Everything a frame does before it draws: take what the core has said,
+    /// and copy out what the panels need if anything has changed.
+    ///
+    /// Its own function so that a test can advance the program without a
+    /// terminal, which is how the snapshots are taken.
+    pub fn tick(&mut self) {
+        // Collected before they are applied: `drain` borrows the handle and
+        // `apply` takes the whole app. Bounded, so that a burst of gateway
+        // traffic cannot starve the draw -- whatever is left is still true next
+        // frame, because an event carries no data.
+        let batch: Vec<Event> = self.core.drain().take(DRAIN_CAP).collect();
+        for event in batch {
+            self.apply(event);
+        }
+        self.refresh();
     }
 
     // -- events from the core ---------------------------------------------
@@ -532,8 +550,12 @@ impl App {
     fn move_cursor(&mut self, delta: isize) {
         let focus = self.layout.focus();
         let height = usize::from(self.body_height(focus));
+        // A folded channel panel showing the DM list moves the DM cursor: the
+        // panel is the list it is drawing, whatever its id says.
+        let folded = self.dms_in_the_fold();
         let len = match focus {
             PanelId::Guilds => self.view.guilds.len(),
+            PanelId::Channels if folded => self.dm_rows().len(),
             PanelId::Channels => self.view.channels.len(),
             PanelId::Dms => self.dm_rows().len(),
             _ => return,
@@ -543,6 +565,7 @@ impl App {
         }
         let (cursor, scroll) = match focus {
             PanelId::Guilds => (&mut self.nav.guild_cursor, &mut self.nav.guild_scroll),
+            PanelId::Channels if folded => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
             PanelId::Channels => (&mut self.nav.channel_cursor, &mut self.nav.channel_scroll),
             PanelId::Dms => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
             _ => return,
@@ -563,6 +586,13 @@ impl App {
 
     /// Open whatever the cursor is on in the focused panel.
     fn activate(&mut self) {
+        if self.layout.focus() == PanelId::Channels && self.dms_in_the_fold() {
+            if let Some(dms::Row::Dm { id, .. }) = self.dm_rows().get(self.nav.dm_cursor) {
+                let id = *id;
+                self.open_channel(id);
+            }
+            return;
+        }
         match self.layout.focus() {
             PanelId::Guilds => {
                 let index = self.nav.guild_cursor;
@@ -717,10 +747,11 @@ impl App {
             Action::ToggleGuilds => self.layout.toggle(PanelId::Guilds),
             Action::ToggleChannels => self.layout.toggle(PanelId::Channels),
             Action::ToggleDms => {
-                if self.layout.is_open(PanelId::Dms) && self.layout.dms_folded() {
-                    // Folded into the channel panel: the key swaps the tab
-                    // rather than closing a list that is not on screen.
-                    self.swap_dm_tab();
+                if self.layout.dms_folded() {
+                    // Folded into the channel panel: the key swaps what that
+                    // panel is showing rather than closing a list that has no
+                    // panel to close.
+                    self.swap_fold();
                 } else {
                     self.layout.toggle(PanelId::Dms);
                 }
@@ -802,6 +833,14 @@ impl App {
         }
     }
 
+    fn swap_fold(&mut self) {
+        self.nav.fold = match self.nav.fold {
+            Fold::Channels => Fold::Dms,
+            Fold::Dms => Fold::Channels,
+        };
+        self.layout.focus_set(PanelId::Channels);
+    }
+
     fn swap_dm_tab(&mut self) {
         self.nav.dm_tab = match self.nav.dm_tab {
             DmTab::Dms => DmTab::Friends,
@@ -875,7 +914,7 @@ impl App {
         };
         // A header word first: it is drawn over the panel's own first row, and
         // the hit box comes from the same function the renderer used.
-        let words = panels::words(panel, self.nav.dm_tab);
+        let words = panels::words(panel, self.nav.dm_tab, self.fold());
         if let Some(word) = starkit::chrome::header::hit(rect, &words, x, y) {
             self.word_click(panel, word);
             return;
@@ -888,6 +927,17 @@ impl App {
                 let v = self.guilds_view(false);
                 if let Some(index) = guilds::row_at(body, &v, y) {
                     self.select_guild(index);
+                }
+            }
+            PanelId::Channels if self.dms_in_the_fold() => {
+                let v = self.dms_view(false);
+                if let Some(index) = dms::row_at(body, &v, y) {
+                    if self.dm_rows().get(index).is_some_and(dms::Row::selectable) {
+                        self.nav.dm_cursor = index;
+                        if double {
+                            self.activate();
+                        }
+                    }
                 }
             }
             PanelId::Channels => {
@@ -922,6 +972,7 @@ impl App {
         match word {
             panels::Word::Close => self.layout.toggle(panel),
             panels::Word::ShowFriends | panels::Word::ShowDms => self.swap_dm_tab(),
+            panels::Word::ShowMessages | panels::Word::ShowChannels => self.swap_fold(),
             panels::Word::Zen => self.handle(Action::ToggleZen),
             panels::Word::Settings => self.handle(Action::OpenPanelSettings),
             panels::Word::Search => self.handle(Action::Search),
@@ -985,8 +1036,18 @@ impl App {
             scroll: self.nav.channel_scroll,
             focused,
             open: self.nav.channel,
-            folded_tab: self.layout.dms_folded().then_some(self.nav.dm_tab),
         }
+    }
+
+    /// Which list the channel panel is carrying, or `None` when the DM list
+    /// has a panel of its own.
+    fn fold(&self) -> Option<Fold> {
+        self.layout.dms_folded().then_some(self.nav.fold)
+    }
+
+    /// Whether the DM list is being drawn inside the channel panel.
+    fn dms_in_the_fold(&self) -> bool {
+        self.fold() == Some(Fold::Dms)
     }
 
     fn dms_view(&self, focused: bool) -> dms::View<'_> {
@@ -1027,7 +1088,7 @@ impl App {
             };
             let focused = panel == focus;
             let title = self.panel_title(panel);
-            let words = panels::words(panel, self.nav.dm_tab);
+            let words = panels::words(panel, self.nav.dm_tab, self.fold());
             let body = panels::frame(
                 rect,
                 buf,
@@ -1044,6 +1105,9 @@ impl App {
             }
             match panel {
                 PanelId::Guilds => guilds::render(body, buf, &self.guilds_view(focused)),
+                PanelId::Channels if self.dms_in_the_fold() => {
+                    dms::render(body, buf, &self.dms_view(focused))
+                }
                 PanelId::Channels => channels::render(body, buf, &self.channels_view(focused)),
                 PanelId::Dms => dms::render(body, buf, &self.dms_view(focused)),
                 PanelId::Chat => super::panels::chat::render(
@@ -1080,6 +1144,10 @@ impl App {
         match panel {
             // The channel list says which server it is listing, because at
             // twenty-six columns the rail's two letters are not an answer.
+            PanelId::Channels if self.dms_in_the_fold() => match self.nav.dm_tab {
+                DmTab::Dms => "messages".into(),
+                DmTab::Friends => "friends".into(),
+            },
             PanelId::Channels => match self.nav.guild {
                 Some(g) => self
                     .core

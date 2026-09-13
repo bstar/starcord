@@ -96,6 +96,9 @@ impl PanelId {
 pub enum Word {
     Close,
     Settings,
+    /// The channel panel's tab, when the DM list has folded into it.
+    ShowMessages,
+    ShowChannels,
     /// The DM panel's tab toggle, which says where it would go rather than
     /// where it is.
     ShowFriends,
@@ -113,6 +116,8 @@ impl header::Word for Word {
         match self {
             Word::Close => "close".into(),
             Word::Settings => "settings".into(),
+            Word::ShowMessages => "messages".into(),
+            Word::ShowChannels => "channels".into(),
             Word::ShowFriends => "friends".into(),
             Word::ShowDms => "dms".into(),
             Word::Search => "search".into(),
@@ -129,10 +134,22 @@ impl header::Word for Word {
 ///
 /// Chat has no `close`: it is the one panel that cannot be closed, and offering
 /// a word that does nothing is worse than offering none.
-pub fn words(panel: PanelId, dm_tab: DmTab) -> Vec<Word> {
+pub fn words(panel: PanelId, dm_tab: DmTab, folded: Option<Fold>) -> Vec<Word> {
     match panel {
         PanelId::Guilds => vec![Word::Close],
-        PanelId::Channels => vec![Word::Settings, Word::Close],
+        // When the DM list has folded in here the panel is carrying two lists,
+        // so it grows the word that swaps them. The word names the list you
+        // would go to, as the DM panel's own tab does.
+        //
+        // It sits to the right of `settings` because the header drops words
+        // from the left as it narrows, and a folded panel is a narrow one by
+        // definition: the tab has to outlive the settings, or the only way to
+        // the DM list disappears exactly when it is the only way there is.
+        PanelId::Channels => match folded {
+            Some(Fold::Channels) => vec![Word::Settings, Word::ShowMessages, Word::Close],
+            Some(Fold::Dms) => vec![Word::Settings, Word::ShowChannels, Word::Close],
+            None => vec![Word::Settings, Word::Close],
+        },
         PanelId::Dms => vec![
             match dm_tab {
                 DmTab::Dms => Word::ShowFriends,
@@ -152,6 +169,18 @@ pub enum DmTab {
     #[default]
     Dms,
     Friends,
+}
+
+/// Which list the channel panel is showing, while it is carrying both.
+///
+/// A narrow terminal cannot give the DM list a panel of its own, and closing
+/// it outright would mean losing the way to a conversation because the window
+/// got smaller. So it folds in here behind a word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Fold {
+    #[default]
+    Channels,
+    Dms,
 }
 
 /// Everything a panel needs that is not its own contents.
@@ -192,10 +221,15 @@ pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
             f.title,
             starkit::chrome::frame::TITLE_TRAIL
         );
-        // Clipped rather than wrapped: a title is a label, and a panel narrow
-        // enough to cut one is narrow enough that the cut says so.
-        let room = usize::from(area.width.saturating_sub(2));
-        let title: String = title.chars().take(room).collect();
+        // All of it or none of it. A clipped title is a word cut off mid-way
+        // that reads as a fault rather than as a label -- the guild rail is
+        // eight columns wide and `= serv` is not the name of anything.
+        let room = area.width.saturating_sub(2);
+        let title = if width_of(&title) <= room {
+            title
+        } else {
+            String::new()
+        };
         let style = if f.focused {
             Style::default()
                 .fg(rgb(t.titlebar_active_fg))
@@ -216,15 +250,48 @@ pub fn rgb(c: starkit::theme::color::Rgb) -> starkit::ratatui::style::Color {
     starkit::ratatui::style::Color::Rgb(c.r, c.g, c.b)
 }
 
+/// Columns a string takes on screen.
+pub fn width_of(text: &str) -> u16 {
+    starkit::wrap::width_of(text)
+}
+
+/// Cut and pad a row to exactly `width` columns.
+///
+/// By display width, never by character count. Channel names, servers and the
+/// people in a DM all routinely contain emoji, and an emoji is two columns; a
+/// row measured in characters is a row one cell wider than the panel it is in,
+/// which writes over the border and leaves it there until something else
+/// redraws it. That is the artefact this function exists to prevent, and it is
+/// why no panel formats a row with `{:width$}`.
+pub fn fit(text: &str, width: u16) -> String {
+    let mut out = String::with_capacity(usize::from(width) + 4);
+    let mut used = 0u16;
+    for (_, cluster) in starkit::wrap::clusters(text) {
+        let w = width_of(cluster);
+        if used + w > width {
+            break;
+        }
+        out.push_str(cluster);
+        used += w;
+    }
+    // A double-width cluster at the edge leaves one column over; a space is
+    // what fills it, because a half-drawn emoji is not a thing a terminal can
+    // show.
+    for _ in used..width {
+        out.push(' ');
+    }
+    out
+}
+
 /// One dim line in the middle of an empty panel.
 pub fn empty(area: Rect, buf: &mut Buffer, theme: &Theme, text: &str) {
     if area.height == 0 || area.width == 0 {
         return;
     }
     let y = area.y + area.height / 2;
-    let width = usize::from(area.width);
-    let text: String = text.chars().take(width).collect();
-    let x = area.x + (area.width.saturating_sub(text.chars().count() as u16)) / 2;
+    let text = fit(text, area.width);
+    let text = text.trim_end();
+    let x = area.x + area.width.saturating_sub(width_of(text)) / 2;
     buf.set_string(x, y, text, Style::default().fg(rgb(theme.empty_fg)));
 }
 
@@ -265,7 +332,7 @@ mod tests {
     #[test]
     fn the_chat_and_composer_offer_no_close() {
         for p in FOCUS_ORDER {
-            let has_close = words(p, DmTab::Dms).contains(&Word::Close);
+            let has_close = words(p, DmTab::Dms, None).contains(&Word::Close);
             assert_eq!(
                 has_close,
                 p.closable(),
@@ -279,8 +346,36 @@ mod tests {
     /// already are.
     #[test]
     fn the_message_tab_word_names_the_other_tab() {
-        assert!(words(PanelId::Dms, DmTab::Dms).contains(&Word::ShowFriends));
-        assert!(words(PanelId::Dms, DmTab::Friends).contains(&Word::ShowDms));
+        assert!(words(PanelId::Dms, DmTab::Dms, None).contains(&Word::ShowFriends));
+        assert!(words(PanelId::Dms, DmTab::Friends, None).contains(&Word::ShowDms));
+    }
+
+    /// The tab survives a narrow header; the settings word does not.
+    ///
+    /// The header drops words from the left, and a folded panel is narrow by
+    /// definition. Losing the only route to the DM list because the panel got
+    /// small is the failure this order prevents.
+    #[test]
+    fn the_folded_tab_outlives_the_settings_word() {
+        use starkit::ratatui::layout::Rect;
+        let words = words(PanelId::Channels, DmTab::Dms, Some(Fold::Channels));
+        let kept: Vec<Word> = starkit::chrome::header::slots(Rect::new(0, 0, 20, 6), &words)
+            .into_iter()
+            .map(|(w, _)| w)
+            .collect();
+        assert_eq!(kept, vec![Word::ShowMessages, Word::Close], "{kept:?}");
+    }
+
+    /// The folded channel panel grows a word that names the other list, and
+    /// loses it again when the DM list has a panel of its own.
+    #[test]
+    fn the_folded_channel_panel_grows_a_tab() {
+        assert!(words(PanelId::Channels, DmTab::Dms, Some(Fold::Channels))
+            .contains(&Word::ShowMessages));
+        assert!(words(PanelId::Channels, DmTab::Dms, Some(Fold::Dms)).contains(&Word::ShowChannels));
+        let plain = words(PanelId::Channels, DmTab::Dms, None);
+        assert!(!plain.contains(&Word::ShowMessages));
+        assert!(!plain.contains(&Word::ShowChannels));
     }
 
     #[test]
