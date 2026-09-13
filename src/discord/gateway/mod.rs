@@ -186,6 +186,7 @@ pub async fn run(
             Connection::Connecting
         });
 
+        let mut reached_ready = false;
         let outcome = connect_once(
             &config,
             &bridge,
@@ -193,6 +194,7 @@ pub async fn run(
             &cancel,
             &mut session,
             &recorded,
+            &mut reached_ready,
         )
         .await;
 
@@ -203,15 +205,17 @@ pub async fn run(
                 bridge.note(Note::error("gateway-fatal", reason));
                 break;
             }
-            Outcome::Ready => {
-                // The connection lived long enough to identify, so the next
-                // failure starts its backoff from zero rather than from
-                // wherever the last one left it.
-                attempt = 0;
-                continue;
-            }
             Outcome::Retry(reason) => {
-                attempt = attempt.saturating_add(1);
+                // A connection that got as far as READY was not a failure to
+                // connect, so the next attempt starts from the bottom of the
+                // ladder. Without this, a session that runs for a week and
+                // reconnects ten times waits a minute for the eleventh, having
+                // never once failed twice in a row.
+                attempt = if reached_ready {
+                    1
+                } else {
+                    attempt.saturating_add(1)
+                };
                 let wait = backoff(attempt);
                 bridge.set_status(Connection::Reconnecting {
                     attempt,
@@ -231,9 +235,7 @@ pub async fn run(
 }
 
 enum Outcome {
-    /// The socket closed after a successful identify or resume.
-    Ready,
-    /// It never got that far, or failed in a way worth waiting before retrying.
+    /// The socket is gone. Wait, then come back.
     Retry(String),
     /// Stop. Retrying cannot help.
     Fatal(String),
@@ -255,6 +257,9 @@ async fn connect_once(
     cancel: &CancellationToken,
     session: &mut Option<Session>,
     recorded: &AtomicU64,
+    // Set once the handshake completes, so the caller can tell a connection
+    // that never worked from a session that ended.
+    reached_ready: &mut bool,
 ) -> Outcome {
     let base = session
         .as_ref()
@@ -287,7 +292,6 @@ async fn connect_once(
     let mut inflater = Inflater::new();
     let mut heartbeat: Option<tokio::time::Interval> = None;
     let mut awaiting_ack = false;
-    let mut identified = false;
     let ready_deadline = tokio::time::Instant::now() + READY_TIMEOUT;
 
     loop {
@@ -306,7 +310,7 @@ async fn connect_once(
                 return Outcome::Cancelled;
             }
 
-            _ = tokio::time::sleep_until(ready_deadline), if !identified => {
+            _ = tokio::time::sleep_until(ready_deadline), if !*reached_ready => {
                 let _ = socket.close(None).await;
                 return Outcome::Retry("the gateway did not answer the handshake".into());
             }
@@ -524,7 +528,7 @@ async fn connect_once(
                                     seq: envelope.s.unwrap_or(0),
                                     resume_url: ready.resume_gateway_url.clone(),
                                 });
-                                identified = true;
+                                *reached_ready = true;
                                 bridge.apply(dispatch);
                                 bridge.set_status(Connection::Ready {
                                     since: std::time::Instant::now(),
@@ -533,7 +537,7 @@ async fn connect_once(
                                 continue;
                             }
                             Dispatch::Resumed => {
-                                identified = true;
+                                *reached_ready = true;
                                 bridge.set_status(Connection::Ready {
                                     since: std::time::Instant::now(),
                                     resumed: true,
