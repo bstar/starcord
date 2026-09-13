@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use starkit::graphics::Graphics;
+use starkit::graphics::{Graphics, Mode};
 use starkit::ratatui::backend::TestBackend;
 use starkit::ratatui::Terminal;
 
@@ -146,6 +146,57 @@ fn in_general(theme: &str) -> (App, fake::Idle) {
 /// `#general` in the first server, which is where the conversation is.
 const CHANNEL: crate::discord::snowflake::ChannelId =
     crate::discord::snowflake::ChannelId(200000000000000011);
+
+/// `#random`, which is where the pictures are.
+const PICTURES: crate::discord::snowflake::ChannelId =
+    crate::discord::snowflake::ChannelId(200000000000000012);
+
+/// The picture channel, on a terminal drawing half blocks.
+///
+/// Half blocks rather than a protocol because they are the one way of drawing
+/// a picture that lands in the buffer as cells: a snapshot can see them, and
+/// every terminal has them. What this pins is the part that is the same
+/// either way -- how many rows a picture was given, where the avatars and the
+/// emoji went, and that the rail grew to hold an icon.
+fn in_pictures(theme: &str) -> (App, fake::Idle) {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/gateway/session.json");
+    let session = fake::Session::read(&path).expect("the replay fixture");
+    let (core, mut idle) = fake::loaded(&session, 1_000);
+
+    let mut graphics = Graphics::disabled();
+    graphics.set_mode(Mode::Blocks);
+    let mut cfg = config(theme);
+    // Six rows rather than the default twelve, which is also what makes this a
+    // test of `[chat] max_image_rows`: a sixty-four by forty-eight picture
+    // across thirty-five columns works out at thirteen rows, and the whole
+    // conversation would be one photograph.
+    cfg.chat.max_image_rows = 6;
+    let mut app = App::new(
+        core,
+        cfg,
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        graphics,
+    );
+    app.tz = jiff::tz::TimeZone::UTC;
+    app.tick();
+    app.open_channel(PICTURES);
+    app.tick();
+
+    // One frame places the pictures, which is what asks for them; the replay
+    // answers, and the frame after that has them. Twice over, because an
+    // avatar that arrives is a message to measure again, and measuring it is
+    // what places the next picture down.
+    let mut asked = 0;
+    for _ in 0..3 {
+        render(&mut app, 100, 30);
+        asked += idle.pump();
+        app.tick();
+    }
+    assert!(asked > 0, "nothing was asked for");
+    (app, idle)
+}
 
 #[test]
 fn the_login_screen() {
@@ -313,4 +364,26 @@ fn the_typing_row() {
     // before the connection drops.
     let (mut app, _idle) = loaded_at("terminal", 9_000);
     insta::assert_snapshot!("chat-typing-terminal-100x30", render(&mut app, 100, 30));
+}
+
+/// The picture channel, drawn.
+///
+/// Everything M4 added at once: an inline image given rows from its declared
+/// size, an animated one showing its first frame, a custom emoji inline and on
+/// a reaction, a card with its thumbnail against the right edge, avatars in
+/// the gutter and icons in the rail.
+#[test]
+fn the_pictures() {
+    let (mut app, _idle) = in_pictures("terminal");
+    insta::assert_snapshot!("pictures-halfblocks-100x30", render(&mut app, 100, 30));
+}
+
+/// The same channel with no pictures at all, which is the chip it was before.
+/// The two snapshots side by side are the whole of what `[ui] graphics` does.
+#[test]
+fn the_pictures_as_chips() {
+    let (mut app, _idle) = loaded("terminal");
+    app.open_channel(PICTURES);
+    app.tick();
+    insta::assert_snapshot!("pictures-chips-100x30", render(&mut app, 100, 30));
 }

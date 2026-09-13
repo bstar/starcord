@@ -856,6 +856,7 @@ impl<'a> Writer<'a> {
                 viewable: attachment.is_image(),
             });
 
+            let chip = attachment_chip(attachment);
             let rows = self.picture_rows(attachment);
             if rows > 0 {
                 self.out.images.push(ImageSlot {
@@ -873,13 +874,18 @@ impl<'a> Writer<'a> {
                     } else {
                         SlotKind::Still
                     },
-                    alt: String::new(),
+                    alt: chip,
                 });
                 for _ in 0..rows {
                     self.placeholder_row(gutter);
                 }
+                // No chip under it. The rows are the picture; a caption
+                // repeating its file name under every photograph is a caption
+                // nobody reads, and the one case it is needed -- the fetch
+                // failed -- draws it in the reserved rows instead.
+                continue;
             }
-            self.chip(gutter, &attachment_chip(attachment));
+            self.chip(gutter, &chip);
         }
     }
 

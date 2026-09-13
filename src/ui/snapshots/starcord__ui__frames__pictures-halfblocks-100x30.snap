@@ -1,0 +1,34 @@
+---
+source: src/ui/frames.rs
+expression: "render(&mut app, 100, 30)"
+---
+┌──────┐┌═ First Guild ═─────────┐┌═ #random · First Guild ═───────────────┐┌═ members ═───────────┐
+│      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
+│ @   1││# rules                 ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││REGULARS — 2          │
+│      ││▾ TEXT CHANNELS         ││▀▀▀▀ Jordan  11:01                      ││● Alex                │
+│▀▀▀▀ 2││  # general (2)         ││▀▀▀▀ and one that moves                 ││● Jo                  │
+│▀▀▀▀  ││  # random              ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││ONLINE — 1            │
+│▀▀▀▀ •││  ! announcements       ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││● Sam                 │
+│▀▀▀▀  ││▾ ARCHIVE               ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││OFFLINE — 1           │
+│ ··   ││  # old-decisions       ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││● Robin               │
+│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▐│                      │
+│      ││                        ││     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▐│                      │
+│      ││                        ││▀▀▀▀ Robin  11:02                       ▐│                      │
+│      ││                        ││▀▀▀▀ nice ▀▀ one                        ▐│                      │
+│      ││                        ││     [▀▀ 3]                             ▐│                      │
+│      ││                        ││▀▀▀▀ Jordan  11:03                      ▐│                      │
+│      ││                        ││▀▀▀▀ https://example.invalid/page       ▐│                      │
+│      │└────────────────────────┘│▕    │ A page with a picture on it      ▐│                      │
+│      │┌═ messages ═────────────┐│▕    │ The card's thumbnail is drawn    ▐│                      │
+│      ││         friends  close ││▕    │ against the right edge, so the   ▐│                      │
+│      ││○ Wren of the Long Displ││▕    │ words keep the width they had.   ▐│                      │
+│      ││○ Alex, Jordan [3]      ││▕                              ▀▀▀▀▀▀▀▀ ▐│                      │
+│      ││● Alex (1)              ││▕                              ▀▀▀▀▀▀▀▀ ▐│                      │
+│      ││                        ││▕                              ▀▀▀▀▀▀▀▀ ▐│                      │
+│      ││                        ││▕                              ▀▀▀▀▀▀▀▀ ▐│                      │
+│      ││                        │└────────────────────────────────────────┘│                      │
+│      ││                        │┌═ compose ═─────────────────────────────┐│                      │
+│      ││                        ││                     attach  emoji  gif ││                      │
+│      ││                        ││message #random · First Guild           ││                      │
+└──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
+? help  #random · First Guild                             chat  6 unread · @3  ▲ online  half blocks

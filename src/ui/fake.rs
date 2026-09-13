@@ -32,6 +32,14 @@
 //!
 //! ## Messages
 //!
+//! ## Pictures
+//!
+//! `"media"` maps a name to a file beside the session: an avatar or a server
+//! icon by its hash, a custom emoji by its id, and anything addressed by a URL
+//! by the last segment of it. `FetchMedia` is answered by decoding that file
+//! through the same [`crate::discord::media::decode`] the core uses, so a
+//! picture that draws here is one that would draw there.
+//!
 //! A timeline is a poor way to describe a conversation that is already there
 //! when a channel is opened, so the messages come from a second file named by
 //! `"messages"` and resolved beside the session. Opening a channel fills its
@@ -52,6 +60,7 @@ use serde::Deserialize;
 use crate::discord::auth::TokenStoreKind;
 use crate::discord::gateway::payload;
 use crate::discord::handle::{AuthEvent, Connection, HandleParts, MessagesChange, Nonce, Note};
+use crate::discord::media::{decode, Decoded, MediaError, MediaKey, Want};
 use crate::discord::model::Message;
 use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::state::{apply, State};
@@ -141,10 +150,66 @@ impl Conversations {
     }
 }
 
+/// The fixture's pictures, by the name a [`MediaKey`] boils down to.
+#[derive(Debug, Clone, Default)]
+pub struct Media {
+    files: std::collections::HashMap<String, Arc<Vec<u8>>>,
+}
+
+impl Media {
+    /// The name a key is looked up by.
+    ///
+    /// A hash for the things Discord addresses by content, an id for an emoji,
+    /// and the last segment of the path for everything carrying a URL --
+    /// signature parameters and all, because the fixture's URLs are made up
+    /// and the file name is the only part of one worth matching on.
+    pub fn name(key: &MediaKey) -> String {
+        match key {
+            MediaKey::Avatar { hash, .. } | MediaKey::GuildIcon { hash, .. } => hash.clone(),
+            MediaKey::Emoji { id, .. } => format!("emoji/{id}"),
+            MediaKey::Sticker { id } => format!("sticker/{id}"),
+            MediaKey::Attachment { url, .. }
+            | MediaKey::EmbedImage { url }
+            | MediaKey::Gif { url } => url
+                .split('?')
+                .next()
+                .unwrap_or(url)
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string(),
+        }
+    }
+
+    pub fn bytes(&self, key: &MediaKey) -> Option<Arc<Vec<u8>>> {
+        self.files.get(&Self::name(key)).cloned()
+    }
+
+    /// Answer one request the way the media task would: decode to the size
+    /// that was asked for, or say why not.
+    pub fn answer(&self, key: &MediaKey, want: Want) -> Result<Arc<Decoded>, MediaError> {
+        let bytes = self
+            .bytes(key)
+            .ok_or_else(|| MediaError::Unsupported("the fixture has no such picture".into()))?;
+        match want {
+            Want::Bytes => Ok(Arc::new(Decoded::Bytes(bytes))),
+            Want::Decoded { max_w, max_h } => {
+                Ok(Arc::new(decode::decode(&bytes, max_w, max_h)?.decoded))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Session {
     #[serde(default)]
     pub steps: Vec<Step>,
+    /// Files beside this one, by the name a key boils down to.
+    #[serde(default)]
+    pub media: std::collections::HashMap<String, String>,
+    /// Filled in by [`Session::read`], for the same reason as the messages.
+    #[serde(skip)]
+    pub pictures: Media,
     /// A file of messages, beside this one. Relative to the session file, so a
     /// fixture can be copied as a pair.
     #[serde(default)]
@@ -165,9 +230,17 @@ impl Session {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let mut session = Self::parse(&text)?;
+        let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         if let Some(name) = session.messages.clone() {
-            let beside = path.parent().unwrap_or(Path::new(".")).join(&name);
-            session.conversations = Conversations::read(&beside)?;
+            session.conversations = Conversations::read(&dir.join(&name))?;
+        }
+        for (name, file) in &session.media {
+            let at = dir.join(file);
+            let bytes = std::fs::read(&at).with_context(|| format!("reading {}", at.display()))?;
+            session
+                .pictures
+                .files
+                .insert(name.clone(), Arc::new(bytes));
         }
         Ok(session)
     }
@@ -200,16 +273,50 @@ pub fn silent() -> (Handle, Idle) {
     (
         handle,
         Idle {
-            _commands: command_rx,
-            _events: event_tx,
+            commands: command_rx,
+            events: event_tx,
+            pictures: Media::default(),
         },
     )
 }
 
-/// The ends of a silent core's channels, kept alive.
+/// The ends of a core's channels, kept alive.
+///
+/// Holding it is what keeps the handle's channels open; a dropped one is a
+/// core that has gone away. [`Idle::pump`] is also the way a test with no
+/// thread answers what the interface asked for, which is how a snapshot gets
+/// real pictures in it without waiting on a clock.
 pub struct Idle {
-    _commands: tokio::sync::mpsc::Receiver<Command>,
-    _events: crossbeam_channel::Sender<Event>,
+    commands: tokio::sync::mpsc::Receiver<Command>,
+    events: crossbeam_channel::Sender<Event>,
+    pictures: Media,
+}
+
+impl Idle {
+    /// Answer every command waiting, as far as a file can. Returns how many.
+    ///
+    /// Only the media ones for now: everything else a test needs is already in
+    /// `State` before the first frame, and a picture cannot be, because what is
+    /// on screen is what decides which ones are asked for.
+    pub fn pump(&mut self) -> usize {
+        let mut answered = 0;
+        while let Ok(command) = self.commands.try_recv() {
+            if let Command::FetchMedia(request) = command {
+                let result = self.pictures.answer(&request.key, request.want);
+                if self
+                    .events
+                    .try_send(Event::Media {
+                        key: request.key,
+                        result,
+                    })
+                    .is_ok()
+                {
+                    answered += 1;
+                }
+            }
+        }
+        answered
+    }
 }
 
 /// A core that is already at a moment in the timeline, with no thread at all.
@@ -266,8 +373,9 @@ pub fn loaded(session: &Session, upto_ms: u64) -> (Handle, Idle) {
             dropped,
         }),
         Idle {
-            _commands: command_rx,
-            _events: event_tx,
+            commands: command_rx,
+            events: event_tx,
+            pictures: session.pictures.clone(),
         },
     )
 }
@@ -329,6 +437,7 @@ fn run(
     // the thing it is there to exercise. Any token is accepted: the point is
     // the interface, not the credential.
     let conversations = session.conversations.clone();
+    let pictures = session.pictures.clone();
     let mut served = Served::default();
     let mut signed_in = false;
     while !signed_in {
@@ -362,6 +471,7 @@ fn run(
                     &sink,
                     &state,
                     &conversations,
+                    &pictures,
                     &mut served,
                     user.as_deref(),
                 ),
@@ -462,15 +572,27 @@ impl Served {
 }
 
 /// Answer a command the way the real core would, as far as a file can.
+#[allow(clippy::too_many_arguments)]
 fn answer(
     command: Command,
     sink: &Sink,
     state: &Arc<RwLock<State>>,
     conversations: &Conversations,
+    pictures: &Media,
     served: &mut Served,
     me: Option<&crate::discord::model::User>,
 ) {
     match command {
+        Command::FetchMedia(request) => {
+            // Decoded on this thread rather than on a pool: the fixture's
+            // pictures are a kilobyte each, and a replay that spawned threads
+            // to resize them would be modelling the wrong thing.
+            let result = pictures.answer(&request.key, request.want);
+            sink.send(Event::Media {
+                key: request.key,
+                result,
+            });
+        }
         Command::OpenChannel(channel) => {
             // The events are sent whether or not there is anything to send:
             // the UI's spinner is driven by them, and a spinner that never

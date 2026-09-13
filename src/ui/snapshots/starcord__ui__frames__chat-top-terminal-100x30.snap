@@ -1,6 +1,5 @@
 ---
 source: src/ui/frames.rs
-assertion_line: 222
 expression: "render(&mut app, 100, 30)"
 ---
 ┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐

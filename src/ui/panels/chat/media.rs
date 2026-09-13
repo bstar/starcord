@@ -259,6 +259,9 @@ pub struct Placement {
     pub clipped: bool,
     pub key: MediaKey,
     pub shape: Shape,
+    /// What to say in the cells when the picture will never arrive: the chip
+    /// the renderer would have drawn instead of it.
+    pub alt: String,
 }
 
 /// What one frame's painting produced, for the caller to act on.
@@ -293,21 +296,17 @@ pub fn paint(
         };
         let clipped = place.clipped || rect != place.rect;
         if matches!(place.shape, Shape::Emoji { .. }) && out.emoji >= EMOJI_PER_FRAME {
-            fallback(place, rect, buf, theme);
+            fallback(place, rect, buf, theme, &MediaState::Loading);
             continue;
         }
 
-        // `Failed` falls through here as well: nothing more is coming, and the
-        // chip the renderer drew under the reserved rows already says what the
-        // picture was and where it came from.
-        let MediaState::Ready(decoded) =
-            store.want(&place.key, place.rect.width, place.rect.height)
-        else {
-            fallback(place, rect, buf, theme);
+        let state = store.want(&place.key, place.rect.width, place.rect.height);
+        let MediaState::Ready(decoded) = &state else {
+            fallback(place, rect, buf, theme, &state);
             continue;
         };
-        let Some(img) = first_frame(&decoded) else {
-            fallback(place, rect, buf, theme);
+        let Some(img) = first_frame(decoded) else {
+            fallback(place, rect, buf, theme, &MediaState::Failed);
             continue;
         };
 
@@ -369,8 +368,34 @@ fn draw_one(
 }
 
 /// What the cells hold while there are no pixels for them.
-fn fallback(place: &Placement, rect: Rect, buf: &mut Buffer, theme: &Theme) {
+///
+/// A picture that is on its way is a quiet block of `░`; one that will never
+/// arrive says what it was, in the same rows, because the alternative is a
+/// placeholder that waits forever.
+fn fallback(place: &Placement, rect: Rect, buf: &mut Buffer, theme: &Theme, state: &MediaState) {
+    let failed = matches!(state, MediaState::Failed);
     match &place.shape {
+        Shape::Picture | Shape::Play if failed => {
+            for y in 0..rect.height {
+                buf.set_string(
+                    rect.x,
+                    rect.y + y,
+                    " ".repeat(usize::from(rect.width)),
+                    Style::default(),
+                );
+            }
+            let label = if place.alt.is_empty() {
+                "[the picture could not be fetched]"
+            } else {
+                place.alt.as_str()
+            };
+            buf.set_string(
+                rect.x,
+                rect.y,
+                fit(label, rect.width),
+                Style::default().fg(rgb(theme.chat.system_fg)),
+            );
+        }
         Shape::Picture | Shape::Play => {
             graphics::placeholder(rect, buf, Style::default().fg(rgb(theme.chat.spoiler_bg)));
         }
@@ -474,6 +499,7 @@ mod tests {
             clipped: false,
             key,
             shape: Shape::Picture,
+            alt: String::new(),
         }
     }
 
@@ -666,6 +692,7 @@ mod tests {
                 shape: Shape::Emoji {
                     name: format!("e{i}"),
                 },
+                alt: String::new(),
             });
         }
         store.begin_frame();

@@ -2099,6 +2099,7 @@ impl App {
                         initials: icon.initials,
                         colour: self.look.theme.row_fg,
                     },
+                    alt: String::new(),
                 }),
         );
 

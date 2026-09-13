@@ -869,6 +869,7 @@ fn collect_slots(
             clipped: top < floor,
             key: slot.key.clone(),
             shape,
+            alt: slot.alt.clone(),
         });
     }
     for slot in &rendered.emoji {
@@ -891,6 +892,7 @@ fn collect_slots(
             shape: media::Shape::Emoji {
                 name: slot.name.clone(),
             },
+            alt: String::new(),
         });
     }
 }
