@@ -1,0 +1,28 @@
+name: Feature request
+description: Something you would like it to do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to do
+      description: >
+        The problem behind the request, which often has an answer that is not
+        the feature.
+  - type: checkboxes
+    id: person
+    attributes:
+      label: If it is something the client would do on its own
+      description: >
+        This client only does what a person at the keyboard does, and
+        docs/account-safety.md says why. A request for something automatic
+        needs an argument that starts with why a human would have pressed a
+        key for it.
+      options:
+        - label: I have read that, and this is not an automated action

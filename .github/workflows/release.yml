@@ -1,0 +1,193 @@
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # First and cheap on purpose. A mistagged release is the one mistake that
+  # cannot be taken back, and this says so in twenty seconds rather than at the
+  # end of a half-hour build.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: sudo apt-get update && sudo apt-get install -y jq
+      - run: ./scripts/check-version.sh
+
+  ci:
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+  nix:
+    needs: guard
+    uses: ./.github/workflows/nix.yml
+  debian:
+    needs: guard
+    uses: ./.github/workflows/debian.yml
+  arch:
+    needs: guard
+    uses: ./.github/workflows/arch.yml
+
+  source:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      # What the PKGBUILD downloads and checksums, built reproducibly from the
+      # tag rather than taken from GitHub's unstable /archive/ endpoint.
+      - run: ./scripts/dist/source.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: starcord-source
+          path: dist/*.tar.gz
+
+  # Both of these build in bullseye for its glibc 2.31, which is the floor the
+  # documentation promises. A current runner's 2.39 would exclude Ubuntu 22.04
+  # and RHEL 9, which is a smaller audience than the .deb already serves.
+  tarball:
+    needs: guard
+    runs-on: ubuntu-latest
+    container: debian:bullseye-slim
+    steps:
+      # Bullseye left LTS in August 2026 and its security suite was removed
+      # from the mirrors, while the image itself was built with two years of
+      # those security updates installed, so neither deb.debian.org nor
+      # archive.debian.org can satisfy the versions already on it. Debian's
+      # snapshot service holds both suites exactly as they were on the last
+      # day of LTS, so apt is pointed there and told not to reject a Release
+      # file that is no longer re-signed. What this container is for is its
+      # glibc 2.31, so a frozen package set is the right thing here.
+      - run: |
+          printf 'deb http://snapshot.debian.org/archive/debian/20260830T000000Z bullseye main\ndeb http://snapshot.debian.org/archive/debian-security/20260830T000000Z bullseye-security main\n' > /etc/apt/sources.list
+          printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99bullseye-eol
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # A slim container defaults to `sh -e`; these scripts need bash.
+      - name: Build the portable tarball
+        shell: bash
+        run: ./scripts/dist/portable.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: starcord-tarball
+          path: dist/*.tar.gz
+
+  appimage:
+    needs: guard
+    runs-on: ubuntu-latest
+    container: debian:bullseye-slim
+    steps:
+      # Same frozen-snapshot setup as the tarball job above.
+      - run: |
+          printf 'deb http://snapshot.debian.org/archive/debian/20260830T000000Z bullseye main\ndeb http://snapshot.debian.org/archive/debian-security/20260830T000000Z bullseye-security main\n' > /etc/apt/sources.list
+          printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99bullseye-eol
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git file
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the AppImage
+        shell: bash
+        run: ./scripts/dist/appimage.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: starcord-appimage
+          path: dist/*.AppImage
+
+  # The one claim the AppImage makes is "download it and run it, on whatever
+  # you have". Nothing is installed in these containers, deliberately: if the
+  # glibc floor is wrong or a library that should have travelled did not, this
+  # is where it shows up rather than in somebody's issue.
+  #
+  # STAR/AMP decodes a tone here, because it has something to decode without an
+  # account. There is no equivalent for a chat client: everything past starting
+  # up needs a session. `probe --help` is what can be asserted without one, and
+  # it is more than a smoke test looks like -- it is clap rendering after the
+  # whole binary has been loaded and relocated.
+  verify-appimage:
+    needs: appimage
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:20.04
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - debian:11
+          - debian:12
+          - fedora:41
+          - rockylinux:9
+          - archlinux:latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: starcord-appimage
+      - name: Run it, with nothing installed
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          chmod +x starcord-*.AppImage
+          app=$(ls starcord-*.AppImage)
+          ./"$app" --version
+          ./"$app" probe --help
+
+  # Separately, once, with real FUSE: extract-and-run masks the exact failure
+  # most users hit on a distribution that no longer ships libfuse2.
+  verify-appimage-fuse:
+    needs: appimage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: starcord-appimage
+      - run: sudo apt-get update && sudo apt-get install -y libfuse2
+      - run: |
+          chmod +x starcord-*.AppImage
+          app=$(ls starcord-*.AppImage)
+          ./"$app" --version
+
+  publish:
+    # Deliberately not `nix`. It builds no release artifact, so gating the
+    # upload on it only means the assets sit unpublished behind the slowest
+    # job in the graph. It still runs, and still turns the badge red if it
+    # breaks; it just does not hold the release hostage.
+    needs: [ci, debian, arch, source, tarball, verify-appimage, verify-appimage-fuse]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: staging
+      # The Arch package is built and tested but not released: see arch.yml.
+      - name: Collect what actually ships
+        run: |
+          mkdir -p dist
+          find staging -name '*.deb' -o -name '*.AppImage' -o -name '*.tar.gz' \
+            | grep -v starcord-arch | xargs -I{} cp {} dist/
+          # Hashes taken here, over the bytes that are about to be uploaded,
+          # rather than trusting what each job thought it produced.
+          cd dist && sha256sum -- * | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      # Keyless provenance instead of a GPG key: it proves the file came from
+      # this workflow at this commit, which is a stronger claim than a
+      # signature, and there is no key to lose.
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: "dist/*"
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/*

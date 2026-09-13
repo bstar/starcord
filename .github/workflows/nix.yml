@@ -8,6 +8,7 @@ on:
       - '**/*.md'
       - 'docs/**'
       - 'LICENSE'
+      - 'LICENSES/**'
       - '.editorconfig'
       - '.github/ISSUE_TEMPLATE/**'
   pull_request:

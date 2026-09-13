@@ -1,0 +1,60 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Please do not paste a token, and please read anything you copy out of
+        the log before you paste it: at debug level it names the servers and
+        channels you are in. Nothing in it is ever a token.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it
+      options: [Nix, .deb, Arch, AppImage, portable tarball, from source]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`starcord --version`"
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and $TERM
+      description: >
+        Needed for anything visual: pictures, emoji widths, colours, the mouse,
+        the layout at a given size. Say whether you are inside tmux or screen.
+  - type: dropdown
+    id: store
+    attributes:
+      label: Where is the token kept
+      description: >
+        The client says this when it signs in, and `[auth] store` decides it.
+      options: [the system keyring, credentials.toml, not sure]
+  - type: textarea
+    id: probe
+    attributes:
+      label: For anything to do with connecting
+      description: >
+        `starcord probe --token-from-stdin < token.txt` connects with no
+        terminal attached and prints every transition with a timestamp, which
+        separates a protocol problem from a drawing one. Paste that output.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: "`starcord -v`, then ~/.local/starcord/cache/starcord.log"
+      render: shell
