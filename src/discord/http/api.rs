@@ -212,9 +212,74 @@ pub async fn remote_auth_login(http: &Http, ticket: &str) -> Result<RemoteAuthTo
         .await
 }
 
+/// `POST /attachments/refresh-urls`.
+#[derive(Debug, Serialize)]
+struct RefreshUrls<'a> {
+    attachment_urls: &'a [String],
+}
+
+/// One re-signed URL. `original` comes back so a batch can be matched up; this
+/// client sends one at a time and still reads it, because a response that
+/// answers a different question is worth noticing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RefreshedUrl {
+    #[serde(default)]
+    pub original: String,
+    pub refreshed: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RefreshedUrls {
+    #[serde(default)]
+    pub refreshed_urls: Vec<RefreshedUrl>,
+}
+
+/// Re-sign attachment URLs that have expired.
+///
+/// Discord's attachment links carry an expiry and a signature and stop working
+/// after a few hours. The bytes have not moved; only the signature has lapsed.
+/// This is the one endpoint that says so, and it is why a 403 or a 404 on an
+/// attachment is worth exactly one retry rather than being cached as a failure.
+pub async fn refresh_attachment_urls(
+    http: &Http,
+    urls: &[String],
+) -> Result<RefreshedUrls, HttpError> {
+    http.request(
+        Route::RefreshAttachmentUrls,
+        Some(&RefreshUrls {
+            attachment_urls: urls,
+        }),
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refresh_asks_by_url_and_answers_by_url() {
+        let body = serde_json::to_value(RefreshUrls {
+            attachment_urls: &["https://cdn.discordapp.com/attachments/1/2/a.png".to_string()],
+        })
+        .unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "attachment_urls": ["https://cdn.discordapp.com/attachments/1/2/a.png"]
+            })
+        );
+
+        // `original` is optional, because a response that omits it is still an
+        // answer to a batch of one.
+        let answer: RefreshedUrls = serde_json::from_str(
+            r#"{"refreshed_urls":[{"refreshed":"https://cdn.discordapp.com/a?ex=1"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(answer.refreshed_urls.len(), 1);
+        assert_eq!(answer.refreshed_urls[0].original, "");
+        assert!(answer.refreshed_urls[0].refreshed.contains("ex=1"));
+    }
 
     #[test]
     fn the_login_body_is_just_a_ticket() {

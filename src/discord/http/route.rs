@@ -79,6 +79,12 @@ pub enum Route {
     Typing(ChannelId),
     /// Mark a message, and everything before it, read.
     Ack(ChannelId, MessageId),
+    /// Re-sign a batch of expired attachment URLs.
+    ///
+    /// Not a channel route, despite what it fetches: Discord counts it against
+    /// one allowance for the whole account, because a client that has scrolled
+    /// back through a year of pictures asks for a great many of them at once.
+    RefreshAttachmentUrls,
 }
 
 impl Route {
@@ -88,7 +94,8 @@ impl Route {
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
             | Route::Typing(_)
-            | Route::Ack(_, _) => reqwest::Method::POST,
+            | Route::Ack(_, _)
+            | Route::RefreshAttachmentUrls => reqwest::Method::POST,
             Route::EditMessage(_, _) => reqwest::Method::PATCH,
             Route::DeleteMessage(_, _) => reqwest::Method::DELETE,
         }
@@ -120,6 +127,7 @@ impl Route {
             Route::Ack(channel, message) => {
                 Cow::Owned(format!("/channels/{channel}/messages/{message}/ack"))
             }
+            Route::RefreshAttachmentUrls => Cow::Borrowed("/attachments/refresh-urls"),
         }
     }
 
@@ -149,6 +157,7 @@ impl Route {
             Route::Ack(channel, _) => {
                 Cow::Owned(format!("POST /channels/{channel}/messages/:id/ack"))
             }
+            Route::RefreshAttachmentUrls => Cow::Borrowed("POST /attachments/refresh-urls"),
         }
     }
 
@@ -266,6 +275,7 @@ mod tests {
         for route in [
             Route::Me,
             Route::RemoteAuthLogin,
+            Route::RefreshAttachmentUrls,
             history(1),
             Route::CreateMessage(ChannelId(1)),
             Route::EditMessage(ChannelId(1), MessageId(2)),
