@@ -66,11 +66,11 @@ pub enum Action {
     // Focus.
     FocusNext,
     FocusPrev,
-    FocusGuilds,
+    FocusServers,
     FocusChannels,
     FocusDms,
-    FocusChat,
-    FocusComposer,
+    FocusConversation,
+    FocusCompose,
     FocusMembers,
 
     // Getting somewhere.
@@ -118,7 +118,7 @@ pub enum Action {
     ToggleDms,
     ToggleMembers,
     ToggleZen,
-    OpenPanelSettings,
+    OpenModuleSettings,
     ClosePanel,
 
     // The media viewer.
@@ -140,19 +140,19 @@ pub enum Action {
     CloseOverlay,
 }
 
-/// Which panel a key is offered to first.
+/// Which module a key is offered to first.
 ///
-/// Mirrors [`PanelId`](super::panels::PanelId) and is its own type so that this
-/// module does not depend on the panels, which depend on it. `Media` and
-/// `Picker` are overlays rather than panels and have no `PanelId`, which is the
-/// other half of why the two enums are separate.
+/// Mirrors [`ModuleId`](super::panels::ModuleId) and is its own type so that
+/// this module does not depend on the panels, which depend on it. `Media` and
+/// `Picker` are overlays rather than modules and have no `ModuleId`, which is
+/// the other half of why the two enums are separate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Module {
-    Guilds,
+    Servers,
     Channels,
     Dms,
-    Chat,
-    Composer,
+    Conversation,
+    Compose,
     Members,
     Media,
     Picker,
@@ -169,7 +169,7 @@ pub enum Scope {
 
 /// The list panels, which share their fold and unfold keys.
 const LISTS: &[Module] = &[
-    Module::Guilds,
+    Module::Servers,
     Module::Channels,
     Module::Dms,
     Module::Members,
@@ -184,8 +184,8 @@ const LISTS: &[Module] = &[
 pub const GROUPS: &[(&str, Scope)] = &[
     ("navigation", Scope::Global),
     ("lists", Scope::Modules(LISTS)),
-    ("chat", Scope::Modules(&[Module::Chat])),
-    ("composer", Scope::Modules(&[Module::Composer])),
+    ("chat", Scope::Modules(&[Module::Conversation])),
+    ("composer", Scope::Modules(&[Module::Compose])),
     ("pickers", Scope::Modules(&[Module::Picker])),
     ("media viewer", Scope::Modules(&[Module::Media])),
     ("panels", Scope::Global),
@@ -209,7 +209,7 @@ pub const BINDINGS: &[Binding] = &[
         group: "navigation",
     },
     Binding {
-        action: Action::FocusGuilds,
+        action: Action::FocusServers,
         keys: "alt+1",
         label: "focus servers",
         group: "navigation",
@@ -227,13 +227,13 @@ pub const BINDINGS: &[Binding] = &[
         group: "navigation",
     },
     Binding {
-        action: Action::FocusChat,
+        action: Action::FocusConversation,
         keys: "alt+4",
         label: "focus chat",
         group: "navigation",
     },
     Binding {
-        action: Action::FocusComposer,
+        action: Action::FocusCompose,
         keys: "alt+5 / i",
         label: "write a message",
         group: "navigation",
@@ -605,7 +605,7 @@ pub const BINDINGS: &[Binding] = &[
         group: "panels",
     },
     Binding {
-        action: Action::OpenPanelSettings,
+        action: Action::OpenModuleSettings,
         keys: "alt+s",
         label: "panel settings",
         group: "panels",
@@ -786,11 +786,11 @@ static MODULES: LazyLock<Vec<(Module, Keymap<Action>)>> = LazyLock::new(|| {
 });
 
 const ALL_MODULES: &[Module] = &[
-    Module::Guilds,
+    Module::Servers,
     Module::Channels,
     Module::Dms,
-    Module::Chat,
-    Module::Composer,
+    Module::Conversation,
+    Module::Compose,
     Module::Members,
     Module::Media,
     Module::Picker,
@@ -1012,11 +1012,11 @@ pub fn document() -> String {
 /// What a module is called in prose.
 fn module_name(m: Module) -> &'static str {
     match m {
-        Module::Guilds => "the server rail",
+        Module::Servers => "the server rail",
         Module::Channels => "the channel list",
         Module::Dms => "the message list",
-        Module::Chat => "the conversation",
-        Module::Composer => "the composer",
+        Module::Conversation => "the conversation",
+        Module::Compose => "the composer",
         Module::Members => "the member list",
         Module::Media => "the media viewer",
         Module::Picker => "a picker",
@@ -1299,7 +1299,7 @@ mod tests {
     fn the_composer_claims_only_its_own_alt_keys() {
         let claimed: Vec<KeySpec> = BINDINGS
             .iter()
-            .filter(|b| scope_of(b.group) == Scope::Modules(&[Module::Composer]))
+            .filter(|b| scope_of(b.group) == Scope::Modules(&[Module::Compose]))
             .flat_map(specs)
             .filter(|s| s.mods.contains(KeyModifiers::ALT))
             .collect();
@@ -1356,16 +1356,16 @@ mod tests {
     #[test]
     fn enter_in_chat_is_not_send() {
         assert_eq!(
-            module(Module::Chat, code(KeyCode::Enter)),
+            module(Module::Conversation, code(KeyCode::Enter)),
             Some(Action::OpenMedia)
         );
         assert_ne!(
-            module(Module::Chat, code(KeyCode::Enter)),
+            module(Module::Conversation, code(KeyCode::Enter)),
             Some(Action::Send)
         );
         assert_eq!(resolve(code(KeyCode::Enter)), Some(Action::Activate));
         assert_eq!(
-            module(Module::Composer, code(KeyCode::Enter)),
+            module(Module::Compose, code(KeyCode::Enter)),
             Some(Action::Send),
             "send is the composer's, and only the composer's"
         );

@@ -25,55 +25,55 @@ use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 use super::keymap::Module;
 use super::theme::Theme;
 
-/// The six things that can be docked.
+/// The six modules the window is made of.
 ///
 /// The status line is not one of them. It is always drawn, never focused and
-/// never closed, so giving it a `PanelId` would mean writing "except status"
+/// never closed, so giving it a `ModuleId` would mean writing "except status"
 /// at every use of this enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum PanelId {
-    Guilds,
+pub enum ModuleId {
+    Servers,
     Channels,
     Dms,
-    Chat,
-    Composer,
+    Conversation,
+    Compose,
     Members,
 }
 
 /// Tab order. Left to right, top to bottom, which is the order they are drawn
 /// in and the order somebody looking at the screen would guess.
-pub const FOCUS_ORDER: [PanelId; 6] = [
-    PanelId::Guilds,
-    PanelId::Channels,
-    PanelId::Dms,
-    PanelId::Chat,
-    PanelId::Composer,
-    PanelId::Members,
+pub const FOCUS_ORDER: [ModuleId; 6] = [
+    ModuleId::Servers,
+    ModuleId::Channels,
+    ModuleId::Dms,
+    ModuleId::Conversation,
+    ModuleId::Compose,
+    ModuleId::Members,
 ];
 
-impl PanelId {
+impl ModuleId {
     /// What the border says.
     pub fn title(self) -> &'static str {
         match self {
-            PanelId::Guilds => "servers",
-            PanelId::Channels => "channels",
-            PanelId::Dms => "messages",
-            PanelId::Chat => "chat",
-            PanelId::Composer => "compose",
-            PanelId::Members => "members",
+            ModuleId::Servers => "servers",
+            ModuleId::Channels => "channels",
+            ModuleId::Dms => "messages",
+            ModuleId::Conversation => "chat",
+            ModuleId::Compose => "compose",
+            ModuleId::Members => "members",
         }
     }
 
     /// Which half of the key table this panel gets first refusal on.
     pub fn module(self) -> Module {
         match self {
-            PanelId::Guilds => Module::Guilds,
-            PanelId::Channels => Module::Channels,
-            PanelId::Dms => Module::Dms,
-            PanelId::Chat => Module::Chat,
-            PanelId::Composer => Module::Composer,
-            PanelId::Members => Module::Members,
+            ModuleId::Servers => Module::Servers,
+            ModuleId::Channels => Module::Channels,
+            ModuleId::Dms => Module::Dms,
+            ModuleId::Conversation => Module::Conversation,
+            ModuleId::Compose => Module::Compose,
+            ModuleId::Members => Module::Members,
         }
     }
 
@@ -82,7 +82,7 @@ impl PanelId {
     /// Chat and the composer are the application. A layout that can close them
     /// is a layout with a state in which there is nothing to do.
     pub fn closable(self) -> bool {
-        !matches!(self, PanelId::Chat | PanelId::Composer)
+        !matches!(self, ModuleId::Conversation | ModuleId::Compose)
     }
 }
 
@@ -134,9 +134,9 @@ impl header::Word for Word {
 ///
 /// Chat has no `close`: it is the one panel that cannot be closed, and offering
 /// a word that does nothing is worse than offering none.
-pub fn words(panel: PanelId, dm_tab: DmTab, folded: Option<Fold>) -> Vec<Word> {
+pub fn words(panel: ModuleId, dm_tab: DmTab, folded: Option<Fold>) -> Vec<Word> {
     match panel {
-        PanelId::Guilds => vec![Word::Close],
+        ModuleId::Servers => vec![Word::Close],
         // When the DM list has folded in here the panel is carrying two lists,
         // so it grows the word that swaps them. The word names the list you
         // would go to, as the DM panel's own tab does.
@@ -145,21 +145,21 @@ pub fn words(panel: PanelId, dm_tab: DmTab, folded: Option<Fold>) -> Vec<Word> {
         // from the left as it narrows, and a folded panel is a narrow one by
         // definition: the tab has to outlive the settings, or the only way to
         // the DM list disappears exactly when it is the only way there is.
-        PanelId::Channels => match folded {
+        ModuleId::Channels => match folded {
             Some(Fold::Channels) => vec![Word::Settings, Word::ShowMessages, Word::Close],
             Some(Fold::Dms) => vec![Word::Settings, Word::ShowChannels, Word::Close],
             None => vec![Word::Settings, Word::Close],
         },
-        PanelId::Dms => vec![
+        ModuleId::Dms => vec![
             match dm_tab {
                 DmTab::Dms => Word::ShowFriends,
                 DmTab::Friends => Word::ShowDms,
             },
             Word::Close,
         ],
-        PanelId::Chat => vec![Word::Search, Word::Pins, Word::Zen, Word::Settings],
-        PanelId::Composer => vec![Word::Attach, Word::Emoji, Word::Gif],
-        PanelId::Members => vec![Word::Settings, Word::Close],
+        ModuleId::Conversation => vec![Word::Search, Word::Pins, Word::Zen, Word::Settings],
+        ModuleId::Compose => vec![Word::Attach, Word::Emoji, Word::Gif],
+        ModuleId::Members => vec![Word::Settings, Word::Close],
     }
 }
 
@@ -302,12 +302,12 @@ mod tests {
     #[test]
     fn every_panel_is_in_the_focus_order_once() {
         for p in [
-            PanelId::Guilds,
-            PanelId::Channels,
-            PanelId::Dms,
-            PanelId::Chat,
-            PanelId::Composer,
-            PanelId::Members,
+            ModuleId::Servers,
+            ModuleId::Channels,
+            ModuleId::Dms,
+            ModuleId::Conversation,
+            ModuleId::Compose,
+            ModuleId::Members,
         ] {
             assert_eq!(
                 FOCUS_ORDER.iter().filter(|&&q| q == p).count(),
@@ -317,14 +317,14 @@ mod tests {
         }
     }
 
-    /// A panel id goes into `config.toml` and into the session file, so its
-    /// spelling is a compatibility surface rather than a detail.
+    /// Nothing persists a module id today, but it is serialisable and the
+    /// spelling it would be written with is the lowercase name.
     #[test]
-    fn a_panel_serialises_as_its_lowercase_name() {
-        let json = serde_json::to_string(&PanelId::Composer).unwrap();
-        assert_eq!(json, "\"composer\"");
-        let back: PanelId = serde_json::from_str("\"members\"").unwrap();
-        assert_eq!(back, PanelId::Members);
+    fn a_module_serialises_as_its_lowercase_name() {
+        let json = serde_json::to_string(&ModuleId::Compose).unwrap();
+        assert_eq!(json, "\"compose\"");
+        let back: ModuleId = serde_json::from_str("\"members\"").unwrap();
+        assert_eq!(back, ModuleId::Members);
     }
 
     /// The two that carry the conversation cannot be closed, and the header
@@ -346,8 +346,8 @@ mod tests {
     /// already are.
     #[test]
     fn the_message_tab_word_names_the_other_tab() {
-        assert!(words(PanelId::Dms, DmTab::Dms, None).contains(&Word::ShowFriends));
-        assert!(words(PanelId::Dms, DmTab::Friends, None).contains(&Word::ShowDms));
+        assert!(words(ModuleId::Dms, DmTab::Dms, None).contains(&Word::ShowFriends));
+        assert!(words(ModuleId::Dms, DmTab::Friends, None).contains(&Word::ShowDms));
     }
 
     /// The tab survives a narrow header; the settings word does not.
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn the_folded_tab_outlives_the_settings_word() {
         use starkit::ratatui::layout::Rect;
-        let words = words(PanelId::Channels, DmTab::Dms, Some(Fold::Channels));
+        let words = words(ModuleId::Channels, DmTab::Dms, Some(Fold::Channels));
         let kept: Vec<Word> = starkit::chrome::header::slots(Rect::new(0, 0, 20, 6), &words)
             .into_iter()
             .map(|(w, _)| w)
@@ -370,10 +370,12 @@ mod tests {
     /// loses it again when the DM list has a panel of its own.
     #[test]
     fn the_folded_channel_panel_grows_a_tab() {
-        assert!(words(PanelId::Channels, DmTab::Dms, Some(Fold::Channels))
+        assert!(words(ModuleId::Channels, DmTab::Dms, Some(Fold::Channels))
             .contains(&Word::ShowMessages));
-        assert!(words(PanelId::Channels, DmTab::Dms, Some(Fold::Dms)).contains(&Word::ShowChannels));
-        let plain = words(PanelId::Channels, DmTab::Dms, None);
+        assert!(
+            words(ModuleId::Channels, DmTab::Dms, Some(Fold::Dms)).contains(&Word::ShowChannels)
+        );
+        let plain = words(ModuleId::Channels, DmTab::Dms, None);
         assert!(!plain.contains(&Word::ShowMessages));
         assert!(!plain.contains(&Word::ShowChannels));
     }

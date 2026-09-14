@@ -62,7 +62,7 @@ use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::discord::Command;
 use crate::ui::keymap::{BINDINGS, MOUSE};
 use crate::ui::panels::chat::media::{MediaStore, Placement};
-use crate::ui::panels::PanelId;
+use crate::ui::panels::ModuleId;
 use crate::ui::theme::Theme;
 
 /// What an overlay did with a key.
@@ -179,9 +179,9 @@ impl Overlays {
         self.quick = Some(Quick::new(items));
     }
 
-    pub fn open_settings(&mut self, panel: PanelId) {
+    pub fn open_settings(&mut self, module: ModuleId) {
         self.close();
-        self.settings = Some(Settings::new(panel));
+        self.settings = Some(Settings::new(module));
     }
 
     pub fn open_picker(&mut self, picker: Picker) {
@@ -598,7 +598,7 @@ mod tests {
             |o: &mut Overlays| o.toggle_help(),
             |o: &mut Overlays| o.ask(Confirm::quit_with_draft(1)),
             |o: &mut Overlays| o.open_quick(Vec::new()),
-            |o: &mut Overlays| o.open_settings(PanelId::Chat),
+            |o: &mut Overlays| o.open_settings(ModuleId::Conversation),
             |o: &mut Overlays| {
                 o.open_picker(Picker::new(picker::Kind::Emoji, None, Vec::new(), 2.0))
             },

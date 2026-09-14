@@ -104,7 +104,7 @@ fn loaded(theme: &str) -> (App, fake::Idle) {
     // The rail opens on the direct-message home; the snapshots want a server
     // open, which is the first thing anybody does.
     app.tick();
-    app.handle(Action::FocusGuilds);
+    app.handle(Action::FocusServers);
     app.handle(Action::CursorDown);
     app.handle(Action::Activate);
     app.tick();
@@ -268,7 +268,7 @@ fn the_fixture_conversation() {
 #[test]
 fn the_top_of_the_conversation() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.handle(Action::Home);
     insta::assert_snapshot!("chat-top-terminal-100x30", render(&mut app, 100, 30));
 }
@@ -279,7 +279,7 @@ fn the_top_of_the_conversation() {
 #[test]
 fn a_spoiler_hidden_and_revealed() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     // Put the cursor on the message carrying the spoiler.
     app.chat
         .select(crate::discord::snowflake::MessageId(500000000000000107));
@@ -296,7 +296,7 @@ fn a_spoiler_hidden_and_revealed() {
 #[test]
 fn the_composer_replying() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.chat
         .select(crate::discord::snowflake::MessageId(500000000000000105));
     app.handle(Action::Reply);
@@ -312,7 +312,7 @@ fn the_composer_replying() {
 #[test]
 fn the_composer_completing_a_name() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusComposer);
+    app.handle(Action::FocusCompose);
     for c in "hello @al".chars() {
         app.key(starkit::crossterm::event::KeyEvent::from(
             starkit::crossterm::event::KeyCode::Char(c),
@@ -339,7 +339,7 @@ fn the_quick_switcher() {
 #[test]
 fn the_confirm_overlay() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.over.ask(crate::ui::overlays::confirm::Confirm::delete(
         CHANNEL,
         crate::discord::snowflake::MessageId(500000000000000105),
@@ -351,8 +351,8 @@ fn the_confirm_overlay() {
 #[test]
 fn the_settings_overlay() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
-    app.handle(Action::OpenPanelSettings);
+    app.handle(Action::FocusConversation);
+    app.handle(Action::OpenModuleSettings);
     insta::assert_snapshot!("settings-terminal-100x30", render(&mut app, 100, 30));
 }
 
@@ -392,7 +392,7 @@ fn the_pictures_as_chips() {
 #[test]
 fn the_emoji_picker() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusComposer);
+    app.handle(Action::FocusCompose);
     app.handle(Action::EmojiPicker);
     for c in "pe".chars() {
         app.key(starkit::crossterm::event::KeyEvent::from(
@@ -410,7 +410,7 @@ fn the_emoji_picker() {
 #[test]
 fn the_gif_picker() {
     let (mut app, mut idle) = in_general("terminal");
-    app.handle(Action::FocusComposer);
+    app.handle(Action::FocusCompose);
     app.handle(Action::GifPicker);
     // The picker asks for what is trending on the tick after it opens; the
     // replay answers, and the frame after that has titles to draw.
@@ -424,7 +424,7 @@ fn the_gif_picker() {
 #[test]
 fn the_media_viewer() {
     let (mut app, _idle) = in_pictures("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.chat
         .select(crate::discord::snowflake::MessageId(500000000000000201));
     app.handle(Action::OpenMedia);
@@ -436,7 +436,7 @@ fn the_media_viewer() {
 #[test]
 fn the_search_overlay() {
     let (mut app, mut idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.handle(Action::Search);
     for c in "the".chars() {
         app.key(starkit::crossterm::event::KeyEvent::from(
@@ -488,7 +488,7 @@ fn a_message_being_uploaded() {
 #[test]
 fn the_message_menu() {
     let (mut app, _idle) = in_general("terminal");
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.chat
         .select(crate::discord::snowflake::MessageId(500000000000000105));
     app.over.open_menu(crate::ui::overlays::menu::Menu::new(
@@ -509,7 +509,7 @@ fn the_message_menu() {
 fn a_search_result_is_jumped_to_and_g_comes_back() {
     let (mut app, mut idle) = in_general("terminal");
     render(&mut app, 100, 30);
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
     app.handle(Action::Search);
     for c in "older".chars() {
         app.key(starkit::crossterm::event::KeyEvent::from(
@@ -651,7 +651,7 @@ fn a_mention_elsewhere_writes_a_line() {
 fn space_opens_the_thread_a_message_started() {
     let (mut app, _idle) = in_general("terminal");
     render(&mut app, 100, 30);
-    app.handle(Action::FocusChat);
+    app.handle(Action::FocusConversation);
 
     // The fixture hangs `about the deploy` off this message; a thread has the
     // id of the message it was started from, which is the only link between

@@ -1,4 +1,4 @@
-//! The settings a panel owns, listed and changed in place.
+//! The settings a module owns, listed and changed in place.
 //!
 //! Six rows, and every one of them is also something a key does. That is
 //! deliberate: the overlay is for finding a setting, the key is for using it
@@ -20,7 +20,7 @@ use starkit::ratatui::layout::Rect;
 use starkit::ratatui::widgets::Widget;
 
 use crate::config::Config;
-use crate::ui::panels::PanelId;
+use crate::ui::panels::ModuleId;
 use crate::ui::theme::Theme;
 
 /// One thing the overlay can change.
@@ -97,16 +97,16 @@ fn on_off(yes: bool) -> &'static str {
 /// The open overlay.
 #[derive(Debug, Clone)]
 pub struct Settings {
-    /// Whose settings these are, for the heading.
-    pub panel: PanelId,
+    /// Which module these settings belong to, for the heading.
+    pub module: ModuleId,
     pub cursor: usize,
     pub scroll: usize,
 }
 
 impl Settings {
-    pub fn new(panel: PanelId) -> Self {
+    pub fn new(module: ModuleId) -> Self {
         Self {
-            panel,
+            module,
             cursor: 0,
             scroll: 0,
         }
@@ -188,7 +188,7 @@ impl Settings {
         SettingsView {
             theme,
             heading: "settings",
-            title: self.panel.title(),
+            title: self.module.title(),
             rows: &rows,
             cursor: self.cursor,
             scroll: self.scroll,
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn a_click_steps_the_row_it_landed_on() {
         let area = Rect::new(0, 0, 60, 20);
-        let mut s = Settings::new(PanelId::Chat);
+        let mut s = Settings::new(ModuleId::Conversation);
         let rows = Setting::ALL.len();
 
         // Find where the widget puts the last row, and click it.
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn the_cursor_wraps_and_enter_changes_the_row_it_is_on() {
-        let mut s = Settings::new(PanelId::Chat);
+        let mut s = Settings::new(ModuleId::Conversation);
         assert_eq!(s.selected(), Setting::Theme);
         s.handle(key(KeyCode::Up));
         assert_eq!(
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn escape_closes_it() {
-        let mut s = Settings::new(PanelId::Chat);
+        let mut s = Settings::new(ModuleId::Conversation);
         assert_eq!(s.handle(key(KeyCode::Esc)), Action::Close);
     }
 
@@ -298,7 +298,7 @@ mod tests {
         let cfg = Config::default();
         let area = Rect::new(0, 0, 80, 20);
         let mut buf = Buffer::empty(area);
-        Settings::new(PanelId::Chat).render(area, &mut buf, &t, &cfg);
+        Settings::new(ModuleId::Conversation).render(area, &mut buf, &t, &cfg);
         let text: String = (0..area.height)
             .map(|y| {
                 (0..area.width)

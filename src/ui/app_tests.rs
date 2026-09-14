@@ -155,13 +155,13 @@ fn the_panel_keys_open_and_close_panels() {
         .as_ref()
         .unwrap()
         .panels
-        .contains_key(&PanelId::Members));
+        .contains_key(&ModuleId::Members));
 
     a.handle(Action::ToggleZen);
     frame(&mut a, 140, 30);
     assert_eq!(
         a.layout.last.as_ref().unwrap().visible(),
-        vec![PanelId::Chat, PanelId::Composer]
+        vec![ModuleId::Conversation, ModuleId::Compose]
     );
 }
 
@@ -207,17 +207,17 @@ fn letters_reach_the_composer_and_alt_keys_do_not() {
     a.login = None;
     a.nav.channel = Some(ChannelId(1));
     a.composer.open(ChannelId(1));
-    a.layout.focus_set(PanelId::Composer);
+    a.layout.focus_set(ModuleId::Compose);
 
     for c in "delete".chars() {
         a.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
     }
     assert_eq!(a.composer.text(), "delete");
 
-    let before = a.layout.is_open(PanelId::Members);
+    let before = a.layout.is_open(ModuleId::Members);
     a.key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT));
     assert_ne!(
-        a.layout.is_open(PanelId::Members),
+        a.layout.is_open(ModuleId::Members),
         before,
         "alt+m did not reach the panel table"
     );
@@ -233,14 +233,14 @@ fn escape_walks_back_out_of_the_composer() {
     a.nav.channel = Some(ChannelId(1));
     a.composer.open(ChannelId(1));
     a.composer.reply_to(MessageId(7), "alex".into(), true);
-    a.layout.focus_set(PanelId::Composer);
+    a.layout.focus_set(ModuleId::Compose);
 
     a.key(KeyEvent::from(KeyCode::Esc));
     assert!(a.composer.mode.is_normal(), "the reply was not cancelled");
-    assert_eq!(a.layout.focus(), PanelId::Composer);
+    assert_eq!(a.layout.focus(), ModuleId::Compose);
 
     a.key(KeyEvent::from(KeyCode::Esc));
-    assert_eq!(a.layout.focus(), PanelId::Chat);
+    assert_eq!(a.layout.focus(), ModuleId::Conversation);
 }
 
 /// Closing an overlay asks for a whole frame rather than a diff.
@@ -297,7 +297,7 @@ fn an_emoji_from_the_picker_is_inserted_and_not_sent() {
 
     a.overlay_asked(overlays::Key::Insert("<:pepe:1>".into()));
     assert_eq!(a.composer.text(), "well <:pepe:1>");
-    assert_eq!(a.layout.focus(), PanelId::Composer);
+    assert_eq!(a.layout.focus(), ModuleId::Compose);
 }
 
 /// A chip comes off when its `×` is clicked, and a send carries what is

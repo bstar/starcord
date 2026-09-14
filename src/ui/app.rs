@@ -78,7 +78,7 @@ use super::overlays::settings::Setting;
 use super::overlays::{self, Overlays};
 use super::panels::chat::{ChatState, Hit};
 use super::panels::composer::{self, Composer, Sources};
-use super::panels::{self, channels, chat, dms, guilds, members, rgb, DmTab, Fold, PanelId};
+use super::panels::{self, channels, chat, dms, guilds, members, rgb, DmTab, Fold, ModuleId};
 use super::status;
 use super::theme::Theme;
 use super::{clipboard, core_ext, layout, unread};
@@ -395,8 +395,8 @@ impl App {
         // The animation clock, at the top of the frame and before anything is
         // measured: what moves is decided from what the last frame drew.
         self.chat.anim.set_policy(self.cfg.media.animate);
-        let focused =
-            self.terminal_focused && (self.layout.focus() == PanelId::Chat || self.over.open());
+        let focused = self.terminal_focused
+            && (self.layout.focus() == ModuleId::Conversation || self.over.open());
         let media = &self.chat.media;
         let moved = self.chat.anim.tick(now, focused, |key| {
             media.decoded(key).and_then(|d| chat::anim::delays_of(&d))
@@ -950,7 +950,7 @@ impl App {
             });
         }
         self.focused_since = Instant::now();
-        self.layout.focus_set(PanelId::Chat);
+        self.layout.focus_set(ModuleId::Conversation);
         self.view.stale = true;
     }
 
@@ -1069,7 +1069,7 @@ impl App {
     /// three lines, one per panel.
     fn move_cursor(&mut self, delta: isize) {
         let focus = self.layout.focus();
-        if focus == PanelId::Chat {
+        if focus == ModuleId::Conversation {
             self.chat.move_cursor(delta);
             return;
         }
@@ -1078,22 +1078,22 @@ impl App {
         // panel is the list it is drawing, whatever its id says.
         let folded = self.dms_in_the_fold();
         let len = match focus {
-            PanelId::Guilds => self.view.guilds.len(),
-            PanelId::Channels if folded => self.dm_rows().len(),
-            PanelId::Channels => self.view.channels.len(),
-            PanelId::Dms => self.dm_rows().len(),
-            PanelId::Members => self.view.members.as_ref().map(Vec::len).unwrap_or(0),
+            ModuleId::Servers => self.view.guilds.len(),
+            ModuleId::Channels if folded => self.dm_rows().len(),
+            ModuleId::Channels => self.view.channels.len(),
+            ModuleId::Dms => self.dm_rows().len(),
+            ModuleId::Members => self.view.members.as_ref().map(Vec::len).unwrap_or(0),
             _ => return,
         };
         if len == 0 {
             return;
         }
         let (cursor, scroll) = match focus {
-            PanelId::Guilds => (&mut self.nav.guild_cursor, &mut self.nav.guild_scroll),
-            PanelId::Channels if folded => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
-            PanelId::Channels => (&mut self.nav.channel_cursor, &mut self.nav.channel_scroll),
-            PanelId::Dms => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
-            PanelId::Members => (&mut self.nav.member_cursor, &mut self.nav.member_scroll),
+            ModuleId::Servers => (&mut self.nav.guild_cursor, &mut self.nav.guild_scroll),
+            ModuleId::Channels if folded => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
+            ModuleId::Channels => (&mut self.nav.channel_cursor, &mut self.nav.channel_scroll),
+            ModuleId::Dms => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
+            ModuleId::Members => (&mut self.nav.member_cursor, &mut self.nav.member_scroll),
             _ => return,
         };
         let next = (*cursor as isize + delta).clamp(0, len as isize - 1) as usize;
@@ -1101,7 +1101,7 @@ impl App {
         *scroll = clamp_scroll(next, *scroll, height);
     }
 
-    fn body_height(&self, id: PanelId) -> u16 {
+    fn body_height(&self, id: ModuleId) -> u16 {
         self.layout
             .last
             .as_ref()
@@ -1112,7 +1112,7 @@ impl App {
 
     /// Open whatever the cursor is on in the focused panel.
     fn activate(&mut self) {
-        if self.layout.focus() == PanelId::Channels && self.dms_in_the_fold() {
+        if self.layout.focus() == ModuleId::Channels && self.dms_in_the_fold() {
             if let Some(dms::Row::Dm { id, .. }) = self.dm_rows().get(self.nav.dm_cursor) {
                 let id = *id;
                 self.open_channel(id);
@@ -1120,17 +1120,17 @@ impl App {
             return;
         }
         match self.layout.focus() {
-            PanelId::Guilds => {
+            ModuleId::Servers => {
                 let index = self.nav.guild_cursor;
                 self.select_guild(index);
-                self.layout.focus_set(PanelId::Channels);
+                self.layout.focus_set(ModuleId::Channels);
             }
-            PanelId::Channels => match self.view.channels.get(self.nav.channel_cursor).cloned() {
+            ModuleId::Channels => match self.view.channels.get(self.nav.channel_cursor).cloned() {
                 Some(channels::Row::Channel { id, .. }) => self.open_channel(id),
                 Some(channels::Row::Category { id, .. }) => self.toggle_category(id),
                 None => {}
             },
-            PanelId::Dms => {
+            ModuleId::Dms => {
                 if let Some(dms::Row::Dm { id, .. }) = self.dm_rows().get(self.nav.dm_cursor) {
                     let id = *id;
                     self.open_channel(id);
@@ -1235,7 +1235,7 @@ impl App {
         }
 
         // Then the composer, which is a text field and takes raw keys.
-        if self.layout.focus() == PanelId::Composer && keymap::composer_eats(k) {
+        if self.layout.focus() == ModuleId::Compose && keymap::composer_eats(k) {
             let outcome = {
                 let sources = std::mem::take(&mut self.view.sources);
                 let out = self.composer.handle(k, &self.cfg.compose, &sources);
@@ -1257,7 +1257,7 @@ impl App {
                     return;
                 }
                 composer::Outcome::Leave => {
-                    self.layout.focus_set(PanelId::Chat);
+                    self.layout.focus_set(ModuleId::Conversation);
                     return;
                 }
                 composer::Outcome::EditLast => {
@@ -1298,7 +1298,7 @@ impl App {
             self.over.paste(text);
             return;
         }
-        if self.layout.focus() == PanelId::Composer {
+        if self.layout.focus() == ModuleId::Compose {
             let sources = std::mem::take(&mut self.view.sources);
             self.composer.paste(text, &sources);
             self.view.sources = sources;
@@ -1325,14 +1325,14 @@ impl App {
             Action::PageUp => self.page(-1),
             Action::PageDown => self.page(1),
             Action::Home => {
-                if self.layout.focus() == PanelId::Chat {
+                if self.layout.focus() == ModuleId::Conversation {
                     self.chat.to_top();
                 } else {
                     self.move_cursor(isize::MIN / 2);
                 }
             }
             Action::End | Action::ToBottom => {
-                if self.layout.focus() == PanelId::Chat || action == Action::ToBottom {
+                if self.layout.focus() == ModuleId::Conversation || action == Action::ToBottom {
                     self.back_to_the_present();
                 } else {
                     self.move_cursor(isize::MAX / 2);
@@ -1343,17 +1343,17 @@ impl App {
 
             Action::FocusNext => self.layout.focus_step(true),
             Action::FocusPrev => self.layout.focus_step(false),
-            Action::FocusGuilds => self.layout.focus_set(PanelId::Guilds),
-            Action::FocusChannels => self.layout.focus_set(PanelId::Channels),
-            Action::FocusDms => self.layout.focus_set(PanelId::Dms),
-            Action::FocusChat => self.layout.focus_set(PanelId::Chat),
-            Action::FocusComposer => self.layout.focus_set(PanelId::Composer),
-            Action::FocusMembers => self.layout.focus_set(PanelId::Members),
+            Action::FocusServers => self.layout.focus_set(ModuleId::Servers),
+            Action::FocusChannels => self.layout.focus_set(ModuleId::Channels),
+            Action::FocusDms => self.layout.focus_set(ModuleId::Dms),
+            Action::FocusConversation => self.layout.focus_set(ModuleId::Conversation),
+            Action::FocusCompose => self.layout.focus_set(ModuleId::Compose),
+            Action::FocusMembers => self.layout.focus_set(ModuleId::Members),
 
             Action::NextGuild => self.step_guild(1),
             Action::PrevGuild => self.step_guild(-1),
             Action::ToggleCollapse => {
-                if self.layout.focus() == PanelId::Channels {
+                if self.layout.focus() == ModuleId::Channels {
                     if let Some(channels::Row::Category { id, .. }) =
                         self.view.channels.get(self.nav.channel_cursor).cloned()
                     {
@@ -1362,8 +1362,8 @@ impl App {
                 }
             }
 
-            Action::ToggleGuilds => self.layout.toggle(PanelId::Guilds),
-            Action::ToggleChannels => self.layout.toggle(PanelId::Channels),
+            Action::ToggleGuilds => self.layout.toggle(ModuleId::Servers),
+            Action::ToggleChannels => self.layout.toggle(ModuleId::Channels),
             Action::ToggleDms => {
                 if self.layout.dms_folded() {
                     // Folded into the channel panel: the key swaps what that
@@ -1371,10 +1371,10 @@ impl App {
                     // panel to close.
                     self.swap_fold();
                 } else {
-                    self.layout.toggle(PanelId::Dms);
+                    self.layout.toggle(ModuleId::Dms);
                 }
             }
-            Action::ToggleMembers => self.layout.toggle(PanelId::Members),
+            Action::ToggleMembers => self.layout.toggle(ModuleId::Members),
             Action::ToggleZen => {
                 let zen = !self.layout.zen;
                 self.layout.set_zen(zen);
@@ -1385,7 +1385,7 @@ impl App {
                     self.layout.toggle(focus);
                 }
             }
-            Action::OpenPanelSettings => {
+            Action::OpenModuleSettings => {
                 let focus = self.layout.focus();
                 self.over.open_settings(focus);
             }
@@ -1455,7 +1455,7 @@ impl App {
             Action::EditLast => self.edit_last(),
             Action::CancelCompose => {
                 if !self.composer.cancel() {
-                    self.layout.focus_set(PanelId::Chat);
+                    self.layout.focus_set(ModuleId::Conversation);
                 }
             }
             Action::ClearComposer => {
@@ -1560,7 +1560,7 @@ impl App {
                 let name = pending.name.clone();
                 if self.composer.attach(pending) {
                     self.note(format!("attached {name}"));
-                    self.layout.focus_set(PanelId::Composer);
+                    self.layout.focus_set(ModuleId::Compose);
                 }
             }
             Err(e) => {
@@ -1622,7 +1622,7 @@ impl App {
         match what {
             overlays::Key::Insert(text) => {
                 self.composer.input.insert_str(&text);
-                self.layout.focus_set(PanelId::Composer);
+                self.layout.focus_set(ModuleId::Compose);
                 self.draft_changed();
             }
             overlays::Key::JumpToMessage { channel, message } => {
@@ -1674,7 +1674,7 @@ impl App {
         let name = pending.name.clone();
         if self.composer.attach(pending) {
             self.note(format!("attached {name}"));
-            self.layout.focus_set(PanelId::Composer);
+            self.layout.focus_set(ModuleId::Compose);
         } else {
             self.note(format!("{name} is already attached"));
         }
@@ -1763,8 +1763,8 @@ impl App {
     }
 
     fn page(&mut self, direction: isize) {
-        if self.layout.focus() == PanelId::Chat {
-            let h = i32::from(self.body_height(PanelId::Chat)).max(1);
+        if self.layout.focus() == ModuleId::Conversation {
+            let h = i32::from(self.body_height(ModuleId::Conversation)).max(1);
             self.chat.scroll(h * direction as i32);
             return;
         }
@@ -1778,11 +1778,11 @@ impl App {
             self.over.close();
             return;
         }
-        if self.layout.focus() == PanelId::Composer && self.composer.cancel() {
+        if self.layout.focus() == ModuleId::Compose && self.composer.cancel() {
             return;
         }
         self.mark_read();
-        self.layout.focus_set(PanelId::Chat);
+        self.layout.focus_set(ModuleId::Conversation);
     }
 
     fn ask_to_quit(&mut self) {
@@ -1856,7 +1856,7 @@ impl App {
                     .position(|row| row.id == Some(id))
                     .unwrap_or(0);
                 self.select_guild(index);
-                self.layout.focus_set(PanelId::Channels);
+                self.layout.focus_set(ModuleId::Channels);
             }
             Target::Channel(id) | Target::Dm(id) => self.open_channel(id),
             Target::Friend(id) => {
@@ -1948,7 +1948,7 @@ impl App {
         };
         let author = msg.author_name().to_string();
         self.composer.reply_to(msg.id, author, ping);
-        self.layout.focus_set(PanelId::Composer);
+        self.layout.focus_set(ModuleId::Compose);
     }
 
     fn edit_selected(&mut self) {
@@ -1962,7 +1962,7 @@ impl App {
         }
         let content = msg.content.clone();
         self.composer.edit(msg.id, content);
-        self.layout.focus_set(PanelId::Composer);
+        self.layout.focus_set(ModuleId::Compose);
     }
 
     fn edit_last(&mut self) {
@@ -1981,7 +1981,7 @@ impl App {
             Some(msg) => {
                 let content = msg.content.clone();
                 self.composer.edit(msg.id, content);
-                self.layout.focus_set(PanelId::Composer);
+                self.layout.focus_set(ModuleId::Compose);
             }
             None => self.note("nothing of yours to edit"),
         }
@@ -2048,7 +2048,7 @@ impl App {
             content,
         });
         self.chat.cache.forget(message);
-        self.layout.focus_set(PanelId::Chat);
+        self.layout.focus_set(ModuleId::Conversation);
     }
 
     /// The text changed: remember it, and say somebody is typing.
@@ -2153,7 +2153,7 @@ impl App {
             Fold::Channels => Fold::Dms,
             Fold::Dms => Fold::Channels,
         };
-        self.layout.focus_set(PanelId::Channels);
+        self.layout.focus_set(ModuleId::Channels);
     }
 
     fn swap_dm_tab(&mut self) {
@@ -2214,7 +2214,7 @@ impl App {
                 }
             }
             MouseEventKind::Down(MouseButton::Right) => {
-                if regions.hit(x, y) == Some(PanelId::Chat) {
+                if regions.hit(x, y) == Some(ModuleId::Conversation) {
                     self.open_menu(x, y);
                 }
             }
@@ -2292,7 +2292,7 @@ impl App {
         }
     }
 
-    fn panel_click(&mut self, regions: &Regions, panel: PanelId, x: u16, y: u16, double: bool) {
+    fn panel_click(&mut self, regions: &Regions, panel: ModuleId, x: u16, y: u16, double: bool) {
         let Some(rect) = regions.rect_of(panel) else {
             return;
         };
@@ -2307,13 +2307,13 @@ impl App {
         self.layout.focus_set(panel);
 
         match panel {
-            PanelId::Guilds => {
+            ModuleId::Servers => {
                 let v = self.guilds_view(false);
                 if let Some(index) = guilds::row_at(body, &v, y) {
                     self.select_guild(index);
                 }
             }
-            PanelId::Channels if self.dms_in_the_fold() => {
+            ModuleId::Channels if self.dms_in_the_fold() => {
                 let v = self.dms_view(false);
                 if let Some(index) = dms::row_at(body, &v, y) {
                     if self.dm_rows().get(index).is_some_and(dms::Row::selectable) {
@@ -2324,7 +2324,7 @@ impl App {
                     }
                 }
             }
-            PanelId::Channels => {
+            ModuleId::Channels => {
                 let v = self.channels_view(false);
                 if let Some(index) = channels::row_at(body, &v, y) {
                     self.nav.channel_cursor = index;
@@ -2337,7 +2337,7 @@ impl App {
                     }
                 }
             }
-            PanelId::Dms => {
+            ModuleId::Dms => {
                 let v = self.dms_view(false);
                 if let Some(index) = dms::row_at(body, &v, y) {
                     if self.dm_rows().get(index).is_some_and(dms::Row::selectable) {
@@ -2348,7 +2348,7 @@ impl App {
                     }
                 }
             }
-            PanelId::Members => {
+            ModuleId::Members => {
                 let v = self.members_view(false);
                 if let Some(index) = members::row_at(body, &v, y) {
                     if v.rows.get(index).is_some_and(members::Row::selectable) {
@@ -2356,8 +2356,8 @@ impl App {
                     }
                 }
             }
-            PanelId::Chat => self.chat_click(x, y, double),
-            PanelId::Composer => {
+            ModuleId::Conversation => self.chat_click(x, y, double),
+            ModuleId::Compose => {
                 if let Some(index) = self.composer.chip_at(x, y) {
                     self.composer.drop_attachment(index);
                 }
@@ -2435,7 +2435,7 @@ impl App {
         }
     }
 
-    fn word_click(&mut self, panel: PanelId, word: panels::Word) {
+    fn word_click(&mut self, panel: ModuleId, word: panels::Word) {
         match word {
             panels::Word::Close => self.layout.toggle(panel),
             panels::Word::ShowFriends | panels::Word::ShowDms => self.swap_dm_tab(),
@@ -2458,15 +2458,15 @@ impl App {
             // The rail cycles servers rather than scrolling, because it is
             // rarely longer than the screen and changing server is what
             // somebody with a pointer over it wants.
-            PanelId::Guilds => self.step_guild(delta.signum()),
-            PanelId::Chat => self.chat.scroll(delta as i32),
-            PanelId::Channels | PanelId::Dms | PanelId::Members => {
+            ModuleId::Servers => self.step_guild(delta.signum()),
+            ModuleId::Conversation => self.chat.scroll(delta as i32),
+            ModuleId::Channels | ModuleId::Dms | ModuleId::Members => {
                 let was = self.layout.focus();
                 self.layout.focus_set(panel);
                 self.move_cursor(delta);
                 self.layout.focus_set(was);
             }
-            PanelId::Composer => {}
+            ModuleId::Compose => {}
         }
     }
 
@@ -2491,7 +2491,7 @@ impl App {
     /// the one somebody glances at, and "am I about to type into a message or
     /// into a list" is the thing they are glancing for.
     fn mode_word(&self) -> &'static str {
-        if self.layout.focus() != PanelId::Composer {
+        if self.layout.focus() != ModuleId::Compose {
             return "chat";
         }
         match self.composer.mode {
@@ -2581,7 +2581,7 @@ impl App {
             too_small(area, buf, &self.look.theme);
             return;
         };
-        if let Some(rect) = regions.rect_of(PanelId::Composer) {
+        if let Some(rect) = regions.rect_of(ModuleId::Compose) {
             self.composer_width = rect.width;
         }
 
@@ -2612,17 +2612,17 @@ impl App {
                 continue;
             }
             match panel {
-                PanelId::Guilds => {
+                ModuleId::Servers => {
                     let placed = guilds::render(body, buf, &self.guilds_view(focused));
                     icons.extend(placed.into_iter().map(|icon| (icon, body)));
                 }
-                PanelId::Channels if self.dms_in_the_fold() => {
+                ModuleId::Channels if self.dms_in_the_fold() => {
                     dms::render(body, buf, &self.dms_view(focused))
                 }
-                PanelId::Channels => channels::render(body, buf, &self.channels_view(focused)),
-                PanelId::Dms => dms::render(body, buf, &self.dms_view(focused)),
-                PanelId::Members => members::render(body, buf, &self.members_view(focused)),
-                PanelId::Chat => {
+                ModuleId::Channels => channels::render(body, buf, &self.channels_view(focused)),
+                ModuleId::Dms => dms::render(body, buf, &self.dms_view(focused)),
+                ModuleId::Members => members::render(body, buf, &self.members_view(focused)),
+                ModuleId::Conversation => {
                     let params = chat::Params {
                         theme: &self.look.theme,
                         cfg: &self.cfg,
@@ -2634,7 +2634,7 @@ impl App {
                     };
                     self.chat.render(rect, body, buf, &params);
                 }
-                PanelId::Composer => {
+                ModuleId::Compose => {
                     let view = super::panels::composer::View {
                         theme: &self.look.theme,
                         focused,
@@ -2776,15 +2776,15 @@ impl App {
         buf[(x, y)].modifier |= Modifier::REVERSED;
     }
 
-    fn panel_title(&self, panel: PanelId) -> String {
+    fn panel_title(&self, panel: ModuleId) -> String {
         match panel {
             // The channel list says which server it is listing, because at
             // twenty-six columns the rail's two letters are not an answer.
-            PanelId::Channels if self.dms_in_the_fold() => match self.nav.dm_tab {
+            ModuleId::Channels if self.dms_in_the_fold() => match self.nav.dm_tab {
                 DmTab::Dms => "messages".into(),
                 DmTab::Friends => "friends".into(),
             },
-            PanelId::Channels => match self.nav.guild {
+            ModuleId::Channels => match self.nav.guild {
                 Some(g) => self
                     .core
                     .state()
@@ -2793,8 +2793,8 @@ impl App {
                     .unwrap_or_else(|| panel.title().to_string()),
                 None => panel.title().to_string(),
             },
-            PanelId::Dms if self.nav.dm_tab == DmTab::Friends => "friends".into(),
-            PanelId::Chat => chat::title(&self.view.location),
+            ModuleId::Dms if self.nav.dm_tab == DmTab::Friends => "friends".into(),
+            ModuleId::Conversation => chat::title(&self.view.location),
             _ => panel.title().to_string(),
         }
     }

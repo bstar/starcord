@@ -50,7 +50,7 @@ use std::collections::{BTreeSet, HashMap};
 use starkit::dock::{Dock, Node, Size};
 use starkit::ratatui::layout::Rect;
 
-use super::panels::{PanelId, FOCUS_ORDER};
+use super::panels::{ModuleId, FOCUS_ORDER};
 use crate::config;
 
 /// Below this the layout is not drawn at all.
@@ -98,22 +98,22 @@ pub enum Drag {
 pub struct Regions {
     /// The whole of it, padding already taken off.
     pub area: Rect,
-    pub panels: HashMap<PanelId, Rect>,
+    pub panels: HashMap<ModuleId, Rect>,
     pub status: Rect,
     /// The draggable borders, in the order [`Dock::seam_at`] indexes them.
     pub seams: Vec<(usize, Rect)>,
     /// Panels the dock could not give their minimum to. Drawn as an empty
     /// frame rather than as a squeezed one.
-    pub too_small: Vec<PanelId>,
+    pub too_small: Vec<ModuleId>,
 }
 
 impl Regions {
-    pub fn rect_of(&self, id: PanelId) -> Option<Rect> {
+    pub fn rect_of(&self, id: ModuleId) -> Option<Rect> {
         self.panels.get(&id).copied()
     }
 
     /// Which panel a cell is in.
-    pub fn hit(&self, x: u16, y: u16) -> Option<PanelId> {
+    pub fn hit(&self, x: u16, y: u16) -> Option<ModuleId> {
         self.panels
             .iter()
             .find(|(_, r)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
@@ -121,7 +121,7 @@ impl Regions {
     }
 
     /// The panels that were drawn, in tab order.
-    pub fn visible(&self) -> Vec<PanelId> {
+    pub fn visible(&self) -> Vec<ModuleId> {
         FOCUS_ORDER
             .into_iter()
             .filter(|p| self.panels.contains_key(p))
@@ -137,19 +137,19 @@ struct Shape {
     members: u16,
     dms_share: u16,
     composer_rows: u16,
-    hidden: BTreeSet<PanelId>,
+    hidden: BTreeSet<ModuleId>,
 }
 
 pub struct LayoutState {
-    dock: Dock<PanelId>,
+    dock: Dock<ModuleId>,
     shape: Option<Shape>,
-    focus: PanelId,
+    focus: ModuleId,
     /// Chat and the composer only.
     pub zen: bool,
     /// What the user closed, which survives a resize.
-    user_hidden: BTreeSet<PanelId>,
+    user_hidden: BTreeSet<ModuleId>,
     /// What the width closed, which does not.
-    auto_hidden: BTreeSet<PanelId>,
+    auto_hidden: BTreeSet<ModuleId>,
     /// The persisted sizes. A seam drag writes here.
     pub cfg: config::Layout,
     pub drag: Option<Drag>,
@@ -160,16 +160,16 @@ impl LayoutState {
     pub fn new(cfg: &config::Layout) -> Self {
         let mut user_hidden = BTreeSet::new();
         if !cfg.show_channels {
-            user_hidden.insert(PanelId::Channels);
+            user_hidden.insert(ModuleId::Channels);
         }
         if !cfg.show_dms {
-            user_hidden.insert(PanelId::Dms);
+            user_hidden.insert(ModuleId::Dms);
         }
         if !cfg.show_members {
-            user_hidden.insert(PanelId::Members);
+            user_hidden.insert(ModuleId::Members);
         }
         if cfg.guilds == config::GuildsStyle::Hidden {
-            user_hidden.insert(PanelId::Guilds);
+            user_hidden.insert(ModuleId::Servers);
         }
         Self {
             dock: Dock::new(build(&Shape {
@@ -180,7 +180,7 @@ impl LayoutState {
                 hidden: BTreeSet::new(),
             })),
             shape: None,
-            focus: PanelId::Chat,
+            focus: ModuleId::Conversation,
             zen: cfg.zen,
             user_hidden,
             auto_hidden: BTreeSet::new(),
@@ -285,15 +285,15 @@ impl LayoutState {
         let width = body.width;
 
         if width < RAIL_COLS + left + CHAT_MIN_COLS + members {
-            self.auto_hidden.insert(PanelId::Members);
+            self.auto_hidden.insert(ModuleId::Members);
         }
         if width < RAIL_COLS + left + CHAT_MIN_COLS {
-            self.auto_hidden.insert(PanelId::Guilds);
+            self.auto_hidden.insert(ModuleId::Servers);
             // The DM list folds into the channel panel as a tab rather than
             // vanishing: at this width the left column is the only list there
             // is, and losing half of what it can reach would be worse than
             // reaching it with a keystroke.
-            self.auto_hidden.insert(PanelId::Dms);
+            self.auto_hidden.insert(ModuleId::Dms);
         }
         if width < left + CHAT_MIN_COLS {
             left = LEFT_MIN_COLS;
@@ -308,7 +308,7 @@ impl LayoutState {
     }
 
     /// Everything that is closed this frame, for whatever reason.
-    fn hidden(&self) -> BTreeSet<PanelId> {
+    fn hidden(&self) -> BTreeSet<ModuleId> {
         let mut out = self.user_hidden.clone();
         out.extend(self.auto_hidden.iter().copied());
         if self.zen {
@@ -326,21 +326,21 @@ impl LayoutState {
     /// Whether the DM list is folded into the channel panel as a tab, which is
     /// what the narrow and short layouts do with it.
     pub fn dms_folded(&self) -> bool {
-        self.auto_hidden.contains(&PanelId::Dms) && !self.user_hidden.contains(&PanelId::Dms)
+        self.auto_hidden.contains(&ModuleId::Dms) && !self.user_hidden.contains(&ModuleId::Dms)
     }
 
     /// Whether the width, rather than the user, closed this panel.
-    pub fn auto_hidden(&self, id: PanelId) -> bool {
+    pub fn auto_hidden(&self, id: ModuleId) -> bool {
         self.auto_hidden.contains(&id)
     }
 
-    pub fn is_open(&self, id: PanelId) -> bool {
+    pub fn is_open(&self, id: ModuleId) -> bool {
         !self.user_hidden.contains(&id)
     }
 
     /// Close or open a panel, as a person asking for it rather than as the
     /// ladder.
-    pub fn toggle(&mut self, id: PanelId) {
+    pub fn toggle(&mut self, id: ModuleId) {
         if !id.closable() {
             return;
         }
@@ -349,13 +349,13 @@ impl LayoutState {
         } else {
             self.user_hidden.insert(id);
             if self.focus == id {
-                self.focus = PanelId::Chat;
+                self.focus = ModuleId::Conversation;
             }
         }
         self.write_back();
     }
 
-    pub fn show(&mut self, id: PanelId) {
+    pub fn show(&mut self, id: ModuleId) {
         if self.user_hidden.remove(&id) {
             self.write_back();
         }
@@ -365,30 +365,30 @@ impl LayoutState {
         self.zen = zen;
         self.cfg.zen = zen;
         if zen && self.focus.closable() {
-            self.focus = PanelId::Chat;
+            self.focus = ModuleId::Conversation;
         }
     }
 
     /// Keep `[layout]` in step with what the panels are actually doing, so the
     /// value written to `config.toml` is never a guess.
     fn write_back(&mut self) {
-        self.cfg.show_channels = !self.user_hidden.contains(&PanelId::Channels);
-        self.cfg.show_dms = !self.user_hidden.contains(&PanelId::Dms);
-        self.cfg.show_members = !self.user_hidden.contains(&PanelId::Members);
-        if self.user_hidden.contains(&PanelId::Guilds) {
+        self.cfg.show_channels = !self.user_hidden.contains(&ModuleId::Channels);
+        self.cfg.show_dms = !self.user_hidden.contains(&ModuleId::Dms);
+        self.cfg.show_members = !self.user_hidden.contains(&ModuleId::Members);
+        if self.user_hidden.contains(&ModuleId::Servers) {
             self.cfg.guilds = config::GuildsStyle::Hidden;
         } else if self.cfg.guilds == config::GuildsStyle::Hidden {
             self.cfg.guilds = config::GuildsStyle::Rail;
         }
     }
 
-    pub fn focus(&self) -> PanelId {
+    pub fn focus(&self) -> ModuleId {
         self.focus
     }
 
     /// Focus a panel, opening it if it was closed: `alt+3` should reach the
     /// third panel whether or not it is on screen.
-    pub fn focus_set(&mut self, id: PanelId) {
+    pub fn focus_set(&mut self, id: ModuleId) {
         if !id.closable() {
             self.focus = id;
             return;
@@ -455,15 +455,15 @@ impl LayoutState {
             self.cfg.dms_share,
         );
 
-        if let Some(r) = self.dock.rect_of(PanelId::Channels) {
+        if let Some(r) = self.dock.rect_of(ModuleId::Channels) {
             self.cfg.left_cols = r.width.clamp(LEFT_MIN_COLS, LEFT_MAX_COLS);
         }
-        if let Some(r) = self.dock.rect_of(PanelId::Members) {
+        if let Some(r) = self.dock.rect_of(ModuleId::Members) {
             self.cfg.members_cols = r.width.clamp(MEMBERS_MIN_COLS, MEMBERS_MAX_COLS);
         }
         if let (Some(channels), Some(dms)) = (
-            self.dock.rect_of(PanelId::Channels),
-            self.dock.rect_of(PanelId::Dms),
+            self.dock.rect_of(ModuleId::Channels),
+            self.dock.rect_of(ModuleId::Dms),
         ) {
             let total = u32::from(channels.height) + u32::from(dms.height);
             if let Some(share) = (u32::from(dms.height) * 100).checked_div(total) {
@@ -489,7 +489,7 @@ impl LayoutState {
 }
 
 /// The tree, from the numbers it is built out of.
-fn build(s: &Shape) -> Node<PanelId> {
+fn build(s: &Shape) -> Node<ModuleId> {
     // Weights rather than percentages: `Flex` is a share of what the fixed
     // children left, and two weights summing to a hundred is the same
     // arithmetic written in a way a reader can check against `dms_share`.
@@ -499,26 +499,26 @@ fn build(s: &Shape) -> Node<PanelId> {
     Node::row(
         Size::Fill,
         vec![
-            Node::leaf(PanelId::Guilds, Size::Fixed(RAIL_COLS), RAIL_COLS),
+            Node::leaf(ModuleId::Servers, Size::Fixed(RAIL_COLS), RAIL_COLS),
             Node::column(
                 Size::Fixed(s.left),
                 vec![
-                    Node::leaf(PanelId::Channels, Size::Flex(channels), LIST_MIN_ROWS),
-                    Node::leaf(PanelId::Dms, Size::Flex(dms), LIST_MIN_ROWS),
+                    Node::leaf(ModuleId::Channels, Size::Flex(channels), LIST_MIN_ROWS),
+                    Node::leaf(ModuleId::Dms, Size::Flex(dms), LIST_MIN_ROWS),
                 ],
             ),
             Node::column(
                 Size::Flex(1),
                 vec![
-                    Node::leaf(PanelId::Chat, Size::Flex(1), CHAT_MIN_ROWS),
+                    Node::leaf(ModuleId::Conversation, Size::Flex(1), CHAT_MIN_ROWS),
                     Node::leaf(
-                        PanelId::Composer,
+                        ModuleId::Compose,
                         Size::Fixed(s.composer_rows),
                         COMPOSER_MIN_ROWS,
                     ),
                 ],
             ),
-            Node::leaf(PanelId::Members, Size::Fixed(s.members), MEMBERS_MIN_COLS),
+            Node::leaf(ModuleId::Members, Size::Fixed(s.members), MEMBERS_MIN_COLS),
         ],
     )
 }
@@ -559,7 +559,7 @@ mod tests {
         (s, r)
     }
 
-    fn visible(width: u16) -> Vec<PanelId> {
+    fn visible(width: u16) -> Vec<ModuleId> {
         let (_, r) = at(width, 30);
         r.map(|r| r.visible()).unwrap_or_default()
     }
@@ -615,22 +615,28 @@ mod tests {
     /// minimum. 59 is nothing at all.
     #[test]
     fn the_degradation_ladder_is_its_arithmetic() {
-        use PanelId::*;
+        use ModuleId::*;
 
-        assert_eq!(visible(59), Vec::<PanelId>::new(), "too small to draw");
-        assert_eq!(visible(60), vec![Channels, Chat, Composer]);
-        assert_eq!(visible(65), vec![Channels, Chat, Composer]);
-        assert_eq!(visible(66), vec![Channels, Chat, Composer]);
-        assert_eq!(visible(73), vec![Channels, Chat, Composer]);
-        assert_eq!(visible(74), vec![Guilds, Channels, Dms, Chat, Composer]);
-        assert_eq!(visible(97), vec![Guilds, Channels, Dms, Chat, Composer]);
+        assert_eq!(visible(59), Vec::<ModuleId>::new(), "too small to draw");
+        assert_eq!(visible(60), vec![Channels, Conversation, Compose]);
+        assert_eq!(visible(65), vec![Channels, Conversation, Compose]);
+        assert_eq!(visible(66), vec![Channels, Conversation, Compose]);
+        assert_eq!(visible(73), vec![Channels, Conversation, Compose]);
+        assert_eq!(
+            visible(74),
+            vec![Servers, Channels, Dms, Conversation, Compose]
+        );
+        assert_eq!(
+            visible(97),
+            vec![Servers, Channels, Dms, Conversation, Compose]
+        );
         assert_eq!(
             visible(98),
-            vec![Guilds, Channels, Dms, Chat, Composer, Members]
+            vec![Servers, Channels, Dms, Conversation, Compose, Members]
         );
         assert_eq!(
             visible(140),
-            vec![Guilds, Channels, Dms, Chat, Composer, Members]
+            vec![Servers, Channels, Dms, Conversation, Compose, Members]
         );
     }
 
@@ -641,7 +647,9 @@ mod tests {
         for width in MIN_COLS..=160 {
             let (_, r) = at(width, 30);
             let r = r.expect("wide enough");
-            let chat = r.rect_of(PanelId::Chat).expect("chat is never closed");
+            let chat = r
+                .rect_of(ModuleId::Conversation)
+                .expect("chat is never closed");
             assert!(
                 chat.width >= CHAT_MIN_COLS,
                 "at {width} columns the message panel is {} wide",
@@ -692,21 +700,21 @@ mod tests {
     #[test]
     fn widening_restores_what_the_width_took_and_not_what_the_user_did() {
         let mut s = state();
-        s.toggle(PanelId::Channels);
+        s.toggle(ModuleId::Channels);
         s.regions(Rect::new(0, 0, 80, 30), 3, (0, 0));
-        assert!(s.auto_hidden(PanelId::Members));
-        assert!(!s.is_open(PanelId::Channels));
+        assert!(s.auto_hidden(ModuleId::Members));
+        assert!(!s.is_open(ModuleId::Channels));
 
         let r = s
             .regions(Rect::new(0, 0, 140, 30), 3, (0, 0))
             .cloned()
             .unwrap();
         assert!(
-            r.panels.contains_key(&PanelId::Members),
+            r.panels.contains_key(&ModuleId::Members),
             "the member list did not come back"
         );
         assert!(
-            !r.panels.contains_key(&PanelId::Channels),
+            !r.panels.contains_key(&ModuleId::Channels),
             "the channel list came back and nobody asked it to"
         );
     }
@@ -720,7 +728,7 @@ mod tests {
             .regions(Rect::new(0, 0, 140, 30), 3, (0, 0))
             .cloned()
             .unwrap();
-        assert_eq!(r.visible(), vec![PanelId::Chat, PanelId::Composer]);
+        assert_eq!(r.visible(), vec![ModuleId::Conversation, ModuleId::Compose]);
         s.set_zen(false);
         let r = s
             .regions(Rect::new(0, 0, 140, 30), 3, (0, 0))
@@ -733,8 +741,8 @@ mod tests {
     #[test]
     fn the_layout_table_round_trips() {
         let mut s = state();
-        s.toggle(PanelId::Members);
-        s.toggle(PanelId::Dms);
+        s.toggle(ModuleId::Members);
+        s.toggle(ModuleId::Dms);
         s.set_zen(true);
         s.cfg.left_cols = 34;
 
@@ -743,17 +751,17 @@ mod tests {
         assert_eq!(back, s.cfg);
 
         let restored = LayoutState::new(&back);
-        assert!(!restored.is_open(PanelId::Members));
-        assert!(!restored.is_open(PanelId::Dms));
+        assert!(!restored.is_open(ModuleId::Members));
+        assert!(!restored.is_open(ModuleId::Dms));
         assert!(restored.zen);
         assert_eq!(restored.cfg.left_cols, 34);
 
         // And closing the rail is spelled as a style rather than as a flag,
         // because that is the key the file has.
         let mut s = state();
-        s.toggle(PanelId::Guilds);
+        s.toggle(ModuleId::Servers);
         assert_eq!(s.cfg.guilds, config::GuildsStyle::Hidden);
-        s.toggle(PanelId::Guilds);
+        s.toggle(ModuleId::Servers);
         assert_eq!(s.cfg.guilds, config::GuildsStyle::Rail);
     }
 
@@ -763,16 +771,16 @@ mod tests {
     fn focus_walks_only_the_visible_panels() {
         let mut s = state();
         s.regions(Rect::new(0, 0, 80, 30), 3, (0, 0));
-        assert!(s.auto_hidden(PanelId::Members));
+        assert!(s.auto_hidden(ModuleId::Members));
 
-        s.focus_set(PanelId::Chat);
+        s.focus_set(ModuleId::Conversation);
         let mut seen = vec![s.focus()];
         for _ in 0..5 {
             s.focus_step(true);
             seen.push(s.focus());
         }
         assert!(
-            !seen.contains(&PanelId::Members),
+            !seen.contains(&ModuleId::Members),
             "tab reached a panel that is not on screen: {seen:?}"
         );
         assert_eq!(seen[0], seen[5], "five steps over five panels should wrap");
@@ -783,16 +791,16 @@ mod tests {
     #[test]
     fn focusing_a_closed_panel_opens_it() {
         let mut s = state();
-        s.toggle(PanelId::Members);
-        assert!(!s.is_open(PanelId::Members));
-        s.focus_set(PanelId::Members);
-        assert!(s.is_open(PanelId::Members));
-        assert_eq!(s.focus(), PanelId::Members);
+        s.toggle(ModuleId::Members);
+        assert!(!s.is_open(ModuleId::Members));
+        s.focus_set(ModuleId::Members);
+        assert!(s.is_open(ModuleId::Members));
+        assert_eq!(s.focus(), ModuleId::Members);
 
         // And it leaves zen, which would otherwise hide it again on the next
         // frame and leave focus pointing at nothing.
         s.set_zen(true);
-        s.focus_set(PanelId::Channels);
+        s.focus_set(ModuleId::Channels);
         assert!(!s.zen);
     }
 
@@ -800,9 +808,9 @@ mod tests {
     #[test]
     fn closing_the_focused_panel_lands_on_the_chat() {
         let mut s = state();
-        s.focus_set(PanelId::Dms);
-        s.toggle(PanelId::Dms);
-        assert_eq!(s.focus(), PanelId::Chat);
+        s.focus_set(ModuleId::Dms);
+        s.toggle(ModuleId::Dms);
+        assert_eq!(s.focus(), ModuleId::Conversation);
     }
 
     /// Seams are reported even before anything can drag them, because the
@@ -837,7 +845,7 @@ mod tests {
             .regions(Rect::new(0, 0, 120, 20), 40, (0, 0))
             .cloned()
             .unwrap();
-        let chat = r.rect_of(PanelId::Chat).unwrap();
+        let chat = r.rect_of(ModuleId::Conversation).unwrap();
         assert!(chat.height >= CHAT_MIN_ROWS, "chat is {} rows", chat.height);
     }
 
@@ -847,17 +855,17 @@ mod tests {
     fn a_narrow_terminal_folds_the_message_list_rather_than_closing_it() {
         let (s, r) = at(70, 30);
         let r = r.unwrap();
-        assert!(!r.panels.contains_key(&PanelId::Dms));
+        assert!(!r.panels.contains_key(&ModuleId::Dms));
         assert!(s.dms_folded(), "it folded rather than closed");
         assert!(
-            s.is_open(PanelId::Dms),
+            s.is_open(ModuleId::Dms),
             "and the user's choice is untouched"
         );
 
         // Closed by hand at the same width is closed, not folded: the channel
         // panel should not grow a tab for a list somebody put away.
         let mut s = state();
-        s.toggle(PanelId::Dms);
+        s.toggle(ModuleId::Dms);
         s.regions(Rect::new(0, 0, 140, 30), 3, (0, 0));
         assert!(!s.dms_folded());
     }
@@ -868,8 +876,8 @@ mod tests {
     fn both_lists_fit_at_the_row_floor() {
         let (_, r) = at(140, MIN_ROWS);
         let r = r.unwrap();
-        assert!(r.panels.contains_key(&PanelId::Dms));
-        assert!(r.panels.contains_key(&PanelId::Channels));
+        assert!(r.panels.contains_key(&ModuleId::Dms));
+        assert!(r.panels.contains_key(&ModuleId::Channels));
     }
 
     #[test]
