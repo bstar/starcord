@@ -172,6 +172,9 @@ pub struct App {
     /// What the core read out of `session.toml` before connecting. Preferred
     /// over the file itself, which is only read when no event arrived.
     session_channel: Option<ChannelId>,
+    /// Whether a READY has been seen this run; the first restores the session,
+    /// the rest are reconnects.
+    ready_seen: bool,
     pub look: Look,
     pub layout: LayoutState,
     pub nav: Nav,
@@ -278,6 +281,7 @@ impl App {
             cfg_path,
             session_path,
             session_channel: None,
+            ready_seen: false,
         }
     }
 
@@ -506,7 +510,25 @@ impl App {
             Event::Ready => {
                 self.login = None;
                 self.view.stale = true;
-                self.restore_session();
+                // The first READY of a run puts the reader back where they
+                // were. Every later one is a reconnect -- the socket dropped
+                // and came back with a fresh identify -- and the reader has
+                // not moved: the channel they are in stays open and the panel
+                // they are typing in keeps the cursor. What a reconnect does
+                // need is the channel asked for again, because the core's
+                // subscriptions and history went with the old socket.
+                if self.ready_seen {
+                    if let Some(channel) = self.nav.channel {
+                        self.core.send(Command::OpenChannel(channel));
+                        self.core.send(Command::SetFocus {
+                            channel: Some(channel),
+                            terminal_focused: self.terminal_focused,
+                        });
+                    }
+                } else {
+                    self.ready_seen = true;
+                    self.restore_session();
+                }
             }
             Event::Note(Note { level, text, .. }) => {
                 self.note_at(text, level);

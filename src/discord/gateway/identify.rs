@@ -213,6 +213,35 @@ impl UpdateGuildSubscriptions {
         }
     }
 
+    /// The body as the gateway expects it for the opcode it goes out under.
+    ///
+    /// op 14 takes the flat request: `guild_id` beside the flags. op 37 does
+    /// not -- it takes a `subscriptions` map keyed by guild id, each entry
+    /// carrying the flags, the channel ranges and two lists this client leaves
+    /// empty (`members`, `thread_member_lists`). Sending the flat body under
+    /// op 37 is answered with close 4002, "decode error", about ten seconds
+    /// after every open, which a resume then cannot survive: the whole session
+    /// re-identifies, and the interface starts over. Measured on a live
+    /// account, which is how this function came to exist.
+    pub fn wire(&self, legacy: bool) -> serde_json::Value {
+        if legacy {
+            return serde_json::to_value(self).expect("a subscription serialises");
+        }
+        serde_json::json!({
+            "subscriptions": {
+                self.guild_id.to_string(): {
+                    "typing": self.typing,
+                    "threads": self.threads,
+                    "activities": self.activities,
+                    "members": [],
+                    "member_updates": false,
+                    "channels": self.channels,
+                    "thread_member_lists": [],
+                }
+            }
+        })
+    }
+
     /// Stop receiving anything for a guild.
     pub fn none(guild: GuildId) -> Self {
         Self {
@@ -355,7 +384,7 @@ impl Subscriptions {
         }
         let payload = serde_json::to_string(&Outgoing::new(
             self.opcode(),
-            UpdateGuildSubscriptions::for_channels(guild, wanted.clone()),
+            UpdateGuildSubscriptions::for_channels(guild, wanted.clone()).wire(self.legacy),
         ))
         .ok()?;
         self.sent.insert(guild, wanted);
@@ -407,7 +436,7 @@ impl Subscriptions {
             }
             if let Ok(payload) = serde_json::to_string(&Outgoing::new(
                 self.opcode(),
-                UpdateGuildSubscriptions::none(guild),
+                UpdateGuildSubscriptions::none(guild).wire(self.legacy),
             )) {
                 payloads.push(payload);
             }
@@ -563,20 +592,39 @@ mod tests {
     fn a_member_list_subscription_is_op_37() {
         let sub =
             UpdateGuildSubscriptions::for_channel(GuildId(1), ChannelId(2), &[(0, 99), (100, 199)]);
-        let value =
-            serde_json::to_value(Outgoing::new(OpCode::UpdateGuildSubscriptions, &sub)).unwrap();
+        let value = serde_json::to_value(Outgoing::new(
+            OpCode::UpdateGuildSubscriptions,
+            sub.wire(false),
+        ))
+        .unwrap();
         assert_eq!(value["op"], 37);
-        assert_eq!(value["d"]["guild_id"], "1");
+        let entry = &value["d"]["subscriptions"]["1"];
+        assert!(
+            value["d"].get("guild_id").is_none(),
+            "op 37 keys the guild in a map; a flat guild_id is the op 14 body and is refused"
+        );
         assert_eq!(
-            value["d"]["channels"]["2"],
+            entry["channels"]["2"],
             serde_json::json!([[0, 99], [100, 199]])
         );
-        assert_eq!(value["d"]["typing"], true);
-        assert_eq!(value["d"]["threads"], true);
+        assert_eq!(entry["typing"], true);
+        assert_eq!(entry["threads"], true);
         assert_eq!(
-            value["d"]["activities"], false,
+            entry["activities"], false,
             "activities is a presence firehose for a whole guild"
         );
+        assert_eq!(entry["members"], serde_json::json!([]));
+        assert_eq!(entry["member_updates"], false);
+        assert_eq!(entry["thread_member_lists"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn the_legacy_body_is_the_flat_request() {
+        let sub = UpdateGuildSubscriptions::for_channel(GuildId(1), ChannelId(2), &[(0, 99)]);
+        let value = sub.wire(true);
+        assert_eq!(value["guild_id"], "1");
+        assert_eq!(value["channels"]["2"], serde_json::json!([[0, 99]]));
+        assert!(value.get("subscriptions").is_none());
     }
 
     fn body(payload: &str) -> serde_json::Value {
@@ -591,8 +639,10 @@ mod tests {
             .expect("the first open sends");
         let value = body(&payload);
         assert_eq!(value["op"], 37);
-        assert_eq!(value["d"]["guild_id"], "1");
-        assert_eq!(value["d"]["channels"]["2"], serde_json::json!([[0, 99]]));
+        assert_eq!(
+            value["d"]["subscriptions"]["1"]["channels"]["2"],
+            serde_json::json!([[0, 99]])
+        );
 
         assert!(
             subs.open(GuildId(1), ChannelId(2)).is_none(),
@@ -609,8 +659,9 @@ mod tests {
             .open(GuildId(1), ChannelId(3))
             .expect("the ranges changed");
         let value = body(&payload);
-        assert_eq!(value["d"]["channels"]["2"], serde_json::json!([[0, 99]]));
-        assert_eq!(value["d"]["channels"]["3"], serde_json::json!([[0, 99]]));
+        let channels = &value["d"]["subscriptions"]["1"]["channels"];
+        assert_eq!(channels["2"], serde_json::json!([[0, 99]]));
+        assert_eq!(channels["3"], serde_json::json!([[0, 99]]));
         assert_eq!(
             subs.guilds(),
             1,
@@ -633,9 +684,9 @@ mod tests {
         let due = subs.due(now + UNSUBSCRIBE_GRACE + Duration::from_secs(1));
         assert_eq!(due.len(), 1);
         let value = body(&due[0]);
-        assert_eq!(value["d"]["guild_id"], "1");
-        assert_eq!(value["d"]["channels"], serde_json::json!({}));
-        assert_eq!(value["d"]["typing"], false);
+        let entry = &value["d"]["subscriptions"]["1"];
+        assert_eq!(entry["channels"], serde_json::json!({}));
+        assert_eq!(entry["typing"], false);
         assert_eq!(subs.guilds(), 0);
 
         // And nothing is owed twice.
@@ -676,8 +727,9 @@ mod tests {
             .close(GuildId(1), ChannelId(3), now)
             .expect("the ranges changed");
         let value = body(&payload);
-        assert_eq!(value["d"]["channels"]["2"], serde_json::json!([[0, 99]]));
-        assert!(value["d"]["channels"]["3"].is_null());
+        let channels = &value["d"]["subscriptions"]["1"]["channels"];
+        assert_eq!(channels["2"], serde_json::json!([[0, 99]]));
+        assert!(channels["3"].is_null());
     }
 
     #[test]
@@ -694,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_flag_changes_the_opcode_and_nothing_else() {
+    fn the_legacy_flag_changes_the_opcode_and_the_body_shape() {
         let mut modern = Subscriptions::new(false);
         let mut legacy = Subscriptions::new(true);
         let a = body(&modern.open(GuildId(1), ChannelId(2)).unwrap());
@@ -702,7 +754,11 @@ mod tests {
 
         assert_eq!(a["op"], 37);
         assert_eq!(b["op"], 14);
-        assert_eq!(a["d"], b["d"], "the body is the same request either way");
+        assert_eq!(
+            a["d"]["subscriptions"]["1"]["channels"], b["d"]["channels"],
+            "the same request, spelled the way each opcode wants it"
+        );
+        assert_eq!(b["d"]["guild_id"], "1");
         assert_eq!(legacy.opcode(), OpCode::LazyRequest);
         assert!(legacy.describe().contains("14"));
         assert!(modern.describe().contains("37"));

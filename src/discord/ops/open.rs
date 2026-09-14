@@ -403,7 +403,7 @@ mod tests {
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0]["op"], 37);
         assert_eq!(
-            payloads[0]["d"]["channels"]["7"],
+            payloads[0]["d"]["subscriptions"]["3"]["channels"]["7"],
             serde_json::json!([[0, 99], [100, 199], [200, 299]])
         );
 
@@ -601,8 +601,10 @@ mod tests {
         };
         let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(value["op"], 37);
-        assert_eq!(value["d"]["guild_id"], "3");
-        assert_eq!(value["d"]["channels"]["7"], serde_json::json!([[0, 99]]));
+        assert_eq!(
+            value["d"]["subscriptions"]["3"]["channels"]["7"],
+            serde_json::json!([[0, 99]])
+        );
 
         open_channel(&h.ops, CHANNEL).await;
         assert!(
