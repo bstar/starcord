@@ -2445,7 +2445,6 @@ impl App {
             cursor: self.nav.guild_cursor,
             scroll: self.nav.guild_scroll,
             pictures: self.pictures(),
-            style: self.cfg.layout.guilds,
             focused,
         }
     }

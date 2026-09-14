@@ -1,21 +1,21 @@
-//! The server rail.
+//! The server list.
 //!
-//! A narrow strip down the left, with the DM home at the top. The mark to the
-//! right of each entry is the whole of the unread state, because at eight
-//! columns wide there is room for nothing else.
+//! The first module of the column, with `Home` at the top. An entry is its
+//! icon, its name and one mark against the right edge saying what is unread in
+//! it -- a count when somebody used this account's name, a dot when there is
+//! anything at all.
 //!
-//! An entry is one row of two characters where the terminal cannot draw a
-//! picture, and two rows carrying a four-by-two icon where it can. The height
-//! is the one thing everything else has to agree on: the cursor, the scroll
-//! and the mouse all go through [`row_rows`] and [`row_at`], so a rail with
-//! icons and a rail without behave the same way.
+//! The icon is two characters where the terminal cannot draw a picture, and a
+//! four-by-two picture where it can, which makes an entry one row or two. That
+//! height is the one thing everything else has to agree on: the cursor, the
+//! scroll and the mouse all go through [`row_rows`] and [`row_at`], so a list
+//! with pictures and a list without behave the same way.
 
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
 use super::{empty, fit, rgb, width_of};
-use crate::config::GuildsStyle;
 use crate::discord::media::MediaKey;
 use crate::discord::snowflake::GuildId;
 use crate::ui::theme::Theme;
@@ -23,6 +23,11 @@ use crate::ui::theme::Theme;
 /// Columns and rows an icon takes when there are pictures.
 const ICON_COLS: u16 = 4;
 const ICON_ROWS: u16 = 2;
+/// Where the name starts, in both shapes.
+///
+/// The same column either way, so a list of servers where only some have an
+/// icon is still a column of names rather than a ragged edge.
+const NAME_COLS: u16 = ICON_COLS;
 
 /// One entry, copied out of `State` before the lock is dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,7 +96,6 @@ pub struct View<'a> {
     pub rows: &'a [Row],
     pub cursor: usize,
     pub scroll: usize,
-    pub style: GuildsStyle,
     pub focused: bool,
     /// Whether this terminal can draw a server's icon.
     pub pictures: bool,
@@ -127,7 +131,7 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     (index < v.rows.len()).then_some(index)
 }
 
-/// Draw the rail, and say where the icons go.
+/// Draw the list, and say where the icons go.
 ///
 /// The icons are placed rather than drawn: a protocol image is one escape
 /// sequence over a region, and every one of them on the screen goes down in a
@@ -136,7 +140,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) -> Vec<Icon> {
     let t = v.theme;
     let mut icons = Vec::new();
     if v.rows.is_empty() {
-        empty(body, buf, t, "—");
+        empty(body, buf, t, "no servers");
         return icons;
     }
     let width = body.width;
@@ -173,32 +177,38 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) -> Vec<Icon> {
             style = style.add_modifier(Modifier::BOLD);
         }
 
-        // `AB  •` — initials, then the one mark there is room for: a count
-        // when somebody used this account's name, a dot when there is anything
-        // unread at all, and nothing when there is not.
+        // The whole entry takes its background first, so a chosen server reads
+        // as one block whether it is one row or two.
+        for line in 0..step {
+            buf.set_string(body.x, y + line, " ".repeat(usize::from(width)), style);
+        }
+
+        // The one mark there is: a count when somebody used this account's
+        // name, a dot when there is anything unread at all, nothing when there
+        // is not.
         let mark = match (row.mentions, row.unread) {
             (0, false) => String::new(),
             (0, true) => "\u{2022}".into(),
             (n, _) if n > 9 => "9+".into(),
             (n, _) => n.to_string(),
         };
-        let initials = row.initials();
+        let mark_width = width_of(&mark);
+        let room = width.saturating_sub(NAME_COLS);
+        // The name is cut before the mark is, because a mark pushed off the
+        // edge by a long name is the one thing on the row that cannot be
+        // guessed from the rest of it.
+        let name_room = room.saturating_sub(if mark_width == 0 { 0 } else { mark_width + 1 });
+        if name_room > 0 {
+            buf.set_string(body.x + NAME_COLS, y, fit(&row.name, name_room), style);
+        }
+        if mark_width > 0 && width > mark_width {
+            buf.set_string(body.x + width - mark_width, y, mark, style);
+        }
 
+        let initials = row.initials();
         if v.pictures {
-            // Two rows: the icon's four columns, the mark beside it, and the
-            // selection carried across both so the entry reads as one thing.
-            for line in 0..step {
-                buf.set_string(body.x, y + line, " ".repeat(usize::from(width)), style);
-            }
-            let gap = usize::from(width.saturating_sub(ICON_COLS + width_of(&mark)));
-            buf.set_string(
-                body.x + ICON_COLS,
-                y,
-                fit(&format!("{:gap$}{mark}", ""), width - ICON_COLS),
-                style,
-            );
-            match (row.id, row.icon.clone()) {
-                (Some(guild), Some(hash)) => icons.push(Icon {
+            if let (Some(guild), Some(hash)) = (row.id, row.icon.clone()) {
+                icons.push(Icon {
                     rect: Rect {
                         x: body.x,
                         y,
@@ -211,24 +221,30 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) -> Vec<Icon> {
                         size: 32,
                     },
                     initials,
-                }),
-                // No icon to fetch: the initials are the icon, centred on the
-                // two rows so that a rail of mixed entries lines up.
-                _ => buf.set_string(body.x + 1, y, fit(&initials, ICON_COLS), style),
+                });
+                continue;
             }
+            // No icon to fetch: the initials stand in for it, in the middle of
+            // the four columns the picture would have taken.
+            buf.set_string(body.x + 1, y, fit(&initials, 2), initials_style(t, style));
             continue;
         }
-
-        let used = width_of(&initials) + width_of(&mark);
-        let gap = usize::from(width.saturating_sub(used).max(1));
-        let text = format!("{initials}{:gap$}{mark}", "", gap = gap);
-        buf.set_string(body.x, y, fit(&text, width), style);
+        buf.set_string(body.x, y, fit(&initials, 2), initials_style(t, style));
     }
-
-    // The list style is a later milestone; the rail is what M1 draws and
-    // saying so beats drawing something that looks broken.
-    let _ = v.style;
     icons
+}
+
+/// The initials are quieter than the name beside them: they are a stand-in for
+/// a picture rather than a second copy of the name. On the chosen row they
+/// take the selection's colours, because a dimmed word on a selection bar is
+/// the one place that contrast runs out.
+fn initials_style(t: &Theme, row: Style) -> Style {
+    if row.bg.is_some() {
+        return row;
+    }
+    Style::default()
+        .fg(rgb(t.row_meta_fg))
+        .bg(row.bg.unwrap_or(rgb(t.panel_bg)))
 }
 
 #[cfg(test)]
@@ -294,13 +310,78 @@ mod tests {
             rows,
             cursor: 0,
             scroll,
-            style: GuildsStyle::Rail,
             focused: true,
             pictures,
         }
     }
 
-    /// The rule the mouse rests on: a row that was scrolled off the top is not
+    fn line(buf: &Buffer, y: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    /// A row is its initials, its name, and the one mark there is room for,
+    /// against the right edge.
+    #[test]
+    fn a_row_says_its_name_and_its_mark() {
+        let theme = crate::ui::theme::tests_support::theme("terminal");
+        let mut rows = vec![row("First Guild")];
+        rows[0].unread = true;
+        rows[0].mentions = 2;
+        let v = view(&rows, &theme, 0, false);
+        let area = Rect::new(0, 0, 24, 2);
+        let mut buf = Buffer::empty(area);
+        render(area, &mut buf, &v);
+        assert_eq!(line(&buf, 0, 24), "FG  First Guild        2");
+
+        // Without a mention it is a dot, and without anything unread it is
+        // nothing at all.
+        rows[0].mentions = 0;
+        let mut buf = Buffer::empty(area);
+        render(area, &mut buf, &view(&rows, &theme, 0, false));
+        assert_eq!(line(&buf, 0, 24), "FG  First Guild        \u{2022}");
+
+        rows[0].unread = false;
+        let mut buf = Buffer::empty(area);
+        render(area, &mut buf, &view(&rows, &theme, 0, false));
+        assert_eq!(line(&buf, 0, 24), "FG  First Guild         ");
+    }
+
+    /// A name too long for the row is cut before the mark is: the mark is the
+    /// one thing on the line that cannot be guessed from the rest of it.
+    #[test]
+    fn a_long_name_gives_way_to_the_mark() {
+        let theme = crate::ui::theme::tests_support::theme("terminal");
+        let mut rows = vec![row("A Server With A Very Long Name")];
+        rows[0].unread = true;
+        let area = Rect::new(0, 0, 20, 1);
+        let mut buf = Buffer::empty(area);
+        render(area, &mut buf, &view(&rows, &theme, 0, false));
+        assert_eq!(line(&buf, 0, 20), "AS  A Server With  \u{2022}");
+    }
+
+    /// The folded module's line is the name and the mark, and Home is just
+    /// its name.
+    #[test]
+    fn a_summary_is_the_name_and_the_mark() {
+        let mut r = row("First Guild");
+        r.unread = true;
+        r.mentions = 2;
+        assert_eq!(summary(&r), "\u{2022} First Guild (2)");
+
+        let home = Row {
+            id: None,
+            name: "Home".into(),
+            icon: None,
+            unread: false,
+            mentions: 0,
+            unavailable: false,
+        };
+        assert_eq!(summary(&home), "Home");
+    }
+
+    /// The rule the mouse rests on    /// The rule the mouse rests on: a row that was scrolled off the top is not
     /// a row anything can click.
     #[test]
     fn row_at_answers_only_for_rows_that_were_drawn() {
