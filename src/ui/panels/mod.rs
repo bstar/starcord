@@ -164,9 +164,15 @@ pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
     } else {
         t.border
     };
+    // Double, as every STAR/AMP panel is drawn. The two share a title
+    // treatment -- `TITLE_LEAD` and `TITLE_TRAIL` are `\u{2550}`, the double
+    // horizontal -- so a single-line frame put a heavier seam on a lighter
+    // edge and the title read as pasted on. `render_corners` only recolours
+    // cells that already hold a box-drawing character, so the block keeps its
+    // own corners and the gradient follows them across.
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
+        .border_type(BorderType::Double)
         .border_style(Style::default().fg(rgb(border)))
         .style(Style::default().bg(rgb(t.panel_bg)));
     block.render(area, buf);
@@ -335,6 +341,41 @@ mod tests {
             assert!(!seen.contains(&k), "{k:?} is claimed by two modules");
             seen.push(k);
         }
+    }
+
+    /// The frame is drawn in the double line STAR/AMP draws every panel in.
+    ///
+    /// Asserted on the glyphs rather than on `BorderType`, because what a
+    /// reader sees is the character in the cell: the titles are seamed with
+    /// `\u{2550}` either way, and it is the edge around them that used to be
+    /// the wrong weight.
+    #[test]
+    fn the_frame_is_drawn_in_double_lines() {
+        let theme = crate::ui::theme::tests_support::theme("cosmic");
+        let area = Rect::new(0, 0, 12, 5);
+        let mut buf = Buffer::empty(area);
+        frame(
+            area,
+            &mut buf,
+            &Frame {
+                theme: &theme,
+                focused: false,
+                // An empty title still writes its lead and trail over the
+                // first cells of the top edge; the cell checked is past them.
+                title: "",
+                words: &[],
+            },
+        );
+        let at = |x: u16, y: u16| buf[(x, y)].symbol().to_string();
+        assert_eq!(
+            [at(0, 0), at(11, 0), at(11, 4), at(0, 4)],
+            ["\u{2554}", "\u{2557}", "\u{255d}", "\u{255a}"],
+            "the corners are not the double-line ones"
+        );
+        assert_eq!(at(6, 0), "\u{2550}", "the top edge is not double");
+        assert_eq!(at(6, 4), "\u{2550}", "the bottom edge is not double");
+        assert_eq!(at(0, 2), "\u{2551}", "the left edge is not double");
+        assert_eq!(at(11, 2), "\u{2551}", "the right edge is not double");
     }
 
     /// A folded list draws its summary at the top left of its body, cut to fit

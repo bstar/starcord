@@ -67,7 +67,15 @@ use crate::ui::theme::Theme;
 const WINDOW: usize = 500;
 
 /// The scrollbar, and the marks the dividers are drawn with.
-const SCROLLBAR: &str = "\u{2590}";
+///
+/// A full block rather than the right half of one, because the thumb is drawn
+/// *on* the panel's right border and that border is double. A half block
+/// covers the right of the cell, which is where `\u{2551}`'s second stroke
+/// falls and not its first, so the thumb read as a notch taken out of the
+/// frame rather than as a bead running down it. Solid, it is the mark
+/// STAR/AMP's playlist marker uses, and it reads the same way against either
+/// weight of line.
+const SCROLLBAR: &str = "\u{2588}";
 const DIVIDER: &str = "\u{2500}";
 
 /// Where the cursor and the view were when a channel was last left.
@@ -1220,7 +1228,7 @@ fn typing_line(names: &[String]) -> String {
     }
 }
 
-/// One column of `▐` down the panel's right border.
+/// One column of `█` down the panel's right border.
 fn scrollbar(
     outer: Rect,
     buf: &mut Buffer,

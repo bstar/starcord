@@ -2,15 +2,15 @@
 source: src/ui/login.rs
 expression: "screen_text(&s, 60, 12)"
 ---
-  ┌──────────────────────────────────────────────────────┐  
-  │ STAR/CORD                                            │  
-  │                                                      │  
-  │ scan this with the Discord app                       │  
-  │ open Discord on your phone → Settings → Scan QR Code │  
-  │                                                      │  
-  │ the terminal is too short for the code:              │  
-  │ https://discord.com/ra/0123456789abcdef              │  
-  │                                                      │  
-  │ waiting for scan… 1:42                               │  
-  │                                                      │  
-  └──────────────────────────────────────────────────────┘
+  ╔══════════════════════════════════════════════════════╗  
+  ║ STAR/CORD                                            ║  
+  ║                                                      ║  
+  ║ scan this with the Discord app                       ║  
+  ║ open Discord on your phone → Settings → Scan QR Code ║  
+  ║                                                      ║  
+  ║ the terminal is too short for the code:              ║  
+  ║ https://discord.com/ra/0123456789abcdef              ║  
+  ║                                                      ║  
+  ║ waiting for scan… 1:42                               ║  
+  ║                                                      ║  
+  ╚══════════════════════════════════════════════════════╝

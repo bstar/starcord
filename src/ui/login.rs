@@ -344,9 +344,11 @@ impl LoginScreen {
         }
 
         Clear.render(panel, buf);
+        // The same double frame the modules behind it use, so the first
+        // screen is not the one screen drawn in a different weight.
         Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Plain)
+            .border_type(BorderType::Double)
             .border_style(Style::default().fg(rgb(t.border_focused)))
             .style(Style::default().bg(rgb(t.panel_bg)))
             .render(panel, buf);

@@ -5,6 +5,16 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- **The borders are STAR/AMP's**: every module, the login box and the overlays
+  are framed in double lines. The titles were already seamed with `═` --
+  `═ servers ═` is STAR/KIT's, and STAR/AMP draws every panel with it -- so a
+  single-line frame put a heavier mark on a lighter edge and the title read as
+  stuck on rather than sitting in the border. The conversation's scroll marker
+  is a full block for the same reason: on a `║` a half block covers one of
+  the two strokes and reads as a gap in the frame.
+
 ## [0.0.2] - 2026-09-14
 
 ### Changed
