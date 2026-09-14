@@ -77,9 +77,9 @@ the glibc version they ask for.
 
 | Package | Release |
 | --- | --- |
-| `starcord_0.1.0-1.bookworm_amd64.deb` | Debian 12 |
-| `starcord_0.1.0-1.trixie_amd64.deb` | Debian 13 |
-| `starcord_0.1.0-1.ubuntu24.04_amd64.deb` | Ubuntu 24.04 |
+| `starcord_0.0.1-1.bookworm_amd64.deb` | Debian 12 |
+| `starcord_0.0.1-1.trixie_amd64.deb` | Debian 13 |
+| `starcord_0.0.1-1.ubuntu24.04_amd64.deb` | Ubuntu 24.04 |
 
 Or build your own:
 

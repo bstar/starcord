@@ -5,6 +5,8 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-09-13
+
 ### Added
 
 - **A Discord core that connects, identifies and holds a session**, with no
