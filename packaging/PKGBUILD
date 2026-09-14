@@ -1,6 +1,6 @@
 # Maintainer: bstar <bob@dinicolas.com>
 pkgname=starcord
-pkgver=0.0.1
+pkgver=0.0.2
 pkgrel=1
 pkgdesc="A Winamp-feel terminal Discord client"
 arch=('x86_64' 'aarch64')

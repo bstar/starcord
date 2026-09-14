@@ -5,6 +5,8 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-09-14
+
 ### Changed
 
 - **The window is one column of modules rather than a dock of panels.** The
