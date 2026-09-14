@@ -85,6 +85,12 @@ pub struct Ui {
     pub padding_y: u16,
     /// `auto`, `kitty`, `blocks` or `off`.
     pub graphics: String,
+    /// The tallest an open list in the column may grow to, in rows.
+    ///
+    /// A ceiling rather than a size: a list shorter than this is only as tall
+    /// as it has entries, and one longer than it scrolls. Eight is what leaves
+    /// a readable conversation under it on a twenty-four-row terminal.
+    pub list_rows: u16,
 }
 
 impl Default for Ui {
@@ -94,6 +100,7 @@ impl Default for Ui {
             padding_x: 0,
             padding_y: 0,
             graphics: "auto".into(),
+            list_rows: 8,
         }
     }
 }
@@ -459,6 +466,10 @@ graphics = "auto"
 # Blank cells around the whole layout, for a terminal whose window has none.
 padding_x = 0
 padding_y = 0
+# The tallest an open list -- servers, channels or members -- may grow to. A
+# shorter list is only as tall as it has entries; a longer one scrolls. The
+# conversation gets whatever is left.
+list_rows = 8
 
 [layout]
 # The server rail: "rail" is a narrow strip of icons, "list" a full column of
@@ -571,6 +582,14 @@ mod tests {
     fn the_template_parses_as_the_defaults() {
         let parsed: Config = toml::from_str(TEMPLATE).expect("the template must parse");
         assert_eq!(parsed, Config::default());
+    }
+
+    /// The one number the column's arithmetic reads out of the file.
+    #[test]
+    fn the_list_ceiling_has_a_default_and_can_be_set() {
+        assert_eq!(Ui::default().list_rows, 8);
+        let c: Config = toml::from_str("[ui]\nlist_rows = 3\n").unwrap();
+        assert_eq!(c.ui.list_rows, 3);
     }
 
     #[test]
