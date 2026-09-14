@@ -23,19 +23,25 @@ defaults. Editing one key never means writing the other six.
 | `[ui] graphics` | how pictures are drawn: `auto` asks the terminal, `kitty` insists on the kitty protocol, `blocks` (also spelled `halfblocks`) draws two pixels to a cell in any terminal at all, `off` draws no picture and leaves the chip that names the file. Default `auto` |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the whole layout, for a terminal whose window has none. Default `0` |
 
-### The panels
+### The column
+
+The window is one vertical column of modules — the servers, the channels, the
+conversation, the composer and the members, in the order you drill through
+them — with the status line under it. Every module is always there, and the
+list you are choosing in is the one that is open; the others fold to a single
+line saying what is chosen in them. There is nothing to arrange, so there is
+nothing written back to this file.
 
 | Key | Does |
 | --- | --- |
-| `[layout] guilds` | the server rail: `"rail"` (default) is a strip of icons, `"list"` a column of names, `"hidden"` neither |
-| `[layout] left_cols` | width of the column holding channels and DMs. Default `26` |
-| `[layout] members_cols` | width of the member list. Default `24` |
-| `[layout] dms_share` | percentage of the left column the DM list takes. Default `40` |
-| `[layout] show_channels` / `show_dms` / `show_members` | whether each panel is open. All `true` |
-| `[layout] zen` | chat, composer and status line, nothing else. Default `false` |
+| `[ui] list_rows` | the tallest an open list may grow to, in rows. A shorter list is only as tall as it has entries; a longer one scrolls. The conversation gets whatever is left. Default `8` |
 
-All of these are written back when you drag a seam or close a panel, so the
-layout you arrange is the layout you get next time.
+The window needs 60 columns by 21 rows: five modules with a row of content
+each, plus the status line. Below that STAR/CORD says so rather than drawing
+something it cannot draw honestly.
+
+A `[layout]` table from 0.0.1 is ignored rather than refused, so a config file
+written by the old version still loads.
 
 ### The messages
 

@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct Config {
     pub ui: Ui,
-    pub layout: Layout,
     pub chat: Chat,
     pub media: Media,
     pub notify: Notify,
@@ -101,59 +100,6 @@ impl Default for Ui {
             padding_y: 0,
             graphics: "auto".into(),
             list_rows: 8,
-        }
-    }
-}
-
-/// How the guild rail is drawn.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GuildsStyle {
-    /// A narrow column of icons or initials.
-    #[default]
-    Rail,
-    /// A full-width list with names.
-    List,
-    Hidden,
-}
-
-impl GuildsStyle {
-    pub fn name(self) -> &'static str {
-        match self {
-            GuildsStyle::Rail => "rail",
-            GuildsStyle::List => "list",
-            GuildsStyle::Hidden => "hidden",
-        }
-    }
-}
-
-/// The dock, as it is remembered between runs.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Layout {
-    pub guilds: GuildsStyle,
-    /// Width of the column holding channels and DMs.
-    pub left_cols: u16,
-    pub members_cols: u16,
-    /// Percentage of the left column the DM list takes.
-    pub dms_share: u16,
-    pub show_channels: bool,
-    pub show_dms: bool,
-    pub show_members: bool,
-    pub zen: bool,
-}
-
-impl Default for Layout {
-    fn default() -> Self {
-        Self {
-            guilds: GuildsStyle::Rail,
-            left_cols: 26,
-            members_cols: 24,
-            dms_share: 40,
-            show_channels: true,
-            show_dms: true,
-            show_members: true,
-            zen: false,
         }
     }
 }
@@ -471,22 +417,6 @@ padding_y = 0
 # conversation gets whatever is left.
 list_rows = 8
 
-[layout]
-# The server rail: "rail" is a narrow strip of icons, "list" a full column of
-# names, "hidden" neither. Alt+G toggles it whichever this says.
-guilds = "rail"
-# The column holding the channel list and the DM list, and the member list on
-# the far side. Both are dragged by their seams and written back here.
-left_cols = 26
-members_cols = 24
-# Percentage of the left column the DM list takes.
-dms_share = 40
-show_channels = true
-show_dms = true
-show_members = true
-# Alt+Z: chat, composer and the status line, nothing else.
-zen = false
-
 [chat]
 show_avatars = true
 # off, short (14:32) or full (2026-09-13 14:32).
@@ -582,6 +512,32 @@ mod tests {
     fn the_template_parses_as_the_defaults() {
         let parsed: Config = toml::from_str(TEMPLATE).expect("the template must parse");
         assert_eq!(parsed, Config::default());
+    }
+
+    /// A file written by 0.0.1 still loads. The window had a `[layout]` table
+    /// then; there is nothing it could mean now, and a client that refused to
+    /// start over a table it no longer has is a worse answer than one that
+    /// ignores it. Nothing here declares `deny_unknown_fields`, which is what
+    /// makes that true rather than merely intended.
+    #[test]
+    fn an_old_layout_table_is_ignored() {
+        let text = "\
+[ui]
+padding_x = 2
+
+[layout]
+guilds = \"rail\"
+left_cols = 26
+members_cols = 24
+dms_share = 40
+show_channels = true
+show_dms = true
+show_members = true
+zen = false
+";
+        let c: Config = toml::from_str(text).expect("an old file still parses");
+        assert_eq!(c.ui.padding_x, 2);
+        assert_eq!(c.ui.list_rows, Ui::default().list_rows);
     }
 
     /// The one number the column's arithmetic reads out of the file.
