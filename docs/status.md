@@ -27,7 +27,7 @@ a short list of rough edges below.
 | Notifications | the decision rule, and delivery over zbus |
 | `starcord probe` | the headless client: connect, tail, send, upload, react, search, fetch one picture, ask the picker |
 | Packaging | Nix flake and home-manager module, PKGBUILD, `.deb`, AppImage, portable tarball, CI |
-| The window | the dock and its degradation, the login screen including the QR code, the server rail, the channel, message and member lists, the status line, the help overlay and the quick switcher |
+| The window | the column of modules and the accordion that folds them, the login screen including the QR code, the server, channel, conversation and member lists, the status line, the help overlay and the quick switcher |
 | Reading a conversation | grouping, Discord's markdown, replies, reactions, embed cards, code blocks, spoilers, day and unread dividers, the typing line, virtual scrolling, history paging, a scrollbar that can be dragged |
 | Writing one | drafts per channel, reply and edit modes, `@`, `#` and `:` autocomplete, sending, editing, deleting with a confirmation |
 | Pictures | avatars, server icons, inline attachments, card thumbnails and custom emoji, through the terminal's own protocol or as half blocks |

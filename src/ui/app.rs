@@ -19,7 +19,7 @@
 //!
 //! ## Key dispatch, outermost first
 //!
-//! login screen → overlay → composer → `g` prefix → focused panel → global
+//! login screen → overlay → composer → `g` prefix → focused module → global
 //! table. Modality is checked in `handle` **and** in `handle_mouse`, because an
 //! overlay that swallows keys and not clicks is a dialogue you can click
 //! through.
@@ -38,7 +38,7 @@
 //! which then times out, and the first frame never arrives. That is a hang with
 //! no message in it, so it is worth the sentence.
 //!
-//! ## Where the panel logic is not
+//! ## Where the module logic is not
 //!
 //! Almost nowhere here. The message list measures and draws itself in
 //! `panels::chat`, the composer owns its drafts and its autocomplete, the

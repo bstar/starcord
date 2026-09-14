@@ -5,6 +5,42 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- **The window is one column of modules rather than a dock of panels.** The
+  servers, the channels, the conversation, the composer and the members, top
+  to bottom in the order you drill through them, with the status line under
+  them. Every module is always there, so there is nothing to open, nothing to
+  close and nothing to arrange; what the first release shipped was a
+  representation of the web client, and this is STAR/AMP's shape instead.
+- **The three lists are an accordion.** The one you are choosing in is
+  expanded and the others fold to a single line saying what is chosen in
+  them: the server, the channel or conversation, how many people are about.
+  Choosing a server folds the servers and opens its channels; opening a
+  channel folds both, and `esc` walks back up the way it came down and folds
+  at the top.
+- **Home is the first entry in the server list**, and with it chosen the
+  second module lists your conversations and then the friends who have not
+  started one. The separate DM module, its tab and its fold are gone, which
+  were three ways of reaching the same list.
+- **The composer is where the keyboard rests.** Opening a channel puts the
+  caret in it, so letters type; `tab`, `esc` and every `alt+…` still leave it,
+  and none of them is a letter. A channel read from the composer is still
+  acknowledged, and one you are only browsing past in a list is not.
+- **`alt+1` to `alt+5` are the column, in order**, `alt+m` opens and folds the
+  member list, and `alt+s` opens the focused module's settings. `alt+g`,
+  `alt+c`, `alt+d`, `alt+z` and `alt+x` are gone with the panels they opened
+  and closed.
+- **The window needs 60 by 21** rather than 60 by 12, because five modules are
+  always drawn. The conversation wraps to the width of the window now rather
+  than to a column of it.
+
+### Removed
+
+- **`[layout]`**. The column has no widths to remember, no panels to close and
+  no seams to drag. A file written by 0.0.1 still loads: the table is ignored
+  rather than refused.
+
 ## [0.0.1] - 2026-09-13
 
 ### Added

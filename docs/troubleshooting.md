@@ -68,11 +68,15 @@ store = "file"     # always the file, even where there is a keyring
 
 ## "terminal too small"
 
-Below 60 columns or 12 rows there is not enough room to draw a message and a
-composer, so the window says so rather than drawing something unreadable.
-Above that it degrades in steps: the member list goes first, then the DM list
-folds into the channel list, then the server rail. Widening the window brings
-each back in the same order, and a panel you closed yourself stays closed.
+Below 60 columns or 21 rows there is not enough room to draw the column, so
+the window says so rather than drawing something unreadable. Twenty-one rows
+is five modules with a row of content each, plus the status line: every module
+is always there, which is why the floor is what it is.
+
+Above the floor the extra rows go to the list you have open, up to `[ui]
+list_rows`, and then to the composer; the conversation keeps four rows
+whatever else happens. A short window is a usable one -- it is the folded
+lines that get shorter, not the conversation.
 
 ## It keeps saying it is reconnecting
 

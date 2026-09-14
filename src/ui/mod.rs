@@ -1,7 +1,9 @@
 //! The terminal interface.
 //!
-//! Layered the way STAR/AMP's is, and for the same reasons. [`keymap`] compiles
-//! with no reference to [`app`]; a panel is a widget over a view struct and
+//! Shaped the way STAR/AMP's is, and for the same reasons. The window is one
+//! vertical column of modules in the order you drill through them, each
+//! folding to a single line when you are done with it; [`keymap`] compiles
+//! with no reference to [`app`]; a module is a widget over a view struct and
 //! owns none of what it draws; [`layout`] is the one place a rectangle is
 //! decided, and both the renderer and the pointer read its answer; and
 //! modality is checked first in `handle` *and* in `handle_mouse`.

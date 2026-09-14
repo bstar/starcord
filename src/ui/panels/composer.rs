@@ -412,7 +412,7 @@ impl Composer {
         }
     }
 
-    /// Rows the panel wants from the dock, including its own chrome.
+    /// Rows the module wants from the column, including its own chrome.
     pub fn rows(&self, cfg: &Compose, width: u16) -> u16 {
         let text_width = width.saturating_sub(2).max(1);
         let text = self.input.height(text_width).max(1);
@@ -1144,9 +1144,9 @@ mod tests {
         assert!(c.complete.is_none());
     }
 
-    /// The height the dock is told about is the height that gets drawn.
+    /// The height the column is told about is the height that gets drawn.
     #[test]
-    fn the_panel_grows_with_what_is_written() {
+    fn the_module_grows_with_what_is_written() {
         let mut c = Composer::new();
         c.open(ChannelId(1));
         assert_eq!(c.rows(&cfg(), 40), MIN_ROWS);

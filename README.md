@@ -63,9 +63,11 @@ keyring. [Signing in](docs/auth.md) has both routes in full, and
   and a desktop notification when you ask for one.
 - **Search.** A channel or a whole server, and jumping to a result opens the
   history around it.
-- **Dockable panels and sixteen themes.** Winamp-style panels you drag by their
-  seams, and the same theme engine STAR/AMP uses, so both match the desktop and
-  each other. The mouse works everywhere the keyboard does.
+- **One column of modules, and sixteen themes.** The shape STAR/AMP has: the
+  servers, the channels, the conversation, the composer and the members
+  stacked in the order you drill through them, each folding to a single line
+  when you are done with it. The same theme engine too, so both match the
+  desktop and each other. The mouse works everywhere the keyboard does.
 
 Linux on x86_64 and aarch64, and macOS on Apple Silicon.
 
