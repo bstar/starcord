@@ -2,33 +2,33 @@
 source: src/ui/frames.rs
 expression: hidden.clone()
 ---
-┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
-│      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│@    1││# rules                 ││───────────── new messages ─────────────││REGULARS — 2          │
-│FG   2││▾ TEXT CHANNELS         ││ ╭ ↩ @Alex: the first thing anybody sa… ││● Alex                │
-│SG   •││  # general (2)         ││  Alex  09:00                           ││● Jo                  │
-│··    ││  > about the deploy    ││  yes, that one                         ││ONLINE — 1            │
-│      ││  # random              ││  [👍  3] [:pepe: 1]                     ││● Sam                 │
-│      ││  ! announcements       ││▕ Jordan  09:05                         ││OFFLINE — 1           │
-│      ││▾ ARCHIVE               ││▕ @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you   ││● Robin               │
-│      ││  # old-decisions       ││▕ want it                               ││                      │
-│      ││                        ││  Alex  09:10                           ││                      │
-│      ││                        ││  the picture I took                    ││                      │
-│      ││                        ││  [image 1024x768 harbour.png]          ▐│                      │
-│      ││                        ││  Jordan  09:15                         ▐│                      │
-│      ││                        ││  https://example.invalid/page          ▐│                      │
-│      ││                        ││  │ A page title                        ▐│                      │
-│      │└────────────────────────┘│  │ Two sentences of description, as a  ▐│                      │
-│      │┌═ messages ═────────────┐│  │ link unfurl carries. The second is  ▐│                      │
-│      ││         friends  close ││  │ there so the wrapping has something ▐│                      │
-│      ││○ Wren of the Long Displ││  │ to do.                              ▐│                      │
-│      ││○ Alex, Jordan [3]      ││  Alex  09:20                           ▐│                      │
-│      ││● Alex (1)              ││  https://tenor.invalid/view/a-cat-1234 ▐│                      │
-│      ││                        ││  5                                     ▐│                      │
-│      ││                        ││  [gif ▶ a cat, falling over]           ▐│                      │
-│      ││                        │└────────────────────────────────────────┘│                      │
-│      ││                        │┌═ compose ═─────────────────────────────┐│                      │
-│      ││                        ││                     attach  emoji  gif ││                      │
-│      ││                        ││message #general · First Guild          ││                      │
-└──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off
+┌═ servers ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│• First Guild (2)                                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ channels · First Guild ═────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│# general (2)                                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ #general · First Guild ═────────────────────────────────────────────────────────────────────────┐
+│                                                                           search  pins  settings │
+│▕ Jordan  09:05                                                                                   │
+│▕ @Sam the answer is ▒▒▒▒▒▒▒▒▒ if you want it                                                     │
+│  Alex  09:10                                                                                     │
+│  the picture I took                                                                              │
+│  [image 1024x768 harbour.png]                                                                    │
+│  Jordan  09:15                                                                                   │
+│  https://example.invalid/page                                                                    ▐
+│  │ A page title                                                                                  ▐
+│  │ Two sentences of description, as a link unfurl carries. The                                   ▐
+│  │ second is there so the wrapping has something to do.                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ compose ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                               attach  emoji  gif │
+│message #general · First Guild                                                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ members ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│2 online · 1 idle · 1 offline                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+? help  #general · First Guild                           chat  ↓ 1 new  7 unread · @3  ▲ online  off

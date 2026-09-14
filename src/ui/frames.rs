@@ -2,15 +2,14 @@
 //!
 //! A layout regression is a diff of a drawn screen. It is the only form in
 //! which anybody can actually see one, and it is the one thing a pile of
-//! assertions about rectangles cannot show: the tiling test says the panels
-//! cover the body, and says nothing at all about a title clipped to `= serv`,
-//! a channel row one column wider than its panel, or a header word sitting on
-//! a border. Every one of those was found by looking at a frame.
+//! assertions about rectangles cannot show: the tiling test says the modules
+//! cover the body, and says nothing at all about a title clipped mid-word, a
+//! channel row one column wider than its module, or a header word sitting on a
+//! border. Every one of those was found by looking at a frame.
 //!
 //! Two sizes, because they exercise different code: a hundred by thirty is the
-//! layout with everything in it, and sixty by twelve is the floor, where the
-//! ladder has taken the member list and the rail away and the columns are at
-//! their minimums.
+//! column with room to spend, and sixty by twenty-one is the floor, where every
+//! module is folded to its four rows and nothing is left over.
 //!
 //! Two themes, because the roles are resolved per theme and only a drawn frame
 //! shows what they resolve to: `terminal`, which is the sixteen-colour one, and
@@ -101,8 +100,8 @@ fn loaded(theme: &str) -> (App, fake::Idle) {
     app.tz = jiff::tz::TimeZone::UTC;
     assert!(app.login.is_none(), "a ready core needs no login screen");
 
-    // The rail opens on the direct-message home; the snapshots want a server
-    // open, which is the first thing anybody does.
+    // The column opens on the server list with Home chosen; the snapshots want
+    // a server open, which is the first thing anybody does.
     app.tick();
     app.handle(Action::FocusServers);
     app.handle(Action::CursorDown);
@@ -156,8 +155,13 @@ const PICTURES: crate::discord::snowflake::ChannelId =
 /// Half blocks rather than a protocol because they are the one way of drawing
 /// a picture that lands in the buffer as cells: a snapshot can see them, and
 /// every terminal has them. What this pins is the part that is the same
-/// either way -- how many rows a picture was given, where the avatars and the
-/// emoji went, and that the rail grew to hold an icon.
+/// either way -- how many rows a picture was given, and where the avatars, the
+/// emoji and a card's thumbnail went.
+///
+/// Forty rows rather than thirty: the column is five modules deep before the
+/// conversation gets anything, and a thirty-row terminal leaves it thirteen
+/// rows, which is not enough of the channel to have a picture and a card in it
+/// at once.
 fn in_pictures(theme: &str) -> (App, fake::Idle) {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/gateway/session.json");
@@ -190,7 +194,7 @@ fn in_pictures(theme: &str) -> (App, fake::Idle) {
     // what places the next picture down.
     let mut asked = 0;
     for _ in 0..3 {
-        render(&mut app, 100, 30);
+        render(&mut app, 100, 40);
         asked += idle.pump();
         app.tick();
     }
@@ -209,17 +213,47 @@ fn the_login_screen() {
 }
 
 #[test]
-fn the_main_layout_with_the_fixture_loaded() {
+fn the_column_with_the_fixture_loaded() {
     let (mut app, _idle) = loaded("terminal");
-    insta::assert_snapshot!("dock-terminal-100x30", render(&mut app, 100, 30));
-    // The floor: the ladder has taken the member list and the rail, the left
-    // column is at its minimum, and the DM list has folded into the channels.
-    insta::assert_snapshot!("dock-terminal-60x12", render(&mut app, 60, 12));
-    // And one below it, which draws one line and nothing else.
-    insta::assert_snapshot!("dock-terminal-59x30", render(&mut app, 59, 30));
+    insta::assert_snapshot!("column-terminal-100x30", render(&mut app, 100, 30));
+    // The floor: five modules of four rows each and the status line.
+    insta::assert_snapshot!("column-terminal-60x21", render(&mut app, 60, 21));
+    // And the two ways below it, each of which draws one line and nothing
+    // else: a row short, and a column short.
+    insta::assert_snapshot!("column-terminal-60x20", render(&mut app, 60, 20));
+    insta::assert_snapshot!("column-terminal-59x30", render(&mut app, 59, 30));
 
     let (mut app, _idle) = loaded("catppuccin-mocha");
-    insta::assert_snapshot!("dock-mocha-100x30", render(&mut app, 100, 30));
+    insta::assert_snapshot!("column-mocha-100x30", render(&mut app, 100, 30));
+}
+
+/// The server list open, which is what the window opens on.
+#[test]
+fn the_server_list_expanded() {
+    let (mut app, _idle) = loaded("terminal");
+    app.handle(Action::FocusServers);
+    insta::assert_snapshot!("column-servers-expanded-100x30", render(&mut app, 100, 30));
+}
+
+/// Home chosen: the second module is the conversations and then the friends,
+/// grouped by how reachable they are.
+#[test]
+fn home_lists_the_conversations_and_the_friends() {
+    let (mut app, _idle) = loaded("terminal");
+    app.handle(Action::FocusServers);
+    app.handle(Action::Home);
+    app.handle(Action::Activate);
+    app.tick();
+    insta::assert_snapshot!("column-home-messages-100x30", render(&mut app, 100, 30));
+}
+
+/// The member list open under the composer, with the conversation shrunk to
+/// pay for it.
+#[test]
+fn the_member_list_expanded() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::ToggleMembers);
+    insta::assert_snapshot!("column-members-expanded-100x30", render(&mut app, 100, 30));
 }
 
 #[test]
@@ -231,21 +265,6 @@ fn the_help_overlay() {
     let (mut app, _idle) = loaded("catppuccin-mocha");
     app.handle(Action::Help);
     insta::assert_snapshot!("help-mocha-100x30", render(&mut app, 100, 30));
-}
-
-/// The folded layout, where the DM list has no panel of its own and the
-/// channel panel is carrying both lists behind a word.
-#[test]
-fn the_folded_message_list() {
-    let (mut app, _idle) = loaded("terminal");
-    // Drawn once first, because a key acts on the layout that is on screen:
-    // whether the DM list is folded or closed is a fact about the last frame,
-    // and at a hundred columns it is neither.
-    render(&mut app, 60, 12);
-    // `alt+d` then swaps what the channel panel is showing rather than closing
-    // a panel that is not there.
-    app.handle(Action::ToggleDms);
-    insta::assert_snapshot!("fold-terminal-60x12", render(&mut app, 60, 12));
 }
 
 /// The conversation itself: every construct the renderer has, at once.
@@ -280,6 +299,9 @@ fn the_top_of_the_conversation() {
 fn a_spoiler_hidden_and_revealed() {
     let (mut app, _idle) = in_general("terminal");
     app.handle(Action::FocusConversation);
+    // One frame first: the list scrolls a selection into view against the
+    // viewport it was last drawn in, and before the first frame there is none.
+    render(&mut app, 100, 30);
     // Put the cursor on the message carrying the spoiler.
     app.chat
         .select(crate::discord::snowflake::MessageId(500000000000000107));
@@ -375,7 +397,7 @@ fn the_typing_row() {
 #[test]
 fn the_pictures() {
     let (mut app, _idle) = in_pictures("terminal");
-    insta::assert_snapshot!("pictures-halfblocks-100x30", render(&mut app, 100, 30));
+    insta::assert_snapshot!("pictures-halfblocks-100x40", render(&mut app, 100, 40));
 }
 
 /// The same channel with no pictures at all, which is the chip it was before.
@@ -385,7 +407,7 @@ fn the_pictures_as_chips() {
     let (mut app, _idle) = loaded("terminal");
     app.open_channel(PICTURES);
     app.tick();
-    insta::assert_snapshot!("pictures-chips-100x30", render(&mut app, 100, 30));
+    insta::assert_snapshot!("pictures-chips-100x40", render(&mut app, 100, 40));
 }
 
 /// The emoji grid, filtered to the server's own.
@@ -423,13 +445,20 @@ fn the_gif_picker() {
 /// The media viewer over the picture channel, drawing half blocks.
 #[test]
 fn the_media_viewer() {
-    let (mut app, _idle) = in_pictures("terminal");
+    let (mut app, mut idle) = in_pictures("terminal");
     app.handle(Action::FocusConversation);
     app.chat
         .select(crate::discord::snowflake::MessageId(500000000000000201));
     app.handle(Action::OpenMedia);
     assert!(app.over.viewer.is_some(), "the viewer did not open");
-    insta::assert_snapshot!("viewer-halfblocks-100x30", render(&mut app, 100, 30));
+    // The viewer asks for the picture again at the size it is about to draw
+    // it, so the frame that places it is the frame before the one that has it.
+    for _ in 0..3 {
+        render(&mut app, 100, 40);
+        idle.pump();
+        app.tick();
+    }
+    insta::assert_snapshot!("viewer-halfblocks-100x40", render(&mut app, 100, 40));
 }
 
 /// The search overlay with a page of hits in it.

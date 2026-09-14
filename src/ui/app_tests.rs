@@ -19,6 +19,42 @@ fn app() -> App {
     )
 }
 
+/// An app past the login screen, with the replay fixture applied.
+///
+/// The `Idle` has to be held: dropping it closes the channels, and a closed
+/// channel is a core that has gone away.
+fn loaded() -> (App, fake::Idle) {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/gateway/session.json");
+    let session = fake::Session::read(&path).expect("the replay fixture");
+    let (core, idle) = fake::loaded(&session, 1_000);
+    let mut a = App::new(
+        core,
+        Config::default(),
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        Graphics::disabled(),
+    );
+    a.tz = jiff::tz::TimeZone::UTC;
+    a.tick();
+    (a, idle)
+}
+
+/// `#general` in the first server, which is where the conversation is.
+const CHANNEL: ChannelId = ChannelId(200000000000000011);
+
+fn click(a: &mut App, x: u16, y: u16, w: u16, h: u16) {
+    a.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: starkit::crossterm::event::KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, w, h),
+    );
+}
+
 fn frame(app: &mut App, w: u16, h: u16) -> String {
     let area = Rect::new(0, 0, w, h);
     let mut buf = Buffer::empty(area);
@@ -56,7 +92,12 @@ fn a_terminal_below_the_floor_says_so() {
     a.login = None;
     let drawn = frame(&mut a, 59, 30);
     assert!(drawn.contains("too small"), "{drawn}");
-    assert!(drawn.contains("60x12"));
+    assert!(drawn.contains("60x21"));
+
+    // Wide enough and too short says the same thing: every module is always
+    // present, so twenty rows is one module short of honest.
+    let drawn = frame(&mut a, 100, 20);
+    assert!(drawn.contains("60x21"), "{drawn}");
 }
 
 /// Thirty per second, and the drain is bounded, so a burst of gateway
@@ -139,57 +180,181 @@ fn an_open_overlay_takes_the_keys_and_the_clicks() {
     assert!(!a.over.open(), "a click closes it");
 }
 
-/// Panels toggle and zen collapses to the conversation.
+/// `alt+m` opens the member list and folds it again, and the conversation
+/// gives up the rows for it.
 #[test]
-fn the_panel_keys_open_and_close_panels() {
-    let mut a = app();
-    a.login = None;
-    frame(&mut a, 140, 30);
-    assert!(a.layout.last.as_ref().unwrap().visible().len() == 6);
-
-    a.handle(Action::ToggleMembers);
-    frame(&mut a, 140, 30);
-    assert!(!a
+fn alt_m_opens_and_folds_the_member_list() {
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.tick();
+    frame(&mut a, 100, 30);
+    let folded = a
         .layout
         .last
         .as_ref()
         .unwrap()
-        .panels
-        .contains_key(&ModuleId::Members));
+        .rect_of(ModuleId::Conversation)
+        .height;
 
-    a.handle(Action::ToggleZen);
-    frame(&mut a, 140, 30);
+    a.handle(Action::ToggleMembers);
+    frame(&mut a, 100, 30);
+    assert!(a.layout.is_expanded(ModuleId::Members));
+    assert_eq!(a.layout.focus(), ModuleId::Members);
+    let open = a
+        .layout
+        .last
+        .as_ref()
+        .unwrap()
+        .rect_of(ModuleId::Conversation)
+        .height;
+    assert!(open < folded, "the conversation kept {open} rows");
+
+    a.handle(Action::ToggleMembers);
+    frame(&mut a, 100, 30);
+    assert_eq!(a.layout.expanded(), None);
     assert_eq!(
-        a.layout.last.as_ref().unwrap().visible(),
-        vec![ModuleId::Conversation, ModuleId::Compose]
+        a.layout.focus(),
+        ModuleId::Compose,
+        "folding it left the keyboard nowhere useful"
     );
 }
 
-/// Tab walks the panels that are drawn, and never lands on one that is
-/// not.
+/// Choosing a server folds the servers and opens what is in it.
 #[test]
-fn tab_walks_the_visible_panels() {
+fn choosing_a_server_opens_its_channels() {
+    let (mut a, _idle) = loaded();
+    assert!(a.layout.is_expanded(ModuleId::Servers));
+    a.handle(Action::CursorDown);
+    a.handle(Action::Activate);
+
+    assert!(a.nav.guild.is_some(), "no server was chosen");
+    assert!(a.layout.is_expanded(ModuleId::Channels));
+    assert!(!a.layout.is_expanded(ModuleId::Servers));
+    assert_eq!(a.layout.focus(), ModuleId::Channels);
+    assert!(
+        !a.view.channels.is_empty(),
+        "the channels are not there yet"
+    );
+
+    let drawn = frame(&mut a, 100, 30);
+    assert!(drawn.contains("channels \u{b7} First Guild"), "{drawn}");
+}
+
+/// Home is the first server, and choosing it lists the conversations and then
+/// the friends, under one heading each.
+#[test]
+fn choosing_home_lists_conversations_then_friends() {
+    let (mut a, _idle) = loaded();
+    a.handle(Action::Activate);
+    assert_eq!(a.nav.guild, None);
+
+    let headings: Vec<String> = a
+        .view
+        .messages
+        .iter()
+        .filter_map(|r| match r {
+            dms::Row::Section { label } => Some(label.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(headings.first().map(String::as_str), Some("conversations"));
+    assert!(headings.len() > 1, "no friends are grouped: {headings:?}");
+
+    let first_dm = a
+        .view
+        .messages
+        .iter()
+        .position(|r| matches!(r, dms::Row::Dm { .. }))
+        .expect("a conversation");
+    let first_friend = a
+        .view
+        .messages
+        .iter()
+        .position(|r| matches!(r, dms::Row::Friend { .. }))
+        .expect("a friend");
+    assert!(first_dm < first_friend, "the friends came first");
+
+    let drawn = frame(&mut a, 100, 30);
+    assert!(drawn.contains("messages"), "{drawn}");
+    assert!(drawn.contains("CONVERSATIONS"), "{drawn}");
+}
+
+/// Opening a channel folds both lists and puts the keyboard in the composer.
+#[test]
+fn opening_a_channel_folds_the_lists_and_focuses_the_composer() {
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.tick();
+    assert_eq!(a.layout.expanded(), None);
+    assert_eq!(a.layout.focus(), ModuleId::Compose);
+
+    // And the folded lists say where they are rather than going blank.
+    let drawn = frame(&mut a, 100, 30);
+    assert!(drawn.contains("First Guild"), "{drawn}");
+    assert!(drawn.contains("# general"), "{drawn}");
+}
+
+/// A click anywhere on a folded list opens it.
+#[test]
+fn clicking_a_folded_list_opens_it() {
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.tick();
+    frame(&mut a, 100, 30);
+    assert_eq!(a.layout.expanded(), None);
+
+    let rect = a.layout.last.as_ref().unwrap().rect_of(ModuleId::Servers);
+    // The body row rather than the border or the header word.
+    click(&mut a, rect.x + 2, rect.y + 2, 100, 30);
+    assert!(a.layout.is_expanded(ModuleId::Servers));
+    assert_eq!(a.layout.focus(), ModuleId::Servers);
+}
+
+/// A channel opened into the composer is a channel somebody is reading, so it
+/// is still acknowledged. Browsing the server list is not.
+#[test]
+fn reading_from_the_composer_still_marks_read() {
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.tick();
+    frame(&mut a, 100, 30);
+    assert_eq!(a.layout.focus(), ModuleId::Compose);
+
+    a.focused_since = Instant::now() - READ_AFTER - Duration::from_secs(1);
+    a.tick();
+    assert!(a.acked.is_some(), "the composer is reading and did not ack");
+
+    a.acked = None;
+    a.focus_module(ModuleId::Servers);
+    a.focused_since = Instant::now() - READ_AFTER - Duration::from_secs(1);
+    a.tick();
+    assert!(a.acked.is_none(), "browsing the servers acked a channel");
+}
+
+/// Tab walks the column in order and wraps. Every module is always there, so
+/// there is nowhere it can land that is not on the screen.
+#[test]
+fn tab_walks_the_column() {
     let mut a = app();
     a.login = None;
-    frame(&mut a, 140, 30);
-    let visible = a.layout.last.as_ref().unwrap().visible();
-    assert_eq!(visible.len(), 6);
+    frame(&mut a, 100, 30);
 
     let mut seen = Vec::new();
-    for _ in 0..visible.len() {
+    for _ in 0..COLUMN.len() {
         a.handle(Action::FocusNext);
         seen.push(a.layout.focus());
     }
-    // One step per panel comes back to where it started, and every stop
-    // was somewhere that was actually drawn.
-    assert_eq!(seen.last().copied(), Some(a.layout.focus()));
-    let mut sorted = seen.clone();
-    sorted.sort();
-    sorted.dedup();
-    assert_eq!(sorted.len(), visible.len(), "tab visited {seen:?}");
-    for p in &seen {
-        assert!(visible.contains(p), "{p:?} is not on screen");
-    }
+    assert_eq!(
+        seen,
+        vec![
+            ModuleId::Channels,
+            ModuleId::Conversation,
+            ModuleId::Compose,
+            ModuleId::Members,
+            ModuleId::Servers,
+        ],
+        "tab visited {seen:?}"
+    );
 
     // And shift-tab undoes a tab.
     let here = a.layout.focus();
@@ -207,40 +372,49 @@ fn letters_reach_the_composer_and_alt_keys_do_not() {
     a.login = None;
     a.nav.channel = Some(ChannelId(1));
     a.composer.open(ChannelId(1));
-    a.layout.focus_set(ModuleId::Compose);
+    a.focus_module(ModuleId::Compose);
 
     for c in "delete".chars() {
         a.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
     }
     assert_eq!(a.composer.text(), "delete");
 
-    let before = a.layout.is_open(ModuleId::Members);
+    let before = a.layout.is_expanded(ModuleId::Members);
     a.key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT));
     assert_ne!(
-        a.layout.is_open(ModuleId::Members),
+        a.layout.is_expanded(ModuleId::Members),
         before,
-        "alt+m did not reach the panel table"
+        "alt+m did not reach the module table"
     );
     assert_eq!(a.composer.text(), "delete", "and did not type an m");
 }
 
-/// The escape chain, from the composer out.
+/// The escape chain: cancel what is being written, then walk back up the
+/// column one module at a time, then fold and come back to the composer.
 #[test]
 fn escape_walks_back_out_of_the_composer() {
     use starkit::crossterm::event::KeyCode;
-    let mut a = app();
-    a.login = None;
-    a.nav.channel = Some(ChannelId(1));
-    a.composer.open(ChannelId(1));
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.tick();
     a.composer.reply_to(MessageId(7), "alex".into(), true);
-    a.layout.focus_set(ModuleId::Compose);
+    assert_eq!(a.layout.focus(), ModuleId::Compose);
 
     a.key(KeyEvent::from(KeyCode::Esc));
     assert!(a.composer.mode.is_normal(), "the reply was not cancelled");
     assert_eq!(a.layout.focus(), ModuleId::Compose);
 
     a.key(KeyEvent::from(KeyCode::Esc));
-    assert_eq!(a.layout.focus(), ModuleId::Conversation);
+    assert!(a.layout.is_expanded(ModuleId::Channels), "the channels");
+    assert_eq!(a.layout.focus(), ModuleId::Channels);
+
+    a.key(KeyEvent::from(KeyCode::Esc));
+    assert!(a.layout.is_expanded(ModuleId::Servers), "the servers");
+    assert_eq!(a.layout.focus(), ModuleId::Servers);
+
+    a.key(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(a.layout.expanded(), None, "it did not fold");
+    assert_eq!(a.layout.focus(), ModuleId::Compose);
 }
 
 /// Closing an overlay asks for a whole frame rather than a diff.

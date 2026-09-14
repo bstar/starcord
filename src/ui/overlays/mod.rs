@@ -791,7 +791,7 @@ mod tests {
         o.toggle_help();
         let text = drawn(&mut o);
         assert!(text.contains("navigation"), "{text}");
-        assert!(text.contains("next panel"), "{text}");
+        assert!(text.contains("next module"), "{text}");
         // The list is longer than any terminal is tall, which is what the
         // scroll is for. The end of it is reachable rather than silently cut.
         assert!(

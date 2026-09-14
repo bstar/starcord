@@ -1,15 +1,16 @@
-//! Direct messages, and the friends who have not started one.
+//! Conversations, and the friends who have not started one.
 //!
-//! Two lists behind one tab, because they are the same question asked twice:
-//! the DM list is who you have been talking to, the friends list is who you
-//! could be. Both are flat vectors of rows for the same reason the channel
-//! list is.
+//! One list, under a heading each, because they are the same question asked
+//! twice: the conversations are who you have been talking to, the friends are
+//! who you could be. It is what the second module of the column shows when
+//! `Home` is the chosen server, in the place the channel list otherwise has,
+//! and it is a flat vector of rows for the same reason the channel list is.
 
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, fit, rgb, DmTab};
+use super::{empty, fit, rgb};
 use crate::discord::model::PresenceStatus;
 use crate::discord::snowflake::{ChannelId, UserId};
 use crate::ui::theme::Theme;
@@ -70,7 +71,6 @@ pub struct View<'a> {
     pub cursor: usize,
     pub scroll: usize,
     pub focused: bool,
-    pub tab: DmTab,
     pub open: Option<ChannelId>,
 }
 
@@ -85,15 +85,7 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
 pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
     let t = v.theme;
     if v.rows.is_empty() {
-        empty(
-            body,
-            buf,
-            t,
-            match v.tab {
-                DmTab::Dms => "no conversations",
-                DmTab::Friends => "no friends yet",
-            },
-        );
+        empty(body, buf, t, "no conversations");
         return;
     }
     let width = body.width;
@@ -199,6 +191,34 @@ fn sel_bg(t: &Theme, focused: bool) -> starkit::theme::color::Rgb {
         t.row_selected_bg
     } else {
         t.row_cursor_bg
+    }
+}
+
+/// The one line the folded module draws for the conversation that is open.
+///
+/// The same shape as the row it stands for, minus the selection: the presence
+/// dot, the name, and whatever badge the row carries. A reader glancing at a
+/// folded module should recognise the line they chose.
+pub fn summary(row: &Row) -> String {
+    match row {
+        Row::Section { label } => label.to_uppercase(),
+        Row::Dm {
+            title,
+            presence,
+            mentions,
+            members,
+            ..
+        } => {
+            let badge = if *mentions > 0 {
+                format!(" ({mentions})")
+            } else if members.unwrap_or(0) > 0 {
+                format!(" [{}]", members.unwrap_or(0))
+            } else {
+                String::new()
+            };
+            format!("{} {title}{badge}", presence_glyph(*presence))
+        }
+        Row::Friend { name, presence, .. } => format!("{} {name}", presence_glyph(*presence)),
     }
 }
 
@@ -337,31 +357,51 @@ mod tests {
     }
 
     #[test]
-    fn empty_lists_say_which_one_is_empty() {
+    fn an_empty_list_says_so() {
         let theme = crate::ui::theme::tests_support::theme("terminal");
-        for (tab, want) in [
-            (DmTab::Dms, "no conversations"),
-            (DmTab::Friends, "no friends yet"),
-        ] {
-            let area = Rect::new(0, 0, 24, 5);
-            let mut buf = Buffer::empty(area);
-            render(
-                area,
-                &mut buf,
-                &View {
-                    theme: &theme,
-                    rows: &[],
-                    cursor: 0,
-                    scroll: 0,
-                    focused: false,
-                    tab,
-                    open: None,
-                },
-            );
-            let text: String = (0..area.width)
-                .map(|x| buf[(x, 2)].symbol().to_string())
-                .collect();
-            assert!(text.contains(want), "{tab:?} drew {text:?}");
-        }
+        let area = Rect::new(0, 0, 24, 5);
+        let mut buf = Buffer::empty(area);
+        render(
+            area,
+            &mut buf,
+            &View {
+                theme: &theme,
+                rows: &[],
+                cursor: 0,
+                scroll: 0,
+                focused: false,
+                open: None,
+            },
+        );
+        let text: String = (0..area.width)
+            .map(|x| buf[(x, 2)].symbol().to_string())
+            .collect();
+        assert!(text.contains("no conversations"), "{text:?}");
+    }
+
+    /// The folded line says the same things the row said.
+    #[test]
+    fn a_summary_carries_the_presence_and_the_badge() {
+        let dm = Row::Dm {
+            id: ChannelId(1),
+            title: "Alex".into(),
+            presence: PresenceStatus::Online,
+            unread: true,
+            mentions: 1,
+            muted: false,
+            members: None,
+        };
+        assert_eq!(summary(&dm), "\u{25cf} Alex (1)");
+
+        let group = Row::Dm {
+            id: ChannelId(2),
+            title: "Alex, Jordan".into(),
+            presence: PresenceStatus::Offline,
+            unread: false,
+            mentions: 0,
+            muted: false,
+            members: Some(3),
+        };
+        assert_eq!(summary(&group), "\u{25cb} Alex, Jordan [3]");
     }
 }

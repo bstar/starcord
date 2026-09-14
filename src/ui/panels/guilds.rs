@@ -72,6 +72,20 @@ impl Row {
     }
 }
 
+/// The one line the folded module draws for the server that is chosen.
+///
+/// A dot when there is anything unread, the name, and the mention count. The
+/// home row has no dot of its own to lose and is just its name.
+pub fn summary(row: &Row) -> String {
+    let badge = if row.mentions > 0 {
+        format!(" ({})", row.mentions)
+    } else {
+        String::new()
+    };
+    let mark = if row.unread { "\u{2022} " } else { "" };
+    format!("{mark}{}{badge}", row.name)
+}
+
 pub struct View<'a> {
     pub theme: &'a Theme,
     pub rows: &'a [Row],

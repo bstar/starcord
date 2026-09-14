@@ -55,6 +55,40 @@ pub struct View<'a> {
     pub loaded: bool,
 }
 
+/// The one line the folded module draws: how many people are about.
+///
+/// Counted from the rows rather than from the group headings, because a
+/// hoisted role is a group of its own and adding up the headings would count
+/// `REGULARS` as neither online nor offline. Everybody Discord has not put
+/// under the offline heading is here now, whatever presence their member entry
+/// carries, which is what that heading means.
+pub fn summary(rows: &[Row]) -> String {
+    let mut under_offline = false;
+    let (mut online, mut idle, mut offline) = (0usize, 0usize, 0usize);
+    for row in rows {
+        match row {
+            Row::Group { label, .. } => under_offline = label.eq_ignore_ascii_case("offline"),
+            Row::Member { presence, .. } => match presence {
+                PresenceStatus::Idle => idle += 1,
+                PresenceStatus::Offline | PresenceStatus::Invisible if under_offline => {
+                    offline += 1
+                }
+                _ => online += 1,
+            },
+        }
+    }
+    if online + idle + offline == 0 {
+        return "nobody here".into();
+    }
+    let mut parts = Vec::with_capacity(3);
+    for (n, word) in [(online, "online"), (idle, "idle"), (offline, "offline")] {
+        if n > 0 {
+            parts.push(format!("{n} {word}"));
+        }
+    }
+    parts.join(" \u{b7} ")
+}
+
 /// Which row a click landed on.
 pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     if y < body.y || y >= body.y + body.height {

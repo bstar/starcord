@@ -2,33 +2,33 @@
 source: src/ui/frames.rs
 expression: "render(&mut app, 100, 30)"
 ---
-┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
-│      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│@    1││# rules                 ││↑ older messages                        ▐│REGULARS — 2          │
-│FG   2││▾ TEXT CHANNELS         ││───── Saturday, 12 September 2026 ──────▐│● Alex                │
-│SG   •││  # general (2)         ││▕ Alex  10:00                           ▐│● Jo                  │
-│··    ││  > about the deploy    ││▕ the first thing anybody said          ▐│ONLINE — 1            │
-│      ││  # random              ││  and the second, half a minute later   ▐│● Sam                 │
-│      ││  ! announcements       ││  and the third, which makes a group of ▐│OFFLINE — 1           │
-│      ││▾ ARCHIVE               ││  three                                 ▐│● Robin               │
-│      ││  # old-decisions       ││  Robin joined                          ▐│                      │
-│      ││                        ││  Jordan  10:10                         ▐│                      │
-│      ││                        ││  here is the thing I meant             ▐│                      │
-│      ││                        ││  ▏ rust                                ▐│                      │
-│      ││                        ││  ▏ fn main() {                         ▐│                      │
-│      ││                        ││  ▏     println!("hello");              ││                      │
-│      ││                        ││  ▏ }                                   ││                      │
-│      │└────────────────────────┘│  ⌸ thread · about the deploy           ││                      │
-│      │┌═ messages ═────────────┐│────── Sunday, 13 September 2026 ───────││                      │
-│      ││         friends  close ││───────────── new messages ─────────────││                      │
-│      ││○ Wren of the Long Displ││ ╭ ↩ @Alex: the first thing anybody sa… ││                      │
-│      ││○ Alex, Jordan [3]      ││  Alex  09:00                           ││                      │
-│      ││● Alex (1)              ││  yes, that one                         ││                      │
-│      ││                        ││  [👍  3] [:pepe: 1]                     ││                      │
-│      ││                        ││  Jordan  09:05                         ││                      │
-│      ││                        │└────────────────────────────────────────┘│                      │
-│      ││                        │┌═ compose ═─────────────────────────────┐│                      │
-│      ││                        ││                     attach  emoji  gif ││                      │
-│      ││                        ││message #general · First Guild          ││                      │
-└──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
-? help  #general · First Guild                           chat  ↓ 3 new  7 unread · @3  ▲ online  off
+┌═ servers ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│• First Guild (2)                                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ channels · First Guild ═────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│# general (2)                                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ #general · First Guild ═────────────────────────────────────────────────────────────────────────┐
+│                                                                           search  pins  settings │
+│↑ older messages                                                                                  ▐
+│────────────────────────────────── Saturday, 12 September 2026 ───────────────────────────────────▐
+│▕ Alex  10:00                                                                                     ▐
+│▕ the first thing anybody said                                                                    │
+│  and the second, half a minute later                                                             │
+│  and the third, which makes a group of three                                                     │
+│  Robin joined                                                                                    │
+│  Jordan  10:10                                                                                   │
+│  here is the thing I meant                                                                       │
+│  ▏ rust                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ compose ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                               attach  emoji  gif │
+│message #general · First Guild                                                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ members ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│2 online · 1 idle · 1 offline                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+? help  #general · First Guild                           chat  ↓ 5 new  7 unread · @3  ▲ online  off

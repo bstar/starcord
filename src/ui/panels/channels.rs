@@ -133,6 +133,30 @@ pub fn rows(
     out
 }
 
+/// The one line the folded module draws for the channel that is open.
+///
+/// The row without its indent and without its selection: the sigil, the name
+/// and the mention count, which is what somebody glancing at a folded module
+/// needs in order to know where they are.
+pub fn summary(row: &Row) -> String {
+    match row {
+        Row::Category { name, .. } => name.to_uppercase(),
+        Row::Channel {
+            name,
+            kind,
+            mentions,
+            ..
+        } => {
+            let badge = if *mentions > 0 {
+                format!(" ({mentions})")
+            } else {
+                String::new()
+            };
+            format!("{} {name}{badge}", sigil(*kind))
+        }
+    }
+}
+
 pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     if y < body.y || y >= body.y + body.height {
         return None;

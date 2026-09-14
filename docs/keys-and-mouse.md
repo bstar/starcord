@@ -4,12 +4,13 @@ Every key STAR/CORD knows, in the order the `?` overlay prints them. This file
 is generated from the table in `src/ui/keymap.rs`, and a test fails if the two
 disagree.
 
-A key is offered to the focused panel first and to the global table second, so
-a binding under a panel heading works while that panel has focus and the global
-ones work from everywhere. The composer is the exception: while it has focus it
-takes raw keys, because `d` in a sentence is a letter. Every `alt+…`
-falls through it, which is what keeps the panel keys working mid-word, and no
-plain letter is needed to leave it, so nothing you type can strand you.
+A key is offered to the focused module first and to the global table second, so
+a binding under a module heading works while that module has focus and the
+global ones work from everywhere. The composer is the exception: while it has
+focus it takes raw keys, because `d` in a sentence is a letter. Every
+`alt+…` falls through it, which is what keeps the module keys working
+mid-word, and no plain letter is needed to leave it, so nothing you type can
+strand you.
 
 ## navigation
 
@@ -17,14 +18,13 @@ _everywhere_
 
 | key | what it does |
 |---|---|
-| `tab`          | next panel |
-| `shift+tab`    | previous panel |
-| `alt+1`        | focus servers |
-| `alt+2`        | focus channels |
-| `alt+3`        | focus messages |
-| `alt+4`        | focus chat |
-| `alt+5 / i`    | write a message |
-| `alt+6`        | focus members |
+| `tab`          | next module |
+| `shift+tab`    | previous module |
+| `alt+1`        | the servers |
+| `alt+2`        | the channels |
+| `alt+3`        | the conversation |
+| `alt+4 / i`    | write a message |
+| `alt+5`        | the members |
 | `up / k`       | up one |
 | `down / j`     | down one |
 | `shift+up/K`   | up ten |
@@ -45,7 +45,7 @@ _everywhere_
 
 ## lists
 
-_in the server rail, the channel list, the message list, the member list_
+_in the server list, the channel list, the member list_
 
 | key | what it does |
 |---|---|
@@ -115,19 +115,14 @@ _in the media viewer_
 | `y`            | copy its link |
 | `esc`          | close |
 
-## panels
+## modules
 
 _everywhere_
 
 | key | what it does |
 |---|---|
-| `alt+g`        | servers |
-| `alt+c`        | channels |
-| `alt+d`        | direct messages |
-| `alt+m`        | members |
-| `alt+z`        | chat only |
-| `alt+s`        | panel settings |
-| `alt+x`        | close this panel |
+| `alt+m`        | open, close members |
+| `alt+s`        | module settings |
 
 ## appearance
 
@@ -170,8 +165,8 @@ _everywhere_
 | lists    | click a category      | fold or unfold it |
 | composer | click                 | place the caret |
 | composer | click a chip's ×      | drop the attachment |
-| panels   | drag a seam           | resize two panels |
-| panels   | click a header word   | what the word says |
+| modules  | click a folded list   | open it |
+| modules  | click a header word   | what the word says |
 | status   | click ? help          | open this list |
 | status   | click the channel     | jump to anything |
 | status   | click the state       | reconnect now |

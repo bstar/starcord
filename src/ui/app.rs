@@ -78,7 +78,7 @@ use super::overlays::settings::Setting;
 use super::overlays::{self, Overlays};
 use super::panels::chat::{ChatState, Hit};
 use super::panels::composer::{self, Composer, Sources};
-use super::panels::{self, channels, chat, dms, guilds, members, rgb, DmTab, Fold, ModuleId};
+use super::panels::{self, channels, chat, dms, guilds, members, rgb, ModuleId, COLUMN};
 use super::status;
 use super::theme::Theme;
 use super::{clipboard, core_ext, layout, unread};
@@ -105,12 +105,6 @@ const DRAIN_CAP: usize = 500;
 /// having to press anything.
 const READ_AFTER: Duration = Duration::from_secs(2);
 
-/// How long after a drag ends before `[layout]` is written.
-///
-/// The write rewrites a line of `config.toml`; doing it per mouse move would
-/// be a file write every few milliseconds for the length of the drag.
-const SETTLE: Duration = Duration::from_secs(1);
-
 /// How the whole thing looks.
 pub struct Look {
     pub theme: Theme,
@@ -135,9 +129,6 @@ pub struct Nav {
     pub dm_scroll: usize,
     pub member_cursor: usize,
     pub member_scroll: usize,
-    pub dm_tab: DmTab,
-    /// Which list the channel panel is showing while it is carrying both.
-    pub fold: Fold,
     pub collapsed: HashSet<ChannelId>,
 }
 
@@ -153,8 +144,9 @@ pub struct ViewData {
     stale: bool,
     pub guilds: Vec<guilds::Row>,
     pub channels: Vec<channels::Row>,
-    pub dms: Vec<dms::Row>,
-    pub friends: Vec<dms::Row>,
+    /// What the second module shows at home: the conversations, then the
+    /// friends who have not started one, each under a heading.
+    pub messages: Vec<dms::Row>,
     pub members: Option<Vec<members::Row>>,
     /// `#general · Some Guild`.
     pub location: String,
@@ -197,11 +189,6 @@ pub struct App {
     focused_since: Instant,
     /// The last id acknowledged, so a channel is not acked twice.
     acked: Option<(ChannelId, MessageId)>,
-    /// Set when a seam drag changes `[layout]`, cleared when it is written.
-    layout_dirty: Option<Instant>,
-    /// The width the composer last had, for the height it asks the dock for
-    /// before the dock has decided anything.
-    composer_width: u16,
     /// Where the caret goes, if anything on screen has one.
     caret: Option<(u16, u16)>,
     /// Draw every cell next frame rather than only what changed.
@@ -242,7 +229,7 @@ impl App {
         let login = (!conn.is_ready()).then(LoginScreen::new);
 
         Self {
-            layout: LayoutState::new(&cfg.layout),
+            layout: LayoutState::new(cfg.ui.list_rows),
             look: Look {
                 theme,
                 ids,
@@ -268,8 +255,6 @@ impl App {
             terminal_focused: true,
             focused_since: Instant::now(),
             acked: None,
-            layout_dirty: None,
-            composer_width: 40,
             caret: None,
             repaint: false,
             pending_jump: None,
@@ -372,7 +357,6 @@ impl App {
             self.apply(event);
         }
         self.refresh();
-        self.settle_layout();
         self.maybe_mark_read();
         self.refresh_qr();
 
@@ -395,8 +379,7 @@ impl App {
         // The animation clock, at the top of the frame and before anything is
         // measured: what moves is decided from what the last frame drew.
         self.chat.anim.set_policy(self.cfg.media.animate);
-        let focused = self.terminal_focused
-            && (self.layout.focus() == ModuleId::Conversation || self.over.open());
+        let focused = self.terminal_focused && (self.reading() || self.over.open());
         let media = &self.chat.media;
         let moved = self.chat.anim.tick(now, focused, |key| {
             media.decoded(key).and_then(|d| chat::anim::delays_of(&d))
@@ -708,10 +691,12 @@ impl App {
 
         let unread_of = |id: ChannelId| state.unread(id);
 
-        // The rail: the DM home, then the servers in READY's order.
+        // Home first, then the servers in READY's order. Home is an entry in
+        // this list like any other, which is what lets the module under it
+        // carry conversations where it otherwise carries channels.
         let mut rail = vec![guilds::Row {
             id: None,
-            name: "direct messages".into(),
+            name: "Home".into(),
             icon: None,
             unread: state
                 .dms_ordered()
@@ -752,24 +737,26 @@ impl App {
             None => Vec::new(),
         };
 
-        let dms = state
-            .dms_ordered()
-            .iter()
-            .map(|c| {
-                let (title, presence, members) = core_ext::dm_row(&state, c.id);
-                let unread = unread_of(c.id);
-                dms::Row::Dm {
-                    id: c.id,
-                    title,
-                    presence,
-                    unread: unread.unread,
-                    mentions: unread.mentions,
-                    muted: unread.muted,
-                    members,
-                }
-            })
-            .collect();
-        let friends = dms::group_friends(core_ext::friends(&state));
+        // One list under two headings rather than two lists behind a tab: at
+        // home, the question is who to talk to, and whether a conversation
+        // already exists is an answer to it rather than a different question.
+        let mut messages = vec![dms::Row::Section {
+            label: "conversations".into(),
+        }];
+        messages.extend(state.dms_ordered().iter().map(|c| {
+            let (title, presence, members) = core_ext::dm_row(&state, c.id);
+            let unread = unread_of(c.id);
+            dms::Row::Dm {
+                id: c.id,
+                title,
+                presence,
+                unread: unread.unread,
+                mentions: unread.mentions,
+                muted: unread.muted,
+                members,
+            }
+        }));
+        messages.extend(dms::group_friends(core_ext::friends(&state)));
         let member_rows = self
             .nav
             .guild
@@ -814,8 +801,7 @@ impl App {
             stale: false,
             guilds: rail,
             channels,
-            dms,
-            friends,
+            messages,
             members: member_rows,
             location,
             unread,
@@ -866,7 +852,7 @@ impl App {
     }
 
     fn clamp_cursors(&mut self) {
-        let dms = self.dm_rows().len();
+        let dms = self.view.messages.len();
         let (guilds, channels) = (self.view.guilds.len(), self.view.channels.len());
         let members = self.view.members.as_ref().map(Vec::len).unwrap_or(0);
         let cap = |cursor: &mut usize, len: usize| {
@@ -876,13 +862,6 @@ impl App {
         cap(&mut self.nav.channel_cursor, channels);
         cap(&mut self.nav.dm_cursor, dms);
         cap(&mut self.nav.member_cursor, members);
-    }
-
-    fn dm_rows(&self) -> &[dms::Row] {
-        match self.nav.dm_tab {
-            DmTab::Dms => &self.view.dms,
-            DmTab::Friends => &self.view.friends,
-        }
     }
 
     /// Reopen the channel the last session was in.
@@ -950,7 +929,10 @@ impl App {
             });
         }
         self.focused_since = Instant::now();
-        self.layout.focus_set(ModuleId::Conversation);
+        // The lists have done their job: fold whichever is open, and put the
+        // keyboard where somebody who has just opened a conversation wants it.
+        self.layout.collapse(ModuleId::Compose);
+        self.focus_module(ModuleId::Compose);
         self.view.stale = true;
     }
 
@@ -983,6 +965,12 @@ impl App {
         if !self.terminal_focused || self.login.is_some() {
             return;
         }
+        // Reading is the conversation or the composer under it. Browsing the
+        // server list is not reading, and a channel that scrolled past while
+        // somebody was looking for another one should not lose its mark.
+        if !self.reading() {
+            return;
+        }
         if self.focused_since.elapsed() < READ_AFTER {
             return;
         }
@@ -1001,25 +989,6 @@ impl App {
         }
         self.acked = Some((channel, up_to));
         self.core.send(Command::MarkRead { channel, up_to });
-    }
-
-    /// Write `[layout]` a second after the drag that changed it stopped.
-    fn settle_layout(&mut self) {
-        let Some(at) = self.layout_dirty else { return };
-        if at.elapsed() < SETTLE || self.layout.drag.is_some() {
-            return;
-        }
-        self.layout_dirty = None;
-        self.cfg.layout = self.layout.cfg.clone();
-        self.write_config(&[
-            ("layout", "left_cols", self.cfg.layout.left_cols.to_string()),
-            (
-                "layout",
-                "members_cols",
-                self.cfg.layout.members_cols.to_string(),
-            ),
-            ("layout", "dms_share", self.cfg.layout.dms_share.to_string()),
-        ]);
     }
 
     /// Rewrite keys in `config.toml`, one line each, leaving the comments the
@@ -1042,6 +1011,13 @@ impl App {
         }
     }
 
+    /// Choose a server, without opening anything.
+    ///
+    /// The lists are rebuilt here rather than on the next frame: what the
+    /// module under this one is showing, and where its cursor can land, are
+    /// both facts about the server that was just chosen, and a cursor placed
+    /// against the previous server's channels is a cursor on the wrong row for
+    /// one frame.
     fn select_guild(&mut self, index: usize) {
         let Some(row) = self.view.guilds.get(index) else {
             return;
@@ -1050,7 +1026,9 @@ impl App {
         self.nav.guild = row.id;
         self.nav.channel_cursor = 0;
         self.nav.channel_scroll = 0;
-        self.view.stale = true;
+        self.nav.dm_cursor = 0;
+        self.nav.dm_scroll = 0;
+        self.refresh_now();
     }
 
     fn step_guild(&mut self, delta: isize) {
@@ -1074,14 +1052,14 @@ impl App {
             return;
         }
         let height = usize::from(self.body_height(focus));
-        // A folded channel panel showing the DM list moves the DM cursor: the
-        // panel is the list it is drawing, whatever its id says.
-        let folded = self.dms_in_the_fold();
+        // At home the second module is the conversations rather than the
+        // channels, so it moves the other cursor: the module is the list it is
+        // drawing, whatever its name says.
+        let home = self.nav.guild.is_none();
         let len = match focus {
             ModuleId::Servers => self.view.guilds.len(),
-            ModuleId::Channels if folded => self.dm_rows().len(),
+            ModuleId::Channels if home => self.view.messages.len(),
             ModuleId::Channels => self.view.channels.len(),
-            ModuleId::Dms => self.dm_rows().len(),
             ModuleId::Members => self.view.members.as_ref().map(Vec::len).unwrap_or(0),
             _ => return,
         };
@@ -1090,9 +1068,8 @@ impl App {
         }
         let (cursor, scroll) = match focus {
             ModuleId::Servers => (&mut self.nav.guild_cursor, &mut self.nav.guild_scroll),
-            ModuleId::Channels if folded => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
+            ModuleId::Channels if home => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
             ModuleId::Channels => (&mut self.nav.channel_cursor, &mut self.nav.channel_scroll),
-            ModuleId::Dms => (&mut self.nav.dm_cursor, &mut self.nav.dm_scroll),
             ModuleId::Members => (&mut self.nav.member_cursor, &mut self.nav.member_scroll),
             _ => return,
         };
@@ -1105,37 +1082,38 @@ impl App {
         self.layout
             .last
             .as_ref()
-            .and_then(|r| r.rect_of(id))
-            .map(|rect| starkit::chrome::header::body(rect).height)
+            .map(|r| starkit::chrome::header::body(r.rect_of(id)).height)
             .unwrap_or(0)
     }
 
-    /// Open whatever the cursor is on in the focused panel.
+    /// Open whatever the cursor is on in the focused module.
     fn activate(&mut self) {
-        if self.layout.focus() == ModuleId::Channels && self.dms_in_the_fold() {
-            if let Some(dms::Row::Dm { id, .. }) = self.dm_rows().get(self.nav.dm_cursor) {
-                let id = *id;
-                self.open_channel(id);
-            }
-            return;
-        }
         match self.layout.focus() {
             ModuleId::Servers => {
                 let index = self.nav.guild_cursor;
                 self.select_guild(index);
-                self.layout.focus_set(ModuleId::Channels);
+                self.focus_module(ModuleId::Channels);
+            }
+            // At home the second module is the conversations and the friends.
+            ModuleId::Channels if self.nav.guild.is_none() => {
+                match self.view.messages.get(self.nav.dm_cursor).cloned() {
+                    Some(dms::Row::Dm { id, .. }) => self.open_channel(id),
+                    Some(dms::Row::Friend { id, .. }) => {
+                        // The core refuses a DM with anybody who is not a
+                        // friend, and everybody in this part of the list is
+                        // one.
+                        self.core.send(Command::OpenDm(id));
+                        self.note("opening a conversation");
+                    }
+                    _ => {}
+                }
             }
             ModuleId::Channels => match self.view.channels.get(self.nav.channel_cursor).cloned() {
                 Some(channels::Row::Channel { id, .. }) => self.open_channel(id),
                 Some(channels::Row::Category { id, .. }) => self.toggle_category(id),
                 None => {}
             },
-            ModuleId::Dms => {
-                if let Some(dms::Row::Dm { id, .. }) = self.dm_rows().get(self.nav.dm_cursor) {
-                    let id = *id;
-                    self.open_channel(id);
-                }
-            }
+            ModuleId::Members => self.note("opening a conversation with a member is not here yet"),
             _ => {}
         }
     }
@@ -1257,7 +1235,7 @@ impl App {
                     return;
                 }
                 composer::Outcome::Leave => {
-                    self.layout.focus_set(ModuleId::Conversation);
+                    self.focus_module(ModuleId::Conversation);
                     return;
                 }
                 composer::Outcome::EditLast => {
@@ -1341,14 +1319,13 @@ impl App {
             Action::Activate => self.activate(),
             Action::Back => self.back(),
 
-            Action::FocusNext => self.layout.focus_step(true),
-            Action::FocusPrev => self.layout.focus_step(false),
-            Action::FocusServers => self.layout.focus_set(ModuleId::Servers),
-            Action::FocusChannels => self.layout.focus_set(ModuleId::Channels),
-            Action::FocusDms => self.layout.focus_set(ModuleId::Dms),
-            Action::FocusConversation => self.layout.focus_set(ModuleId::Conversation),
-            Action::FocusCompose => self.layout.focus_set(ModuleId::Compose),
-            Action::FocusMembers => self.layout.focus_set(ModuleId::Members),
+            Action::FocusNext => self.step_focus(1),
+            Action::FocusPrev => self.step_focus(-1),
+            Action::FocusServers => self.focus_module(ModuleId::Servers),
+            Action::FocusChannels => self.focus_module(ModuleId::Channels),
+            Action::FocusConversation => self.focus_module(ModuleId::Conversation),
+            Action::FocusCompose => self.focus_module(ModuleId::Compose),
+            Action::FocusMembers => self.focus_module(ModuleId::Members),
 
             Action::NextGuild => self.step_guild(1),
             Action::PrevGuild => self.step_guild(-1),
@@ -1362,27 +1339,12 @@ impl App {
                 }
             }
 
-            Action::ToggleGuilds => self.layout.toggle(ModuleId::Servers),
-            Action::ToggleChannels => self.layout.toggle(ModuleId::Channels),
-            Action::ToggleDms => {
-                if self.layout.dms_folded() {
-                    // Folded into the channel panel: the key swaps what that
-                    // panel is showing rather than closing a list that has no
-                    // panel to close.
-                    self.swap_fold();
+            Action::ToggleMembers => {
+                if self.layout.is_expanded(ModuleId::Members) {
+                    let land = self.landing();
+                    self.layout.collapse(land);
                 } else {
-                    self.layout.toggle(ModuleId::Dms);
-                }
-            }
-            Action::ToggleMembers => self.layout.toggle(ModuleId::Members),
-            Action::ToggleZen => {
-                let zen = !self.layout.zen;
-                self.layout.set_zen(zen);
-            }
-            Action::ClosePanel => {
-                let focus = self.layout.focus();
-                if focus.closable() {
-                    self.layout.toggle(focus);
+                    self.focus_module(ModuleId::Members);
                 }
             }
             Action::OpenModuleSettings => {
@@ -1453,11 +1415,11 @@ impl App {
 
             Action::Send => self.send(),
             Action::EditLast => self.edit_last(),
-            Action::CancelCompose => {
-                if !self.composer.cancel() {
-                    self.layout.focus_set(ModuleId::Conversation);
-                }
-            }
+            // `esc` in the composer is the same key it is everywhere else:
+            // cancel what is half-written, and if there is nothing to cancel,
+            // walk back up the column. Two different meanings for one key,
+            // depending on which module has it, is the thing this avoids.
+            Action::CancelCompose => self.back(),
             Action::ClearComposer => {
                 self.composer.input.clear();
                 self.draft_changed();
@@ -1560,7 +1522,7 @@ impl App {
                 let name = pending.name.clone();
                 if self.composer.attach(pending) {
                     self.note(format!("attached {name}"));
-                    self.layout.focus_set(ModuleId::Compose);
+                    self.focus_module(ModuleId::Compose);
                 }
             }
             Err(e) => {
@@ -1622,7 +1584,7 @@ impl App {
         match what {
             overlays::Key::Insert(text) => {
                 self.composer.input.insert_str(&text);
-                self.layout.focus_set(ModuleId::Compose);
+                self.focus_module(ModuleId::Compose);
                 self.draft_changed();
             }
             overlays::Key::JumpToMessage { channel, message } => {
@@ -1674,7 +1636,7 @@ impl App {
         let name = pending.name.clone();
         if self.composer.attach(pending) {
             self.note(format!("attached {name}"));
-            self.layout.focus_set(ModuleId::Compose);
+            self.focus_module(ModuleId::Compose);
         } else {
             self.note(format!("{name} is already attached"));
         }
@@ -1772,7 +1734,13 @@ impl App {
         self.move_cursor(h.max(1) * direction);
     }
 
-    /// `esc`: close, cancel, then mark read and go back to the conversation.
+    /// `esc`: close, cancel, mark read, then walk back up the column.
+    ///
+    /// Up rather than out: the modules are the sequence of questions that led
+    /// here, so going back is opening the one before this. From a conversation
+    /// that is the channel list, from the channel list the server list, and
+    /// from the server list there is nowhere further up -- so it folds, and
+    /// the keyboard lands back where the writing happens.
     fn back(&mut self) {
         if self.over.open() {
             self.over.close();
@@ -1782,7 +1750,14 @@ impl App {
             return;
         }
         self.mark_read();
-        self.layout.focus_set(ModuleId::Conversation);
+        match self.layout.expanded() {
+            None => self.focus_module(ModuleId::Channels),
+            Some(ModuleId::Channels) => self.focus_module(ModuleId::Servers),
+            _ => {
+                let land = self.landing();
+                self.layout.collapse(land);
+            }
+        }
     }
 
     fn ask_to_quit(&mut self) {
@@ -1856,7 +1831,7 @@ impl App {
                     .position(|row| row.id == Some(id))
                     .unwrap_or(0);
                 self.select_guild(index);
-                self.layout.focus_set(ModuleId::Channels);
+                self.focus_module(ModuleId::Channels);
             }
             Target::Channel(id) | Target::Dm(id) => self.open_channel(id),
             Target::Friend(id) => {
@@ -1948,7 +1923,7 @@ impl App {
         };
         let author = msg.author_name().to_string();
         self.composer.reply_to(msg.id, author, ping);
-        self.layout.focus_set(ModuleId::Compose);
+        self.focus_module(ModuleId::Compose);
     }
 
     fn edit_selected(&mut self) {
@@ -1962,7 +1937,7 @@ impl App {
         }
         let content = msg.content.clone();
         self.composer.edit(msg.id, content);
-        self.layout.focus_set(ModuleId::Compose);
+        self.focus_module(ModuleId::Compose);
     }
 
     fn edit_last(&mut self) {
@@ -1981,7 +1956,7 @@ impl App {
             Some(msg) => {
                 let content = msg.content.clone();
                 self.composer.edit(msg.id, content);
-                self.layout.focus_set(ModuleId::Compose);
+                self.focus_module(ModuleId::Compose);
             }
             None => self.note("nothing of yours to edit"),
         }
@@ -2048,7 +2023,7 @@ impl App {
             content,
         });
         self.chat.cache.forget(message);
-        self.layout.focus_set(ModuleId::Conversation);
+        self.focus_module(ModuleId::Conversation);
     }
 
     /// The text changed: remember it, and say somebody is typing.
@@ -2148,23 +2123,6 @@ impl App {
         self.note("opening");
     }
 
-    fn swap_fold(&mut self) {
-        self.nav.fold = match self.nav.fold {
-            Fold::Channels => Fold::Dms,
-            Fold::Dms => Fold::Channels,
-        };
-        self.layout.focus_set(ModuleId::Channels);
-    }
-
-    fn swap_dm_tab(&mut self) {
-        self.nav.dm_tab = match self.nav.dm_tab {
-            DmTab::Dms => DmTab::Friends,
-            DmTab::Friends => DmTab::Dms,
-        };
-        self.nav.dm_cursor = 0;
-        self.nav.dm_scroll = 0;
-    }
-
     // -- the mouse ---------------------------------------------------------
 
     pub fn handle_mouse(&mut self, m: MouseEvent, full: Rect) {
@@ -2200,17 +2158,13 @@ impl App {
 
         match m.kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(seam) = self.layout.seam_at(x, y) {
-                    self.layout.drag = Some(Drag::Seam { seam, x, y });
-                    return;
-                }
                 if let Some(what) = self.status_hit(&regions, x, y) {
                     self.status_click(what);
                     return;
                 }
                 let double = self.clicks.click(x, y);
-                if let Some(panel) = regions.hit(x, y) {
-                    self.panel_click(&regions, panel, x, y, double);
+                if let Some(module) = regions.hit(x, y) {
+                    self.module_click(&regions, module, x, y, double);
                 }
             }
             MouseEventKind::Down(MouseButton::Right) => {
@@ -2220,35 +2174,16 @@ impl App {
             }
             MouseEventKind::Drag(MouseButton::Left) => self.drag_to(x, y),
             MouseEventKind::Up(MouseButton::Left) => self.layout.drag = None,
-            MouseEventKind::ScrollDown => self.scroll_panel(&regions, x, y, 3),
-            MouseEventKind::ScrollUp => self.scroll_panel(&regions, x, y, -3),
+            MouseEventKind::ScrollDown => self.scroll_module(&regions, x, y, 3),
+            MouseEventKind::ScrollUp => self.scroll_module(&regions, x, y, -3),
             _ => {}
         }
     }
 
-    fn drag_to(&mut self, x: u16, y: u16) {
+    fn drag_to(&mut self, _x: u16, y: u16) {
         if self.layout.drag == Some(Drag::Scrollbar) {
             self.drag_scrollbar(y);
-            return;
         }
-        let Some(Drag::Seam { seam, x: px, y: py }) = self.layout.drag else {
-            return;
-        };
-        let horizontal = matches!(
-            self.layout.seam_axis(seam),
-            Some(starkit::dock::Axis::Horizontal)
-        );
-        let delta = if horizontal {
-            i32::from(x) - i32::from(px)
-        } else {
-            i32::from(y) - i32::from(py)
-        };
-        let delta = delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
-        if self.layout.drag_seam(seam, delta) {
-            self.layout_dirty = Some(Instant::now());
-            self.chat.cache.clear();
-        }
-        self.layout.drag = Some(Drag::Seam { seam, x, y });
     }
 
     /// The pointer on the scrollbar's track: that fraction of the way down.
@@ -2292,31 +2227,43 @@ impl App {
         }
     }
 
-    fn panel_click(&mut self, regions: &Regions, panel: ModuleId, x: u16, y: u16, double: bool) {
-        let Some(rect) = regions.rect_of(panel) else {
-            return;
-        };
-        // A header word first: it is drawn over the panel's own first row, and
+    fn module_click(&mut self, regions: &Regions, module: ModuleId, x: u16, y: u16, double: bool) {
+        let rect = regions.rect_of(module);
+        // A header word first: it is drawn over the module's own first row, and
         // the hit box comes from the same function the renderer used.
-        let words = panels::words(panel, self.nav.dm_tab, self.fold());
+        let words = panels::words(module);
         if let Some(word) = starkit::chrome::header::hit(rect, &words, x, y) {
-            self.word_click(panel, word);
+            self.word_click(module, word);
             return;
         }
         let body = starkit::chrome::header::body(rect);
-        self.layout.focus_set(panel);
 
-        match panel {
+        // A folded list is one row that says where you are. Clicking anywhere
+        // in it means "show me the rest", which is the same thing focusing it
+        // does, so it is the same call.
+        if module.is_list() && !self.layout.is_expanded(module) {
+            self.focus_module(module);
+            return;
+        }
+        self.focus_module(module);
+
+        match module {
             ModuleId::Servers => {
                 let v = self.guilds_view(false);
                 if let Some(index) = guilds::row_at(body, &v, y) {
                     self.select_guild(index);
+                    self.focus_module(ModuleId::Channels);
                 }
             }
-            ModuleId::Channels if self.dms_in_the_fold() => {
+            ModuleId::Channels if self.nav.guild.is_none() => {
                 let v = self.dms_view(false);
                 if let Some(index) = dms::row_at(body, &v, y) {
-                    if self.dm_rows().get(index).is_some_and(dms::Row::selectable) {
+                    if self
+                        .view
+                        .messages
+                        .get(index)
+                        .is_some_and(dms::Row::selectable)
+                    {
                         self.nav.dm_cursor = index;
                         if double {
                             self.activate();
@@ -2334,17 +2281,6 @@ impl App {
                         self.view.channels.get(index).cloned()
                     {
                         self.toggle_category(id);
-                    }
-                }
-            }
-            ModuleId::Dms => {
-                let v = self.dms_view(false);
-                if let Some(index) = dms::row_at(body, &v, y) {
-                    if self.dm_rows().get(index).is_some_and(dms::Row::selectable) {
-                        self.nav.dm_cursor = index;
-                        if double {
-                            self.activate();
-                        }
                     }
                 }
             }
@@ -2435,13 +2371,9 @@ impl App {
         }
     }
 
-    fn word_click(&mut self, panel: ModuleId, word: panels::Word) {
+    fn word_click(&mut self, module: ModuleId, word: panels::Word) {
         match word {
-            panels::Word::Close => self.layout.toggle(panel),
-            panels::Word::ShowFriends | panels::Word::ShowDms => self.swap_dm_tab(),
-            panels::Word::ShowMessages | panels::Word::ShowChannels => self.swap_fold(),
-            panels::Word::Zen => self.handle(Action::ToggleZen),
-            panels::Word::Settings => self.over.open_settings(panel),
+            panels::Word::Settings => self.over.open_settings(module),
             panels::Word::Search => self.handle(Action::Search),
             panels::Word::Pins => self.handle(Action::TogglePin),
             panels::Word::Attach => self.handle(Action::Attach),
@@ -2450,23 +2382,28 @@ impl App {
         }
     }
 
-    fn scroll_panel(&mut self, regions: &Regions, x: u16, y: u16, delta: isize) {
-        let Some(panel) = regions.hit(x, y) else {
+    fn scroll_module(&mut self, regions: &Regions, x: u16, y: u16, delta: isize) {
+        let Some(module) = regions.hit(x, y) else {
             return;
         };
-        match panel {
-            // The rail cycles servers rather than scrolling, because it is
-            // rarely longer than the screen and changing server is what
-            // somebody with a pointer over it wants.
-            ModuleId::Servers => self.step_guild(delta.signum()),
+        match module {
             ModuleId::Conversation => self.chat.scroll(delta as i32),
-            ModuleId::Channels | ModuleId::Dms | ModuleId::Members => {
+            ModuleId::Compose => {}
+            // A folded server list steps the server: there is one row to
+            // scroll and changing server is what somebody with a pointer over
+            // it wants. Every other folded module ignores the wheel rather
+            // than changing something nobody can see.
+            m if !self.layout.is_expanded(m) => {
+                if m == ModuleId::Servers {
+                    self.step_guild(delta.signum());
+                }
+            }
+            m => {
                 let was = self.layout.focus();
-                self.layout.focus_set(panel);
+                self.layout.focus_set(m);
                 self.move_cursor(delta);
                 self.layout.focus_set(was);
             }
-            ModuleId::Compose => {}
         }
     }
 
@@ -2535,27 +2472,207 @@ impl App {
         }
     }
 
-    /// Which list the channel panel is carrying, or `None` when the DM list
-    /// has a panel of its own.
-    fn fold(&self) -> Option<Fold> {
-        self.layout.dms_folded().then_some(self.nav.fold)
-    }
-
-    /// Whether the DM list is being drawn inside the channel panel.
-    fn dms_in_the_fold(&self) -> bool {
-        self.fold() == Some(Fold::Dms)
-    }
-
     fn dms_view(&self, focused: bool) -> dms::View<'_> {
         dms::View {
             theme: &self.look.theme,
-            rows: self.dm_rows(),
+            rows: &self.view.messages,
             cursor: self.nav.dm_cursor,
             scroll: self.nav.dm_scroll,
             focused,
-            tab: self.nav.dm_tab,
             open: self.nav.channel,
         }
+    }
+
+    // -- the column --------------------------------------------------------
+
+    /// Focus a module, and put its cursor on whatever is current in it.
+    ///
+    /// Sticky rather than reset: a cursor that has been moved and not acted on
+    /// stays where it was left, and one that has nothing to point at -- a
+    /// channel list for a server whose channel is not open -- stays where it
+    /// was too. What this prevents is the other thing: coming back to a list
+    /// and finding the cursor on a row nobody chose.
+    fn focus_module(&mut self, m: ModuleId) {
+        match m {
+            ModuleId::Servers => {
+                if let Some(index) = self.view.guilds.iter().position(|r| r.id == self.nav.guild) {
+                    self.nav.guild_cursor = index;
+                }
+            }
+            ModuleId::Channels => {
+                if let Some(channel) = self.nav.channel {
+                    if self.nav.guild.is_some() {
+                        if let Some(index) = self
+                            .view
+                            .channels
+                            .iter()
+                            .position(|r| r.channel_id() == Some(channel))
+                        {
+                            self.nav.channel_cursor = index;
+                        }
+                    } else if let Some(index) = self
+                        .view
+                        .messages
+                        .iter()
+                        .position(|r| matches!(r, dms::Row::Dm { id, .. } if *id == channel))
+                    {
+                        self.nav.dm_cursor = index;
+                    }
+                }
+            }
+            _ => {}
+        }
+        self.layout.focus_set(m);
+    }
+
+    /// Where focus lands when the lists fold: the composer if there is
+    /// somewhere to write, and the conversation if there is not.
+    fn landing(&self) -> ModuleId {
+        if self.nav.channel.is_some() {
+            ModuleId::Compose
+        } else {
+            ModuleId::Conversation
+        }
+    }
+
+    /// Whether the reader is looking at the conversation rather than choosing
+    /// in a list. The composer counts: a channel opened straight into it is
+    /// one somebody is reading.
+    fn reading(&self) -> bool {
+        matches!(
+            self.layout.focus(),
+            ModuleId::Conversation | ModuleId::Compose
+        )
+    }
+
+    /// `tab` and `shift+tab`, over the column and round.
+    fn step_focus(&mut self, delta: isize) {
+        let at = self.layout.focus().index() as isize;
+        let next = (at + delta).rem_euclid(COLUMN.len() as isize) as usize;
+        self.focus_module(COLUMN[next]);
+    }
+
+    /// Body rows the open list would like, which is how many rows it has.
+    fn wanted_rows(&self) -> u16 {
+        let rows = match self.layout.expanded() {
+            Some(ModuleId::Servers) => {
+                let step = u32::from(guilds::row_rows(self.pictures()));
+                return (self.view.guilds.len() as u32 * step).min(u32::from(u16::MAX)) as u16;
+            }
+            Some(ModuleId::Channels) if self.nav.guild.is_none() => self.view.messages.len(),
+            Some(ModuleId::Channels) => self.view.channels.len(),
+            Some(ModuleId::Members) => self.view.members.as_ref().map(Vec::len).unwrap_or(0),
+            _ => 0,
+        };
+        rows.min(usize::from(u16::MAX)) as u16
+    }
+
+    /// The one line a folded list draws, and how to draw it.
+    ///
+    /// What is currently chosen rather than where the cursor is: a folded
+    /// module is an answer to "where am I", and the cursor is a question
+    /// somebody stopped asking when they folded it.
+    fn summary(&self, m: ModuleId) -> (String, Style) {
+        let t = &self.look.theme;
+        let dim = Style::default().fg(rgb(t.empty_fg));
+        match m {
+            ModuleId::Servers => match self.view.guilds.iter().find(|r| r.id == self.nav.guild) {
+                Some(row) => {
+                    let fg = if row.unavailable {
+                        t.dim
+                    } else if row.mentions > 0 {
+                        t.chat.mention_fg
+                    } else if row.unread {
+                        t.chat.unread_fg
+                    } else {
+                        t.row_fg
+                    };
+                    let mut style = Style::default().fg(rgb(fg));
+                    if row.unread && !row.unavailable {
+                        style = style.add_modifier(Modifier::BOLD);
+                    }
+                    (guilds::summary(row), style)
+                }
+                None => ("no servers".into(), dim),
+            },
+            ModuleId::Channels if self.nav.guild.is_none() => {
+                let row = self.nav.channel.and_then(|channel| {
+                    self.view
+                        .messages
+                        .iter()
+                        .find(|r| matches!(r, dms::Row::Dm { id, .. } if *id == channel))
+                });
+                match row {
+                    Some(row) => {
+                        let (unread, mentions, muted) = match row {
+                            dms::Row::Dm {
+                                unread,
+                                mentions,
+                                muted,
+                                ..
+                            } => (*unread, *mentions, *muted),
+                            _ => (false, 0, false),
+                        };
+                        (dms::summary(row), self.row_style(unread, mentions, muted))
+                    }
+                    None => ("choose a conversation".into(), dim),
+                }
+            }
+            ModuleId::Channels => {
+                let row = self.nav.channel.and_then(|channel| {
+                    self.view
+                        .channels
+                        .iter()
+                        .find(|r| r.channel_id() == Some(channel))
+                });
+                match row {
+                    Some(row) => {
+                        let (unread, mentions, muted) = match row {
+                            channels::Row::Channel {
+                                unread,
+                                mentions,
+                                muted,
+                                ..
+                            } => (*unread, *mentions, *muted),
+                            _ => (false, 0, false),
+                        };
+                        (
+                            channels::summary(row),
+                            self.row_style(unread, mentions, muted),
+                        )
+                    }
+                    None => ("choose a channel".into(), dim),
+                }
+            }
+            ModuleId::Members => match &self.view.members {
+                Some(rows) => (
+                    members::summary(rows),
+                    Style::default().fg(rgb(t.row_meta_fg)),
+                ),
+                None => ("not loaded".into(), dim),
+            },
+            _ => (String::new(), dim),
+        }
+    }
+
+    /// The colour a summary takes from the row it stands for: the open thing
+    /// is the open thing, whether it is a row or a folded module's only line.
+    fn row_style(&self, unread: bool, mentions: u32, muted: bool) -> Style {
+        let t = &self.look.theme;
+        let fg = if mentions > 0 {
+            t.chat.mention_fg
+        } else if muted {
+            t.dim
+        } else if unread {
+            t.chat.unread_fg
+        } else {
+            t.row_playing_fg
+        };
+        let mut style = Style::default().fg(rgb(fg));
+        if unread && !muted {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        style
     }
 
     pub fn draw(&mut self, area: Rect, buf: &mut Buffer) {
@@ -2572,31 +2689,33 @@ impl App {
 
         let mut drawn: std::collections::HashSet<starkit::graphics::ImageId> =
             std::collections::HashSet::new();
-        let composer_rows = self.composer.rows(&self.cfg.compose, self.composer_width);
+        // The composer says how tall it wants to be before anything has been
+        // laid out, so it is measured against the width every module has
+        // rather than against a width from the last frame.
+        let composer_rows = self.composer.rows(
+            &self.cfg.compose,
+            layout::content_width(area, self.look.padding),
+        );
+        let wanted = self.wanted_rows();
         let Some(regions) = self
             .layout
-            .regions(area, composer_rows, self.look.padding)
+            .regions(area, composer_rows, self.look.padding, wanted)
             .cloned()
         else {
             too_small(area, buf, &self.look.theme);
             return;
         };
-        if let Some(rect) = regions.rect_of(ModuleId::Compose) {
-            self.composer_width = rect.width;
-        }
 
         let focus = self.layout.focus();
         // Everything asked for after this counts as on screen; what is not
         // asked for again before `end_frame` has scrolled away.
         self.chat.media.begin_frame();
         let mut icons: Vec<(guilds::Icon, Rect)> = Vec::new();
-        for panel in regions.visible() {
-            let Some(rect) = regions.rect_of(panel) else {
-                continue;
-            };
-            let focused = panel == focus;
-            let title = self.panel_title(panel);
-            let words = panels::words(panel, self.nav.dm_tab, self.fold());
+        for module in COLUMN {
+            let rect = regions.rect_of(module);
+            let focused = module == focus;
+            let title = self.module_title(module);
+            let words = panels::words(module);
             let body = panels::frame(
                 rect,
                 buf,
@@ -2607,20 +2726,21 @@ impl App {
                     words: &words,
                 },
             );
-            if regions.too_small.contains(&panel) {
-                panels::empty(body, buf, &self.look.theme, "too narrow");
+            // A folded list is its summary and nothing else.
+            if module.is_list() && !self.layout.is_expanded(module) {
+                let (text, style) = self.summary(module);
+                panels::summary_row(body, buf, &text, style);
                 continue;
             }
-            match panel {
+            match module {
                 ModuleId::Servers => {
                     let placed = guilds::render(body, buf, &self.guilds_view(focused));
                     icons.extend(placed.into_iter().map(|icon| (icon, body)));
                 }
-                ModuleId::Channels if self.dms_in_the_fold() => {
+                ModuleId::Channels if self.nav.guild.is_none() => {
                     dms::render(body, buf, &self.dms_view(focused))
                 }
                 ModuleId::Channels => channels::render(body, buf, &self.channels_view(focused)),
-                ModuleId::Dms => dms::render(body, buf, &self.dms_view(focused)),
                 ModuleId::Members => members::render(body, buf, &self.members_view(focused)),
                 ModuleId::Conversation => {
                     let params = chat::Params {
@@ -2645,7 +2765,7 @@ impl App {
             }
         }
 
-        // The pictures, all of them, in one pass over what every panel placed.
+        // The pictures, all of them, in one pass over what every module placed.
         // After the text and before the overlays: an overlay clears the cells
         // it covers, and a protocol image whose cell has been cleared is one
         // the terminal is never told about.
@@ -2776,26 +2896,23 @@ impl App {
         buf[(x, y)].modifier |= Modifier::REVERSED;
     }
 
-    fn panel_title(&self, panel: ModuleId) -> String {
-        match panel {
-            // The channel list says which server it is listing, because at
-            // twenty-six columns the rail's two letters are not an answer.
-            ModuleId::Channels if self.dms_in_the_fold() => match self.nav.dm_tab {
-                DmTab::Dms => "messages".into(),
-                DmTab::Friends => "friends".into(),
-            },
+    /// What a module's border says.
+    ///
+    /// The second module names the server it is listing, because the folded
+    /// row above it is one line and `channels` on its own is not an answer to
+    /// "which server's".
+    fn module_title(&self, module: ModuleId) -> String {
+        match module {
+            ModuleId::Channels if self.nav.guild.is_none() => "messages".into(),
             ModuleId::Channels => match self.nav.guild {
-                Some(g) => self
-                    .core
-                    .state()
-                    .guild(g)
-                    .map(|g| g.name.clone())
-                    .unwrap_or_else(|| panel.title().to_string()),
-                None => panel.title().to_string(),
+                Some(g) => match self.core.state().guild(g) {
+                    Some(guild) => format!("channels \u{b7} {}", guild.name),
+                    None => module.title().to_string(),
+                },
+                None => module.title().to_string(),
             },
-            ModuleId::Dms if self.nav.dm_tab == DmTab::Friends => "friends".into(),
             ModuleId::Conversation => chat::title(&self.view.location),
-            _ => panel.title().to_string(),
+            _ => module.title().to_string(),
         }
     }
 }

@@ -2,33 +2,33 @@
 source: src/ui/frames.rs
 expression: "render(&mut app, 100, 30)"
 ---
-┌──────┐┌═ First Guild ═─────────┐┌═ #general · First Guild ═──────────────┐┌═ members ═───────────┐
-│      ││        settings  close ││            search  pins  zen  settings ││      settings  close │
-│@    ╔═ search #general ════════════════════════════════════════════════════════════════════╗     │
-│FG   ║› the                                                                                 ║     │
-│SG   ║                                                                                      ║     │
-│··   ║Alex  2026-09-13 09:10  the picture I took                                            ║     │
-│     ║Jo  2026-09-13 09:05  <@100000000000000001> the answer is forty two if you want it    ║     │
-│     ║Jo  2026-09-12 10:10  here is the thing I meant                                       ║     │
-│     ║Alex  2026-09-12 10:01  and the third, which makes a group of three                   ║     │
-│     ║Alex  2026-09-12 10:00  and the second, half a minute later                           ║     │
-│     ║Alex  2026-09-12 10:00  the first thing anybody said                                  ║     │
-│     ║Alex  2026-09-11 16:42  the last of the older page                                    ║     │
-│     ║Jo  2026-09-11 16:41  and the line under it                                           ║     │
-│     ║Jo  2026-09-11 16:40  older still, from the day before                                ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ║                                                                                      ║     │
-│     ╚═══════════════════════════════════════ 1–9 of 9 · enter go · ctrl+n page · esc close ╝     │
-│      ││                        │└────────────────────────────────────────┘│                      │
-│      ││                        │┌═ compose ═─────────────────────────────┐│                      │
-│      ││                        ││                     attach  emoji  gif ││                      │
-│      ││                        ││message #general · First Guild          ││                      │
-└──────┘└────────────────────────┘└────────────────────────────────────────┘└──────────────────────┘
+┌═ servers ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│• Fir╔═ search #general ════════════════════════════════════════════════════════════════════╗     │
+└─────║› the                                                                                 ║─────┘
+┌═ cha║                                                                                      ║─────┐
+│     ║Alex  2026-09-13 09:10  the picture I took                                            ║ings │
+│# gen║Jo  2026-09-13 09:05  <@100000000000000001> the answer is forty two if you want it    ║     │
+└─────║Jo  2026-09-12 10:10  here is the thing I meant                                       ║─────┘
+┌═ #ge║Alex  2026-09-12 10:01  and the third, which makes a group of three                   ║─────┐
+│     ║Alex  2026-09-12 10:00  and the second, half a minute later                           ║ings │
+│  the║Alex  2026-09-12 10:00  the first thing anybody said                                  ║     │
+│  [im║Alex  2026-09-11 16:42  the last of the older page                                    ║     │
+│  Jor║Jo  2026-09-11 16:41  and the line under it                                           ║     │
+│  htt║Jo  2026-09-11 16:40  older still, from the day before                                ║     │
+│  │ A║                                                                                      ║     │
+│  │ T║                                                                                      ║     │
+│  │ s║                                                                                      ║     │
+│▕ Ale║                                                                                      ║     ▐
+│▕ htt║                                                                                      ║     ▐
+│▕ [gi║                                                                                      ║     ▐
+└─────║                                                                                      ║─────┘
+┌═ com║                                                                                      ║─────┐
+│     ║                                                                                      ║ gif │
+│messa╚═══════════════════════════════════════ 1–9 of 9 · enter go · ctrl+n page · esc close ╝     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌═ members ═───────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         settings │
+│2 online · 1 idle · 1 offline                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off

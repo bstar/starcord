@@ -8,18 +8,20 @@
 //!
 //! ## Three layers
 //!
-//! A key is offered to the focused panel first and to the global table second.
-//! Both come out of [`BINDINGS`]: a binding's `group` says which, through
-//! [`GROUPS`]. A panel only ever *adds* meaning — it never swallows a key it
-//! has no use for — so every global binding keeps working from everywhere,
-//! which is what makes `q` and `?` reliable.
+//! A key is offered to the focused module first and to the global table
+//! second. Both come out of [`BINDINGS`]: a binding's `group` says which,
+//! through [`GROUPS`]. A module only ever *adds* meaning — it never swallows a
+//! key it has no use for — so every global binding keeps working from
+//! everywhere, which is what makes `q` and `?` reliable.
 //!
 //! Above both sits the composer, which eats raw keys while it has focus
 //! because it is a text field and `d` in a sentence is a letter. The line it
 //! draws is [`composer_eats`], and the rule is that **every `alt+…` in the
-//! global table falls through it**. That is what keeps `alt+m` closing the
+//! global table falls through it**. That is what keeps `alt+m` folding the
 //! member list while somebody is halfway through a word, and it is asserted by
-//! a test rather than left as an intention.
+//! a test rather than left as an intention. It matters more than it used to:
+//! the composer is where focus rests once a channel is open, so `alt+…`, `tab`
+//! and `esc` are how anything else is reached.
 //!
 //! ## Invariants
 //!
@@ -45,10 +47,10 @@ pub type Binding = KitBinding<Action>;
 
 /// Everything the UI can be asked to do.
 ///
-/// One flat enum rather than one per panel: the dispatcher is a single `match`
-/// in `app.rs`, and an action that two panels can both produce — `Activate`,
-/// `Back`, every cursor move — should be one variant or the `match` grows two
-/// arms that do the same thing.
+/// One flat enum rather than one per module: the dispatcher is a single
+/// `match` in `app.rs`, and an action that two modules can both produce —
+/// `Activate`, `Back`, every cursor move — should be one variant or the
+/// `match` grows two arms that do the same thing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
     // Moving about.
@@ -68,7 +70,6 @@ pub enum Action {
     FocusPrev,
     FocusServers,
     FocusChannels,
-    FocusDms,
     FocusConversation,
     FocusCompose,
     FocusMembers,
@@ -112,14 +113,9 @@ pub enum Action {
     ClearComposer,
     EditLast,
 
-    // The dock.
-    ToggleGuilds,
-    ToggleChannels,
-    ToggleDms,
+    // The column.
     ToggleMembers,
-    ToggleZen,
     OpenModuleSettings,
-    ClosePanel,
 
     // The media viewer.
     MediaNext,
@@ -150,7 +146,6 @@ pub enum Action {
 pub enum Module {
     Servers,
     Channels,
-    Dms,
     Conversation,
     Compose,
     Members,
@@ -161,19 +156,14 @@ pub enum Module {
 /// Where a group of bindings applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
-    /// Reachable from anywhere, once the focused panel has declined the key.
+    /// Reachable from anywhere, once the focused module has declined the key.
     Global,
     /// Only while one of these has focus.
     Modules(&'static [Module]),
 }
 
-/// The list panels, which share their fold and unfold keys.
-const LISTS: &[Module] = &[
-    Module::Servers,
-    Module::Channels,
-    Module::Dms,
-    Module::Members,
-];
+/// The three modules that are lists, which share their fold and unfold keys.
+const LISTS: &[Module] = &[Module::Servers, Module::Channels, Module::Members];
 
 /// Every group in [`BINDINGS`], and where it applies.
 ///
@@ -188,7 +178,7 @@ pub const GROUPS: &[(&str, Scope)] = &[
     ("composer", Scope::Modules(&[Module::Compose])),
     ("pickers", Scope::Modules(&[Module::Picker])),
     ("media viewer", Scope::Modules(&[Module::Media])),
-    ("panels", Scope::Global),
+    ("modules", Scope::Global),
     ("appearance", Scope::Global),
     ("application", Scope::Global),
 ];
@@ -199,49 +189,43 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         action: Action::FocusNext,
         keys: "tab",
-        label: "next panel",
+        label: "next module",
         group: "navigation",
     },
     Binding {
         action: Action::FocusPrev,
         keys: "shift+tab",
-        label: "previous panel",
+        label: "previous module",
         group: "navigation",
     },
     Binding {
         action: Action::FocusServers,
         keys: "alt+1",
-        label: "focus servers",
+        label: "the servers",
         group: "navigation",
     },
     Binding {
         action: Action::FocusChannels,
         keys: "alt+2",
-        label: "focus channels",
-        group: "navigation",
-    },
-    Binding {
-        action: Action::FocusDms,
-        keys: "alt+3",
-        label: "focus messages",
+        label: "the channels",
         group: "navigation",
     },
     Binding {
         action: Action::FocusConversation,
-        keys: "alt+4",
-        label: "focus chat",
+        keys: "alt+3",
+        label: "the conversation",
         group: "navigation",
     },
     Binding {
         action: Action::FocusCompose,
-        keys: "alt+5 / i",
+        keys: "alt+4 / i",
         label: "write a message",
         group: "navigation",
     },
     Binding {
         action: Action::FocusMembers,
-        keys: "alt+6",
-        label: "focus members",
+        keys: "alt+5",
+        label: "the members",
         group: "navigation",
     },
     Binding {
@@ -573,48 +557,18 @@ pub const BINDINGS: &[Binding] = &[
         label: "close",
         group: "media viewer",
     },
-    // -- panels ------------------------------------------------------------
-    Binding {
-        action: Action::ToggleGuilds,
-        keys: "alt+g",
-        label: "servers",
-        group: "panels",
-    },
-    Binding {
-        action: Action::ToggleChannels,
-        keys: "alt+c",
-        label: "channels",
-        group: "panels",
-    },
-    Binding {
-        action: Action::ToggleDms,
-        keys: "alt+d",
-        label: "direct messages",
-        group: "panels",
-    },
+    // -- modules -----------------------------------------------------------
     Binding {
         action: Action::ToggleMembers,
         keys: "alt+m",
-        label: "members",
-        group: "panels",
-    },
-    Binding {
-        action: Action::ToggleZen,
-        keys: "alt+z",
-        label: "chat only",
-        group: "panels",
+        label: "open, close members",
+        group: "modules",
     },
     Binding {
         action: Action::OpenModuleSettings,
         keys: "alt+s",
-        label: "panel settings",
-        group: "panels",
-    },
-    Binding {
-        action: Action::ClosePanel,
-        keys: "alt+x",
-        label: "close this panel",
-        group: "panels",
+        label: "module settings",
+        group: "modules",
     },
     // -- appearance --------------------------------------------------------
     Binding {
@@ -748,14 +702,14 @@ pub const MOUSE: &[MouseHelp] = &[
         group: "composer",
     },
     MouseHelp {
-        gesture: "drag a seam",
-        label: "resize two panels",
-        group: "panels",
+        gesture: "click a folded list",
+        label: "open it",
+        group: "modules",
     },
     MouseHelp {
         gesture: "click a header word",
         label: "what the word says",
-        group: "panels",
+        group: "modules",
     },
     MouseHelp {
         gesture: "click ? help",
@@ -777,7 +731,7 @@ pub const MOUSE: &[MouseHelp] = &[
 /// The global half of the table, keyed.
 static GLOBAL: LazyLock<Keymap<Action>> = LazyLock::new(|| Keymap::from_table(&global_bindings()));
 
-/// A panel's own half, one map each, built once.
+/// A module's own half, one map each, built once.
 static MODULES: LazyLock<Vec<(Module, Keymap<Action>)>> = LazyLock::new(|| {
     ALL_MODULES
         .iter()
@@ -788,7 +742,6 @@ static MODULES: LazyLock<Vec<(Module, Keymap<Action>)>> = LazyLock::new(|| {
 const ALL_MODULES: &[Module] = &[
     Module::Servers,
     Module::Channels,
-    Module::Dms,
     Module::Conversation,
     Module::Compose,
     Module::Members,
@@ -837,11 +790,11 @@ fn copy_binding(b: &Binding) -> Binding {
     }
 }
 
-/// The focused panel's own bindings, tried first.
+/// The focused module's own bindings, tried first.
 ///
-/// `None` means the panel does not want this key and the global table should
-/// have it. A panel only ever adds meaning; it never swallows a key it has no
-/// use for, or the global bindings would stop working panel by panel.
+/// `None` means the module does not want this key and the global table should
+/// have it. A module only ever adds meaning; it never swallows a key it has no
+/// use for, or the global bindings would stop working module by module.
 pub fn module(m: Module, k: KeyEvent) -> Option<Action> {
     MODULES
         .iter()
@@ -849,7 +802,7 @@ pub fn module(m: Module, k: KeyEvent) -> Option<Action> {
         .and_then(|(_, map)| map.resolve(k))
 }
 
-/// The global table, tried after the focused panel has declined.
+/// The global table, tried after the focused module has declined.
 pub fn resolve(k: KeyEvent) -> Option<Action> {
     GLOBAL.resolve(k)
 }
@@ -954,12 +907,13 @@ Every key STAR/CORD knows, in the order the `?` overlay prints them. This file
 is generated from the table in `src/ui/keymap.rs`, and a test fails if the two
 disagree.
 
-A key is offered to the focused panel first and to the global table second, so
-a binding under a panel heading works while that panel has focus and the global
-ones work from everywhere. The composer is the exception: while it has focus it
-takes raw keys, because `d` in a sentence is a letter. Every `alt+\u{2026}`
-falls through it, which is what keeps the panel keys working mid-word, and no
-plain letter is needed to leave it, so nothing you type can strand you.
+A key is offered to the focused module first and to the global table second, so
+a binding under a module heading works while that module has focus and the
+global ones work from everywhere. The composer is the exception: while it has
+focus it takes raw keys, because `d` in a sentence is a letter. Every
+`alt+\u{2026}` falls through it, which is what keeps the module keys working
+mid-word, and no plain letter is needed to leave it, so nothing you type can
+strand you.
 ";
 
 /// The key table as `docs/keys-and-mouse.md`.
@@ -1012,9 +966,8 @@ pub fn document() -> String {
 /// What a module is called in prose.
 fn module_name(m: Module) -> &'static str {
     match m {
-        Module::Servers => "the server rail",
+        Module::Servers => "the server list",
         Module::Channels => "the channel list",
-        Module::Dms => "the message list",
         Module::Conversation => "the conversation",
         Module::Compose => "the composer",
         Module::Members => "the member list",
@@ -1250,7 +1203,7 @@ mod tests {
     }
 
     /// A module adds meaning; it never takes a key it has no use for, or the
-    /// global bindings would stop working one panel at a time.
+    /// global bindings would stop working one module at a time.
     #[test]
     fn a_module_declines_what_it_does_not_want() {
         for &m in ALL_MODULES {
@@ -1332,8 +1285,8 @@ mod tests {
         let exits = [
             code(KeyCode::Tab),
             code(KeyCode::Esc),
-            with(KeyCode::Char('4'), KeyModifiers::ALT),
-            with(KeyCode::Char('z'), KeyModifiers::ALT),
+            with(KeyCode::Char('3'), KeyModifiers::ALT),
+            with(KeyCode::Char('m'), KeyModifiers::ALT),
         ];
         for k in exits {
             assert!(
@@ -1441,8 +1394,39 @@ mod tests {
         }
     }
 
+    /// `alt+1` to `alt+5` are the column, top to bottom. The numbers are the
+    /// order the modules are drawn in, which is the order somebody drills
+    /// through them, so the key is the position rather than a name to learn.
     #[test]
-    fn quitting_and_help_work_from_every_panel() {
+    fn alt_1_to_5_are_the_column_in_order() {
+        let want = [
+            Action::FocusServers,
+            Action::FocusChannels,
+            Action::FocusConversation,
+            Action::FocusCompose,
+            Action::FocusMembers,
+        ];
+        for (i, action) in want.into_iter().enumerate() {
+            let key = char::from_digit(i as u32 + 1, 10).expect("one to five");
+            assert_eq!(
+                resolve(with(KeyCode::Char(key), KeyModifiers::ALT)),
+                Some(action),
+                "alt+{key}"
+            );
+        }
+        // And the keys the dock used to have are gone rather than left
+        // meaning something else.
+        for c in ['g', 'c', 'd', 'z', 'x', '6'] {
+            assert_eq!(
+                resolve(with(KeyCode::Char(c), KeyModifiers::ALT)),
+                None,
+                "alt+{c} still does something"
+            );
+        }
+    }
+
+    #[test]
+    fn quitting_and_help_work_from_every_module() {
         for &m in ALL_MODULES {
             for (k, want) in [
                 (plain('q'), Action::Quit),

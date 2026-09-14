@@ -17,4 +17,4 @@ expression: "render(&mut app, 59, 30)"
 
 
 
-            terminal too small — 60x12 minimum
+            terminal too small — 60x21 minimum

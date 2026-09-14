@@ -1,6 +1,6 @@
 ---
 source: src/ui/frames.rs
-expression: "render(&mut app, 100, 30)"
+expression: "render(&mut app, 100, 40)"
 ---
 ┌═ servers ═───────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                         settings │
@@ -8,27 +8,37 @@ expression: "render(&mut app, 100, 30)"
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌═ channels · First Guild ═────────────────────────────────────────────────────────────────────────┐
 │                                                                                         settings │
-│# general (2)                                                                                     │
+│# random                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌═ #general · First Guild ═────────────────────────────────────────────────────────────────────────┐
+┌═ #random · First Guild ═─────────────────────────────────────────────────────────────────────────┐
 │                                                                           search  pins  settings │
-│  the picture I took   ╔═ message ════════════════════════════════════════╗                       │
-│  [image 1024x768 harbo║what can be done                                  ║                       │
-│  Jordan  09:15        ║ reply  r                                         ║                       │
-│  https://example.inval║ reply, no ping  R                                ║                       │
-│  │ A page title       ║ react  +                                         ║                       │
-│  │ Two sentences of de║ copy the text  y                                 ║                       │
-│  │ second is there so ║ open elsewhere  o                                ║                       │
-│  Alex  09:20          ║ copy a link  ctrl+y                              ║                       ▐
-│  https://tenor.invalid║                                                  ║                       ▐
-│  [gif ▶ a cat, falling╚════════════════════════ enter change · esc close ╝                       ▐
+│─────────────────────────────────── Sunday, 13 September 2026 ────────────────────────────────────│
+│────────────────────────────────────────── new messages ──────────────────────────────────────────│
+│  Alex  11:00                                                                                     │
+│  the picture I took                                                                              │
+│  [image 400x300 harbour.png]                                                                     │
+│  Jordan  11:01                                                                                   │
+│  and one that moves                                                                              │
+│  [image 96x96 cat.gif]                                                                           │
+│  Robin  11:02                                                                                    │
+│  nice :pepe: one                                                                                 │
+│  [:pepe: 3]                                                                                      │
+│  Jordan  11:03                                                                                   │
+│  https://example.invalid/page                                                                    │
+│  │ A page with a picture on it                                                                   │
+│  │ The card's thumbnail is drawn against the right edge, so the                                  │
+│  │ words keep the width they had.                                                                │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌═ compose ═───────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                               attach  emoji  gif │
-│message #general · First Guild                                                                    │
+│                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌═ members ═───────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                         settings │
 │2 online · 1 idle · 1 offline                                                                     │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off
+? help  #random · First Guild                                  compose  7 unread · @3  ▲ online  off
