@@ -641,3 +641,33 @@ fn a_mention_elsewhere_writes_a_line() {
     });
     assert!(app.note.is_none(), "it interrupted about what is on screen");
 }
+
+/// `space` on a message somebody started a thread from opens the thread, and
+/// on any other message it uncovers whatever is hidden.
+///
+/// One key with two jobs, and which one it does is a fact about the message
+/// rather than a mode.
+#[test]
+fn space_opens_the_thread_a_message_started() {
+    let (mut app, _idle) = in_general("terminal");
+    render(&mut app, 100, 30);
+    app.handle(Action::FocusChat);
+
+    // The fixture hangs `about the deploy` off this message; a thread has the
+    // id of the message it was started from, which is the only link between
+    // the two.
+    let started_from = crate::discord::snowflake::MessageId(500000000000000105);
+    app.chat.select(started_from);
+    render(&mut app, 100, 30);
+    assert_eq!(
+        app.chat.selected_thread(),
+        Some(crate::discord::snowflake::ChannelId(500000000000000105))
+    );
+    app.handle(Action::RevealSpoiler);
+    app.tick();
+    assert_eq!(
+        app.chat.channel(),
+        Some(crate::discord::snowflake::ChannelId(500000000000000105)),
+        "space did not open the thread"
+    );
+}
