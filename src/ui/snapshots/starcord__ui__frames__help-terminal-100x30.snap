@@ -2,33 +2,33 @@
 source: src/ui/frames.rs
 expression: "render(&mut app, 100, 30)"
 ---
-╔═ S T A R╔ keys — more below ═══════════════════════════════════════════════════════════╗servers ═╗
-║         ║  navigation                         chat                                     ║settings ║
-║• First G║  tab           next module          wheel                scroll three rows   ║         ║
-╚═════════║  shift+tab     previous module      click                select a message    ║═════════╝
-╔═ CHANNEL║  alt+1         the servers          click a picture      open it             ║═════════╗
-║         ║  alt+2         the channels         double-click a file  open it             ║settings ║
-║# rules  ║  alt+3         the conversation     click a reaction     add or remove yours ║         ║
-║▾ TEXT CH║  alt+4 / i     write a message      click a link         open it             ║         ║
-║  # gener║  alt+5         the members          click the ↩ line     go to the quoted    ║         ║
-║  > about║  up / k        up one               click ↓ n new        jump to the newest  ║         ║
-║  # rando║  down / j      down one             right-click          what can be done    ║         ║
-║  ! annou║  shift+up/K    up ten               drag the scrollbar   scroll to anywhere  ║         ║
-║▾ ARCHIVE║  shift+down/J  down ten             lists                                    ║         ║
-║  # old-d║  pgup          page up              click, wheel         choose one          ║         ║
-╚═════════║  pgdn          page down            double-click         open a channel      ║═════════╝
-╔═ CONVERS║  home / gg     to the top           click a category     fold or unfold it   ║═════════╗
-║         ║  end / G       to the bottom        composer                                 ║settings ║
+╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
+║         ╔═ KEYS ═══════════════════════════════════════════════════════════════════════╗settings ║
+║• First G║  navigation                         chat                                     ║         ║
+╚═════════║  tab           next module          wheel                scroll three rows   ║═════════╝
+╔═ CHANNEL║  shift+tab     previous module      click                select a message    ║═════════╗
+║         ║  alt+1         the servers          click a picture      open it             ║settings ║
+║# rules  ║  alt+2         the channels         double-click a file  open it             ║         ║
+║▾ TEXT CH║  alt+3         the conversation     click a reaction     add or remove yours ║         ║
+║  # gener║  alt+4 / i     write a message      click a link         open it             ║         ║
+║  > about║  alt+5         the members          click the ↩ line     go to the quoted    ║         ║
+║  # rando║  up / k        up one               click ↓ n new        jump to the newest  ║         ║
+║  ! annou║  down / j      down one             right-click          what can be done    ║         ║
+║▾ ARCHIVE║  shift+up/K    up ten               drag the scrollbar   scroll to anywhere  ║         ║
+║  # old-d║  shift+down/J  down ten             lists                                    ║         ║
+╚═════════║  pgup          page up              click, wheel         choose one          ║═════════╝
+╔═ CONVERS║  pgdn          page down            double-click         open a channel      ║═════════╗
+║         ║  home / gg     to the top           click a category     fold or unfold it   ║settings ║
+║         ║  end / G       to the bottom        composer                                 ║         ║
 ║         ║  enter         open                 click                place the caret     ║         ║
 ║         ║  esc           back, or mark read   click a chip's ×     drop the attachment ║         ║
-║         ║  [             previous server      modules                                  ║         ║
-╚═════════║  ]             next server          click a folded list  open it             ║═════════╝
-╔═ COMPOSE║  alt+up        previous unread      click a header word  what the word says  ║═════════╗
-║         ║  alt+down      next unread          status                                   ║oji  gif ║
-║open a ch║  alt+left      where you were       click ? help         open this list      ║         ║
-╚═════════║  alt+right     forward again        click the channel    jump to anything    ║═════════╝
-╔═ MEMBERS║  ctrl+k        jump to anything     click the state      reconnect now       ║═════════╗
-║         ║  ctrl+f / /    search here                                                   ║settings ║
-║2 online ║  alt+f         search the server                                             ║         ║
-╚═════════║  lists                                                                       ║═════════╝
-? help    ╚══════════════════════════════════════════════════════════════════════════════╝nline  off
+╚═════════║  [             previous server      modules                                  ║═════════╝
+╔═ COMPOSE║  ]             next server          click a folded list  open it             ║═════════╗
+║         ║  alt+up        previous unread      click a header word  what the word says  ║oji  gif ║
+║open a ch║  alt+down      next unread          status                                   ║         ║
+╚═════════║  alt+left      where you were       click ? help         open this list      ║═════════╝
+╔═ MEMBERS║  alt+right     forward again        click the channel    jump to anything    ║═════════╗
+║         ║  ctrl+k        jump to anything     click the state      reconnect now       ║settings ║
+║2 online ║  ctrl+f / /    search here                                                   ║         ║
+╚═════════╚══════════════════════════════════════════════════════ more below · esc close ╝═════════╝
+? help                                                            chat  7 unread · @3  ▲ online  off

@@ -53,6 +53,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use starkit::chrome::frame::{self, Badge, Tone};
 use starkit::crossterm::event::{
     self, Event as TermEvent, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -1150,7 +1151,7 @@ impl App {
         self.layout
             .last
             .as_ref()
-            .map(|r| starkit::chrome::header::body(r.rect_of(id)).height)
+            .map(|r| frame::body(r.rect_of(id), &panels::words(id)).height)
             .unwrap_or(0)
     }
 
@@ -2379,7 +2380,7 @@ impl App {
             self.word_click(module, word);
             return;
         }
-        let body = starkit::chrome::header::body(rect);
+        let body = frame::body(rect, &words);
 
         // A folded list is one row that says where you are. Clicking anywhere
         // in it means "show me the rest", which is the same thing focusing it
@@ -2861,17 +2862,27 @@ impl App {
             let focused = module == focus;
             let (name, detail) = self.module_title(module);
             let words = panels::words(module);
-            let body = panels::frame(
+            // The top of the column says what the window is, as the top of
+            // STAR/AMP's does: its own name moves to a badge on the right of
+            // the same border, where the heading otherwise sits.
+            let heading = module == ModuleId::Servers;
+            // The core theme type -- a struct literal is not a coercion site,
+            // so the deref from this crate's own `Theme` is spelled out here.
+            let core: &starkit::theme::Theme = &self.look.theme;
+            let body = frame::frame(
                 rect,
                 buf,
-                &panels::Frame {
-                    theme: &self.look.theme,
+                &frame::Frame {
+                    theme: core,
                     focused,
-                    name: &name,
+                    title: if heading { panels::HEADING } else { &name },
                     detail: detail.as_deref(),
-                    // The top of the column says what the window is, as the
-                    // top of STAR/AMP's does.
-                    heading: module == ModuleId::Servers,
+                    heading,
+                    badge: heading.then(|| Badge {
+                        text: &name,
+                        tone: Tone::Dim,
+                    }),
+                    footer: None,
                     words: &words,
                 },
             );

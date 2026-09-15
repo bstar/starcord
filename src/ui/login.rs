@@ -34,8 +34,7 @@ use starkit::input::{Edit, TextInput};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::widgets::{Clear, Widget};
 use starkit::ratatui_image::Image;
 use starkit::theme::color::Rgb;
 
@@ -390,23 +389,24 @@ impl LoginScreen {
         // The same double frame the modules behind it use, so the first
         // screen is not the one screen drawn in a different weight, and the
         // name on its border the way the top of the window carries it.
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(t.border_focused)))
-            .title(Span::styled(
-                format!(
-                    "{}{} ",
-                    starkit::chrome::frame::TITLE_LEAD,
-                    super::panels::HEADING
-                ),
-                Style::default()
-                    .fg(rgb(t.titlebar_active_fg))
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .style(Style::default().bg(rgb(t.panel_bg)))
-            .render(panel, buf);
-        starkit::chrome::frame::render_corners(panel, buf, t, true);
+        //
+        // The core theme type -- a struct literal is not a coercion site, so
+        // the deref from this crate's own `Theme` is spelled out here.
+        let core: &starkit::theme::Theme = t;
+        starkit::chrome::frame::frame(
+            panel,
+            buf,
+            &starkit::chrome::frame::Frame {
+                theme: core,
+                focused: true,
+                title: super::panels::HEADING,
+                detail: None,
+                heading: true,
+                badge: None,
+                footer: None,
+                words: starkit::chrome::frame::NO_WORDS,
+            },
+        );
 
         let inner = Rect {
             x: panel.x + 2,

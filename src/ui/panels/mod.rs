@@ -19,12 +19,17 @@ use serde::{Deserialize, Serialize};
 use starkit::chrome::header;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::Style;
 
 use super::keymap::Module;
-use super::theme::Theme;
+
+// The border, corners, titles and header row are STAR/KIT's now -- see
+// `starkit::chrome::frame` -- and so are the small text helpers every module
+// used to keep its own copy of. Re-exported under their old names so the rest
+// of this module's callers keep the imports they already have.
+pub use starkit::chrome::{empty, rgb};
+pub use starkit::text::fit;
+pub use starkit::wrap::width_of;
 
 /// The five modules the window is made of.
 ///
@@ -155,161 +160,6 @@ pub fn words(module: ModuleId) -> Vec<Word> {
 /// between two.
 pub const HEADING: &str = "S T A R / C O R D";
 
-/// Everything a module needs that is not its own contents.
-pub struct Frame<'a> {
-    pub theme: &'a Theme,
-    pub focused: bool,
-    /// The module's name. The border says it in capitals, as STAR/AMP's
-    /// panels say `LIBRARY` and `PLAYLIST`.
-    pub name: &'a str,
-    /// What the name is about, after a dash: the server whose channels these
-    /// are, the channel whose conversation this is. `PLAYLIST — name` is the
-    /// shape it copies.
-    pub detail: Option<&'a str>,
-    /// Whether this module carries the application's name instead, the way
-    /// STAR/AMP's top panel does. Its own name then sits at the right end of
-    /// the same border, where the player keeps its badge.
-    pub heading: bool,
-    pub words: &'a [Word],
-}
-
-/// Draw a module's border, corners, title and header row, and hand back what is
-/// left for its contents.
-///
-/// Every module starts with this and nothing else knows how one is framed, so a
-/// change to the chrome is a change in one place. The body rect comes from
-/// [`header::body`], which is also what the mouse tests against.
-pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
-    let t = f.theme;
-    let border = if f.focused {
-        t.border_focused
-    } else {
-        t.border
-    };
-    // The title as STAR/AMP draws one: one border character in from the
-    // corner, the name in capitals, a space, and the border again. The colour
-    // is the header's, at the same weight focused or not -- focus is carried
-    // by the border, and a title that changed weight with it said the same
-    // thing twice.
-    let (title, style) = if f.heading {
-        (
-            format!("{}{HEADING} ", starkit::chrome::frame::TITLE_LEAD),
-            Style::default()
-                .fg(rgb(t.titlebar_active_fg))
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        let name = f.name.to_uppercase();
-        let text = match f.detail {
-            Some(detail) => format!(
-                "{}{name} \u{2014} {detail} ",
-                starkit::chrome::frame::TITLE_LEAD
-            ),
-            None => format!("{}{name} ", starkit::chrome::frame::TITLE_LEAD),
-        };
-        (text, Style::default().fg(rgb(t.header_fg)))
-    };
-    // All of it or none of it. A clipped title is a word cut off mid-way that
-    // reads as a fault rather than as a label: `= CHANNELS — Some Long Serv`
-    // is not the name of anything.
-    let room = area.width.saturating_sub(2);
-    let left = if width_of(&title) <= room {
-        width_of(&title)
-    } else {
-        0
-    };
-    // Under the heading, the module's own name at the right end of the
-    // border, dim, the way the player keeps ` bit-perfect ═` there.
-    let right = f
-        .heading
-        .then(|| format!(" {}{}", f.name, starkit::chrome::frame::TITLE_TRAIL))
-        .filter(|right| left + 1 + width_of(right) <= room);
-
-    // Double, as every STAR/AMP panel is drawn. The two share a title
-    // treatment -- `TITLE_LEAD` and `TITLE_TRAIL` are `\u{2550}`, the double
-    // horizontal -- so a single-line frame put a heavier seam on a lighter
-    // edge and the title read as pasted on.
-    //
-    // The titles go on the block, and the block is drawn *before* the
-    // corners, which is the order STAR/AMP draws in and the one that matters:
-    // `render_corners` recolours every box-drawing cell in its run, and the
-    // title's leading `═` is one. Drawn afterwards, the title kept its own
-    // colour on that cell and the gradient stopped dead at the corner; drawn
-    // first, the gradient runs through it, and the corner reads as one thing.
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(border)))
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    if left > 0 {
-        block = block.title(Span::styled(title, style));
-    }
-    if let Some(right) = right {
-        block = block.title_top(
-            Line::from(Span::styled(right, Style::default().fg(rgb(t.dim)))).right_aligned(),
-        );
-    }
-    block.render(area, buf);
-
-    if area.width >= 2 && area.height >= 2 {
-        starkit::chrome::frame::render_corners(area, buf, t, f.focused);
-    }
-
-    header::render(area, f.words, buf, t);
-    header::body(area)
-}
-
-/// A ratatui colour from a theme one. Every module wants it; it is here so that
-/// none of them writes it again.
-pub fn rgb(c: starkit::theme::color::Rgb) -> starkit::ratatui::style::Color {
-    starkit::ratatui::style::Color::Rgb(c.r, c.g, c.b)
-}
-
-/// Columns a string takes on screen.
-pub fn width_of(text: &str) -> u16 {
-    starkit::wrap::width_of(text)
-}
-
-/// Cut and pad a row to exactly `width` columns.
-///
-/// By display width, never by character count. Channel names, servers and the
-/// people in a DM all routinely contain emoji, and an emoji is two columns; a
-/// row measured in characters is a row one cell wider than the module it is in,
-/// which writes over the border and leaves it there until something else
-/// redraws it. That is the artefact this function exists to prevent, and it is
-/// why no module formats a row with `{:width$}`.
-pub fn fit(text: &str, width: u16) -> String {
-    let mut out = String::with_capacity(usize::from(width) + 4);
-    let mut used = 0u16;
-    for (_, cluster) in starkit::wrap::clusters(text) {
-        let w = width_of(cluster);
-        if used + w > width {
-            break;
-        }
-        out.push_str(cluster);
-        used += w;
-    }
-    // A double-width cluster at the edge leaves one column over; a space is
-    // what fills it, because a half-drawn emoji is not a thing a terminal can
-    // show.
-    for _ in used..width {
-        out.push(' ');
-    }
-    out
-}
-
-/// One dim line in the middle of an empty module.
-pub fn empty(area: Rect, buf: &mut Buffer, theme: &Theme, text: &str) {
-    if area.height == 0 || area.width == 0 {
-        return;
-    }
-    let y = area.y + area.height / 2;
-    let text = fit(text, area.width);
-    let text = text.trim_end();
-    let x = area.x + area.width.saturating_sub(width_of(text)) / 2;
-    buf.set_string(x, y, text, Style::default().fg(rgb(theme.empty_fg)));
-}
-
 /// The one line a folded list draws: what is currently chosen in it.
 ///
 /// Left-aligned and fitted rather than centred like [`empty`], because it is a
@@ -395,43 +245,6 @@ mod tests {
             assert!(!seen.contains(&k), "{k:?} is claimed by two modules");
             seen.push(k);
         }
-    }
-
-    /// The frame is drawn in the double line STAR/AMP draws every panel in.
-    ///
-    /// Asserted on the glyphs rather than on `BorderType`, because what a
-    /// reader sees is the character in the cell: the titles are seamed with
-    /// `\u{2550}` either way, and it is the edge around them that used to be
-    /// the wrong weight.
-    #[test]
-    fn the_frame_is_drawn_in_double_lines() {
-        let theme = crate::ui::theme::tests_support::theme("cosmic");
-        let area = Rect::new(0, 0, 12, 5);
-        let mut buf = Buffer::empty(area);
-        frame(
-            area,
-            &mut buf,
-            &Frame {
-                theme: &theme,
-                focused: false,
-                // An empty name still writes its lead over the first cells of
-                // the top edge; the cell checked is past them.
-                name: "",
-                detail: None,
-                heading: false,
-                words: &[],
-            },
-        );
-        let at = |x: u16, y: u16| buf[(x, y)].symbol().to_string();
-        assert_eq!(
-            [at(0, 0), at(11, 0), at(11, 4), at(0, 4)],
-            ["\u{2554}", "\u{2557}", "\u{255d}", "\u{255a}"],
-            "the corners are not the double-line ones"
-        );
-        assert_eq!(at(6, 0), "\u{2550}", "the top edge is not double");
-        assert_eq!(at(6, 4), "\u{2550}", "the bottom edge is not double");
-        assert_eq!(at(0, 2), "\u{2551}", "the left edge is not double");
-        assert_eq!(at(11, 2), "\u{2551}", "the right edge is not double");
     }
 
     /// A folded list draws its summary at the top left of its body, cut to fit

@@ -143,6 +143,7 @@ impl Menu {
             rows: &rows,
             cursor: self.cursor,
             scroll: self.scroll,
+            footer: "enter choose \u{b7} esc close",
         }
         .render(area, buf);
     }
