@@ -44,7 +44,8 @@ reports that as two versions carrying the same number.
 0.2 gave the shared type the `session_file()` and `media_cache_dir()` it was
 missing. Keep the name: the core takes `crate::paths::Paths` by value
 throughout, and `PATHS` is the one place this application's three identifying
-strings are written down. `src/logging.rs` stays local.
+strings are written down. Logging is `starkit::logging::init(&PATHS, ...)`,
+called straight from `main`, with no local copy of it left to keep in step.
 
 `image` is a direct dependency as well as STAR/KIT's re-export: the media core
 decodes with it and needs the four formats Discord serves. Cargo unifies the

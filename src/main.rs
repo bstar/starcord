@@ -3,7 +3,6 @@
 mod cli;
 mod config;
 mod discord;
-mod logging;
 mod paths;
 mod session;
 mod ui;
@@ -31,7 +30,7 @@ fn main() -> Result<()> {
     PATHS.init_private_dirs();
     // The guard must outlive everything that logs; dropping it early loses
     // whatever the writer thread had buffered.
-    let _log = logging::init(&PATHS, cli.verbose)?;
+    let _log = starkit::logging::init(&PATHS, cli.verbose)?;
 
     match cli.command {
         Some(cli::Command::Probe(probe)) => run_probe(probe),
