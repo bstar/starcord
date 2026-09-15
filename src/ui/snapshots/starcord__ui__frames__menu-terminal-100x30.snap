@@ -12,7 +12,7 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  the picture I took   ╔═ message ════════════════════════════════════════╗                       ║
+║  the picture I took   ╔═ MESSAGE ════════════════════════════════════════╗                       ║
 ║  [image 1024x768 harbo║what can be done                                  ║                       ║
 ║  Jordan  09:15        ║ reply  r                                         ║                       ║
 ║  https://example.inval║ reply, no ping  R                                ║                       ║
@@ -21,7 +21,7 @@ expression: "render(&mut app, 100, 30)"
 ║  │ second is there so ║ open elsewhere  o                                ║                       ║
 ║  Alex  09:20          ║ copy a link  ctrl+y                              ║                       █
 ║  https://tenor.invalid║                                                  ║                       █
-║  [gif ▶ a cat, falling╚════════════════════════ enter change · esc close ╝                       █
+║  [gif ▶ a cat, falling╚════════════════════════ enter choose · esc close ╝                       █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
