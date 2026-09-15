@@ -6,12 +6,12 @@
 //! `Home` is the chosen server, in the place the channel list otherwise has,
 //! and it is a flat vector of rows for the same reason the channel list is.
 
-use starkit::chrome::scrollbar;
+use starkit::chrome::scrollbar::{self, Scrollbars};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, fit, rgb};
+use super::{empty, fit, rgb, ModuleId};
 use crate::discord::model::PresenceStatus;
 use crate::discord::snowflake::{ChannelId, UserId};
 use crate::ui::theme::Theme;
@@ -83,7 +83,13 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     (index < v.rows.len()).then_some(index)
 }
 
-pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) {
+pub fn render(
+    outer: Rect,
+    body: Rect,
+    buf: &mut Buffer,
+    v: &View<'_>,
+    bars: &mut Scrollbars<ModuleId>,
+) {
     let t = v.theme;
     if v.rows.is_empty() {
         empty(body, buf, t, "no conversations");
@@ -179,8 +185,14 @@ pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) {
     }
 
     let track = scrollbar::track(outer, body);
-    let thumb = scrollbar::rows(v.scroll, v.rows.len(), body.height);
-    scrollbar::render(track, buf, t, thumb);
+    bars.draw(
+        ModuleId::Channels,
+        track,
+        buf,
+        t,
+        v.rows.len() as u32,
+        v.scroll as u32,
+    );
 }
 
 fn sel_fg(t: &Theme, focused: bool) -> starkit::theme::color::Rgb {
@@ -378,6 +390,7 @@ mod tests {
                 focused: false,
                 open: None,
             },
+            &mut Scrollbars::new(),
         );
         let text: String = (0..area.width)
             .map(|x| buf[(x, 2)].symbol().to_string())

@@ -12,12 +12,12 @@
 //! that sorted them differently would show a different list from the one the
 //! reader knows.
 
-use starkit::chrome::scrollbar;
+use starkit::chrome::scrollbar::{self, Scrollbars};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, fit, rgb, width_of};
+use super::{empty, fit, rgb, width_of, ModuleId};
 use crate::discord::model::PresenceStatus;
 use crate::ui::theme::Theme;
 
@@ -108,7 +108,13 @@ pub fn presence_colour(theme: &Theme, presence: PresenceStatus) -> starkit::them
     }
 }
 
-pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) {
+pub fn render(
+    outer: Rect,
+    body: Rect,
+    buf: &mut Buffer,
+    v: &View<'_>,
+    bars: &mut Scrollbars<ModuleId>,
+) {
     if body.width == 0 || body.height == 0 {
         return;
     }
@@ -176,8 +182,14 @@ pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) {
     }
 
     let track = scrollbar::track(outer, body);
-    let thumb = scrollbar::rows(v.scroll, v.rows.len(), body.height);
-    scrollbar::render(track, buf, v.theme, thumb);
+    bars.draw(
+        ModuleId::Members,
+        track,
+        buf,
+        v.theme,
+        v.rows.len() as u32,
+        v.scroll as u32,
+    );
 }
 
 #[cfg(test)]
@@ -188,7 +200,7 @@ mod tests {
     fn drawn(v: &View<'_>, w: u16, h: u16) -> String {
         let area = Rect::new(0, 0, w, h);
         let mut buf = Buffer::empty(area);
-        render(area, area, &mut buf, v);
+        render(area, area, &mut buf, v, &mut Scrollbars::new());
         (0..h)
             .map(|y| {
                 (0..w)

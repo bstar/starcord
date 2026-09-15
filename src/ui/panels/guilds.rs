@@ -11,12 +11,12 @@
 //! scroll and the mouse all go through [`row_rows`] and [`row_at`], so a list
 //! with pictures and a list without behave the same way.
 
-use starkit::chrome::scrollbar;
+use starkit::chrome::scrollbar::{self, Scrollbars};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
 
-use super::{empty, fit, rgb, width_of};
+use super::{empty, fit, rgb, width_of, ModuleId};
 use crate::discord::media::MediaKey;
 use crate::discord::snowflake::GuildId;
 use crate::ui::theme::Theme;
@@ -137,7 +137,13 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
 /// The icons are placed rather than drawn: a protocol image is one escape
 /// sequence over a region, and every one of them on the screen goes down in a
 /// single pass after the text. What comes back is what that pass needs.
-pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) -> Vec<Icon> {
+pub fn render(
+    outer: Rect,
+    body: Rect,
+    buf: &mut Buffer,
+    v: &View<'_>,
+    bars: &mut Scrollbars<ModuleId>,
+) -> Vec<Icon> {
     let t = v.theme;
     let mut icons = Vec::new();
     if v.rows.is_empty() {
@@ -238,8 +244,14 @@ pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) -> Vec<Ic
     // than in entries -- the same unit `body.height` is already in.
     let step = usize::from(step);
     let track = scrollbar::track(outer, body);
-    let thumb = scrollbar::rows(v.scroll * step, v.rows.len() * step, body.height);
-    scrollbar::render(track, buf, t, thumb);
+    bars.draw(
+        ModuleId::Servers,
+        track,
+        buf,
+        t,
+        (v.rows.len() * step) as u32,
+        (v.scroll * step) as u32,
+    );
 
     icons
 }
@@ -342,19 +354,31 @@ mod tests {
         let v = view(&rows, &theme, 0, false);
         let area = Rect::new(0, 0, 24, 2);
         let mut buf = Buffer::empty(area);
-        render(area, area, &mut buf, &v);
+        render(area, area, &mut buf, &v, &mut Scrollbars::new());
         assert_eq!(line(&buf, 0, 24), "FG  First Guild        2");
 
         // Without a mention it is a dot, and without anything unread it is
         // nothing at all.
         rows[0].mentions = 0;
         let mut buf = Buffer::empty(area);
-        render(area, area, &mut buf, &view(&rows, &theme, 0, false));
+        render(
+            area,
+            area,
+            &mut buf,
+            &view(&rows, &theme, 0, false),
+            &mut Scrollbars::new(),
+        );
         assert_eq!(line(&buf, 0, 24), "FG  First Guild        \u{2022}");
 
         rows[0].unread = false;
         let mut buf = Buffer::empty(area);
-        render(area, area, &mut buf, &view(&rows, &theme, 0, false));
+        render(
+            area,
+            area,
+            &mut buf,
+            &view(&rows, &theme, 0, false),
+            &mut Scrollbars::new(),
+        );
         assert_eq!(line(&buf, 0, 24), "FG  First Guild         ");
     }
 
@@ -367,7 +391,13 @@ mod tests {
         rows[0].unread = true;
         let area = Rect::new(0, 0, 20, 1);
         let mut buf = Buffer::empty(area);
-        render(area, area, &mut buf, &view(&rows, &theme, 0, false));
+        render(
+            area,
+            area,
+            &mut buf,
+            &view(&rows, &theme, 0, false),
+            &mut Scrollbars::new(),
+        );
         assert_eq!(line(&buf, 0, 20), "AS  A Server With  \u{2022}");
     }
 
@@ -431,7 +461,7 @@ mod tests {
         let v = view(&rows, &theme, 0, true);
         let body = Rect::new(0, 0, 6, 6);
         let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
-        let icons = render(body, body, &mut buf, &v);
+        let icons = render(body, body, &mut buf, &v, &mut Scrollbars::new());
 
         assert_eq!(icons.len(), 1, "only the one with a hash");
         assert_eq!(icons[0].rect, Rect::new(0, 0, 4, 2));
@@ -456,7 +486,14 @@ mod tests {
         rows[0].icon = Some("abc123".into());
         let v = view(&rows, &theme, 0, false);
         let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
-        assert!(render(Rect::new(0, 0, 6, 6), Rect::new(0, 0, 6, 6), &mut buf, &v).is_empty());
+        assert!(render(
+            Rect::new(0, 0, 6, 6),
+            Rect::new(0, 0, 6, 6),
+            &mut buf,
+            &v,
+            &mut Scrollbars::new()
+        )
+        .is_empty());
         let first: String = (0..6).map(|x| buf[(x, 0)].symbol().to_string()).collect();
         assert!(first.starts_with("FG"), "{first:?}");
     }
