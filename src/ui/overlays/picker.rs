@@ -39,13 +39,12 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use starkit::chrome::overlay::{self, Anchor};
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::input::{Edit, TextInput};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::handle::{EmojiRef, RequestId};
 use crate::discord::media::MediaKey;
@@ -514,11 +513,7 @@ impl Picker {
         let cols = usize::from(self.cols.max(1));
         let rows = usize::from(self.rows.max(1));
         let row = self.cursor / cols;
-        if row < self.scroll {
-            self.scroll = row;
-        } else if row >= self.scroll + rows {
-            self.scroll = row + 1 - rows;
-        }
+        self.scroll = starkit::list::clamp_scroll(row, self.scroll, rows);
     }
 
     pub fn scroll_by(&mut self, delta: i16) {
@@ -561,7 +556,7 @@ impl Picker {
     }
 
     fn grid_rect(&self, area: Rect) -> Rect {
-        let inner = inner_of(area);
+        let inner = overlay::inner(area);
         Rect {
             x: inner.x,
             y: inner.y + 2,
@@ -582,77 +577,51 @@ fn title(kind: Kind) -> &'static str {
 
 fn footer(kind: Kind, mine: bool) -> &'static str {
     match kind {
-        Kind::Emoji => " enter insert \u{b7} ctrl+g GIFs \u{b7} esc close ",
-        Kind::Gif => " enter send it \u{b7} esc close ",
-        Kind::Reaction(_) if mine => " enter take it off \u{b7} esc close ",
-        Kind::Reaction(_) => " enter react \u{b7} esc close ",
+        Kind::Emoji => "enter insert \u{b7} ctrl+g GIFs \u{b7} esc close",
+        Kind::Gif => "enter send it \u{b7} esc close",
+        Kind::Reaction(_) if mine => "enter take it off \u{b7} esc close",
+        Kind::Reaction(_) => "enter react \u{b7} esc close",
     }
 }
 
-/// Where the box lands.
+/// Where the box lands: the same shape every overlay opens in, upper-anchored
+/// where the typing boxes sit.
 pub fn rect(area: Rect, gif: bool) -> Rect {
-    let w = if gif {
-        area.width.saturating_sub(6).clamp(40, 68)
+    if gif {
+        overlay::rect(area, (40, 68), 24, 10, Anchor::Upper)
     } else {
-        area.width.saturating_sub(8).clamp(30, 56)
-    };
-    let h = if gif {
-        area.height.saturating_sub(4).clamp(10, 24)
-    } else {
-        area.height.saturating_sub(6).clamp(8, 18)
-    };
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 3,
-        width: w.min(area.width),
-        height: h.min(area.height),
+        overlay::rect(area, (30, 56), 18, 8, Anchor::Upper)
     }
 }
 
-fn inner_of(r: Rect) -> Rect {
-    Rect {
-        x: r.x + 1,
-        y: r.y + 1,
-        width: r.width.saturating_sub(2),
-        height: r.height.saturating_sub(2),
-    }
-}
-
-pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, picker: &mut Picker) -> Vec<Placement> {
+pub fn render(
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &Theme,
+    picker: &mut Picker,
+) -> (Vec<Placement>, Option<(u16, u16)>) {
     let r = rect(area, picker.is_gif());
     if r.width < 12 || r.height < 6 {
-        return Vec::new();
+        return (Vec::new(), None);
     }
-    Clear.render(r, buf);
 
     let t = theme;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(t.border_focused)))
-        .title(Span::styled(
-            format!(
-                "{}{} ",
-                starkit::chrome::frame::TITLE_LEAD,
-                title(picker.kind)
-            ),
-            Style::default()
-                .fg(rgb(t.header_fg))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                footer(picker.kind, picker.already_mine()),
-                Style::default().fg(rgb(t.dim)),
-            ))
-            .right_aligned(),
-        )
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    let inner = block.inner(r);
-    block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
+    let footer_text = footer(picker.kind, picker.already_mine());
+    // The core theme type -- a struct literal is not a coercion site, so the
+    // deref from this crate's own `Theme` is spelled out here.
+    let core: &starkit::theme::Theme = t;
+    let inner = overlay::render(
+        r,
+        buf,
+        &overlay::Overlay {
+            theme: core,
+            title: title(picker.kind),
+            detail: None,
+            footer: Some(footer_text),
+        },
+    );
     if inner.width < 4 || inner.height < 3 {
-        return Vec::new();
+        return (Vec::new(), None);
     }
 
     buf.set_string(
@@ -667,7 +636,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, picker: &mut Picker) 
         width: inner.width.saturating_sub(2),
         height: 1,
     };
-    picker
+    let caret = picker
         .query
         .render(field, buf, Style::default().fg(rgb(t.fg)));
 
@@ -689,7 +658,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, picker: &mut Picker) 
             fit(&note, grid.width),
             Style::default().fg(rgb(t.error)),
         );
-        return Vec::new();
+        return (Vec::new(), caret);
     }
     if picker.len() == 0 {
         let text = if picker.loading {
@@ -703,14 +672,15 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, picker: &mut Picker) 
             fit(text, grid.width),
             Style::default().fg(rgb(t.empty_fg)),
         );
-        return Vec::new();
+        return (Vec::new(), caret);
     }
 
-    if picker.is_gif() {
+    let places = if picker.is_gif() {
         gif_grid(grid, buf, t, picker, cell_w, cell_h)
     } else {
         emoji_grid(grid, buf, t, picker, inner)
-    }
+    };
+    (places, caret)
 }
 
 fn emoji_grid(
@@ -1091,7 +1061,7 @@ mod tests {
         let t = theme("terminal");
         let area = Rect::new(0, 0, 100, 30);
         let mut buf = Buffer::empty(area);
-        let places = render(area, &mut buf, &t, &mut p);
+        let (places, _) = render(area, &mut buf, &t, &mut p);
         let text: String = (0..area.height)
             .map(|y| {
                 (0..area.width)
@@ -1100,7 +1070,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("emoji"), "{text}");
+        assert!(text.contains("EMOJI"), "{text}");
         assert!(text.contains(":pepe:"), "{text}");
         assert_eq!(places.len(), 1, "one custom emoji, one picture");
     }

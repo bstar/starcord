@@ -14,12 +14,12 @@ expression: "render(&mut app, 100, 30)"
 ║                                                                           search  pins  settings ║
 ║  the picture I took                                                                              ║
 ║  [image 1024x768 harbour.png]                                                                    ║
-║  Jordan  09:15        ╔═ delete this message ════════════════════════════╗                       ║
-║  https://example.inval║here is the thing I meant                         ║                       ║
-║  │ A page title       ║                                                  ║                       ║
-║  │ Two sentences of de║this cannot be undone                             ║                       ║
-║  │ second is there so ║                                                  ║                       ║
-║▕ Alex  09:20          ╚════════════════════════════════════ y yes · n no ╝                       ║
+║  Jordan  09:15      ╔═ DELETE THIS MESSAGE ════════════════════════════════╗                     ║
+║  https://example.inv║ here is the thing I meant                            ║                     ║
+║  │ A page title     ║                                                      ║                     ║
+║  │ Two sentences of ║ this cannot be undone                                ║                     ║
+║  │ second is there s╚═══════════════════════════════════ y delete · n keep ╝                     ║
+║▕ Alex  09:20                                                                                     ║
 ║▕ https://tenor.invalid/view/a-cat-12345                                                          █
 ║▕ [gif ▶ a cat, falling over]                                                                     █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝

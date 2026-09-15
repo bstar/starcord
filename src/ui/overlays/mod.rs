@@ -436,6 +436,15 @@ impl Overlays {
     /// The ones with something to click take the click; everything else
     /// closes, which is what a click outside a dialogue has always meant.
     pub fn click(&mut self, area: Rect, x: u16, y: u16) -> Key {
+        if let Some(confirm) = &self.confirm {
+            let pending = confirm.on_yes.clone();
+            let hit = confirm::layout(area, confirm).and_then(|l| confirm::hit(&l, x, y));
+            self.confirm = None;
+            return match hit {
+                Some(confirm::Answer::Yes) => Key::Confirmed(pending),
+                _ => Key::Taken,
+            };
+        }
         if let Some(settings) = &mut self.settings {
             return match settings.click(area, x, y) {
                 settings::Action::Change(setting, forward) => Key::Setting(setting, forward),
@@ -529,7 +538,13 @@ impl Overlays {
         }
     }
 
-    /// Draw whatever is open, and hand back the pictures it placed.
+    /// Draw whatever is open, and hand back the pictures it placed and the
+    /// caret it wants shown, if it is a text field.
+    ///
+    /// Only the four typing boxes -- the quick switcher, search, attach and
+    /// the emoji/GIF picker -- ever answer with `Some`; every other overlay
+    /// answers `None`, which is what makes the composer's own caret stop
+    /// showing through once one of them is open.
     pub fn render(
         &mut self,
         area: Rect,
@@ -537,39 +552,39 @@ impl Overlays {
         theme: &Theme,
         cfg: &Config,
         store: &MediaStore,
-    ) -> Vec<Placement> {
+    ) -> (Vec<Placement>, Option<(u16, u16)>) {
         if let Some(confirm) = &self.confirm {
             confirm::render(area, buf, theme, confirm);
-            return Vec::new();
+            return (Vec::new(), None);
         }
         if let Some(quick) = &mut self.quick {
-            quick::render(area, buf, theme, quick);
-            return Vec::new();
+            let caret = quick::render(area, buf, theme, quick);
+            return (Vec::new(), caret);
         }
         if let Some(picker) = &mut self.picker {
             return picker::render(area, buf, theme, picker);
         }
         if let Some(viewer) = &self.viewer {
-            return media::render(area, buf, theme, viewer, store);
+            return (media::render(area, buf, theme, viewer, store), None);
         }
         if let Some(search) = &mut self.search {
-            search::render(area, buf, theme, search);
-            return Vec::new();
+            let caret = search::render(area, buf, theme, search);
+            return (Vec::new(), caret);
         }
         if let Some(attach) = &mut self.attach {
-            attach::render(area, buf, theme, attach);
-            return Vec::new();
+            let caret = attach::render(area, buf, theme, attach);
+            return (Vec::new(), caret);
         }
         if let Some(menu) = &self.menu {
             menu.render(area, buf, theme);
-            return Vec::new();
+            return (Vec::new(), None);
         }
         if let Some(settings) = &self.settings {
             settings.render(area, buf, theme, cfg);
-            return Vec::new();
+            return (Vec::new(), None);
         }
         if !self.help {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         HelpView {
             theme,
@@ -579,7 +594,7 @@ impl Overlays {
             title: "keys",
         }
         .render(area, buf);
-        Vec::new()
+        (Vec::new(), None)
     }
 }
 
@@ -764,10 +779,11 @@ mod tests {
         let area = Rect::new(0, 0, 40, 10);
         let mut buf = Buffer::empty(area);
         let before = buf.clone();
-        let places =
+        let (places, caret) =
             Overlays::default().render(area, &mut buf, &t, &Config::default(), &MediaStore::new());
         assert_eq!(buf, before);
         assert!(places.is_empty());
+        assert_eq!(caret, None);
     }
 
     fn drawn(o: &mut Overlays) -> String {

@@ -2943,9 +2943,15 @@ impl App {
         // pass: a `Clear` wipes the cells a protocol image lives in, so the
         // panels' pictures have to be down before this and the overlay's after
         // it.
-        let over = self
-            .over
-            .render(area, buf, &self.look.theme, &self.cfg, &self.chat.media);
+        let (over, caret) =
+            self.over
+                .render(area, buf, &self.look.theme, &self.cfg, &self.chat.media);
+        // An overlay's own caret, while one is open, takes over from the
+        // composer's -- otherwise the composer's caret shows through a box
+        // drawn on top of it.
+        if self.over.open() {
+            self.caret = caret;
+        }
         self.paint_overlay(over, buf, &mut drawn);
         self.look.graphics.forget_unused(&drawn);
         self.finish_pictures();
