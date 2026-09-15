@@ -19,7 +19,7 @@ expression: "render(&mut app, 100, 30)"
 ║  │ A page title       ║ avatars                                       on ║                       ║
 ║  │ Two sentences of de║ animate pictures                         focused ║                       ║
 ║  │ second is there so ║ send with                                  enter ║                       ║
-║▕ Alex  09:20          ║ voice channels                               off ║                       █
+║▕ Alex  09:20          ║ voice channels                               off ║                       ║
 ║▕ https://tenor.invalid║                                                  ║                       █
 ║▕ [gif ▶ a cat, falling╚════════════════════════ enter change · esc close ╝                       █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝

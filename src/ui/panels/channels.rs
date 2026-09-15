@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 
+use starkit::chrome::scrollbar;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
@@ -165,7 +166,7 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     (index < v.rows.len()).then_some(index)
 }
 
-pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
+pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) {
     let t = v.theme;
     if v.rows.is_empty() {
         empty(body, buf, t, "no channels");
@@ -241,6 +242,10 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
         }
         buf.set_string(body.x, y, fit(&text, width), style);
     }
+
+    let track = scrollbar::track(outer, body);
+    let thumb = scrollbar::rows(v.scroll, v.rows.len(), body.height);
+    scrollbar::render(track, buf, t, thumb);
 }
 
 #[cfg(test)]

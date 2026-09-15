@@ -39,6 +39,7 @@ pub mod render;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use starkit::chrome::scrollbar;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
@@ -67,16 +68,8 @@ use crate::ui::theme::Theme;
 /// enough that filling the heights each frame is a few hundred hash lookups.
 const WINDOW: usize = 500;
 
-/// The scrollbar, and the marks the dividers are drawn with.
-///
-/// A full block rather than the right half of one, because the thumb is drawn
-/// *on* the panel's right border and that border is double. A half block
-/// covers the right of the cell, which is where `\u{2551}`'s second stroke
-/// falls and not its first, so the thumb read as a notch taken out of the
-/// frame rather than as a bead running down it. Solid, it is the mark
-/// STAR/AMP's playlist marker uses, and it reads the same way against either
-/// weight of line.
-const SCROLLBAR: &str = "\u{2588}";
+/// The mark a day or unread divider is drawn with. The scroll position is
+/// STAR/KIT's own mark now -- see [`starkit::chrome::scrollbar`].
 const DIVIDER: &str = "\u{2500}";
 
 /// Where the cursor and the view were when a channel was last left.
@@ -930,19 +923,14 @@ impl ChatState {
             }
         }
 
-        if scrollbar(outer, buf, t, &self.list, &heights, self.rows.len(), body) {
+        let track = scrollbar::track(outer, body);
+        let thumb = scrollbar::virtual_list(&self.list, body, &heights, self.rows.len());
+        scrollbar::render(track, buf, t, thumb);
+        if thumb.is_some() {
             // The whole track, not the thumb: a click anywhere on it goes
             // there, which is what every scrollbar has always done and what
             // makes a drag work from wherever the pointer happens to be.
-            self.hits.push((
-                Rect {
-                    x: outer.x + outer.width - 1,
-                    y: body.y,
-                    width: 1,
-                    height: body.height,
-                },
-                Hit::Scrollbar,
-            ));
+            self.hits.push((track, Hit::Scrollbar));
         }
     }
 
@@ -1236,51 +1224,6 @@ fn typing_line(names: &[String]) -> String {
             names.len() - 2
         ),
     }
-}
-
-/// One column of `█` down the panel's right border.
-fn scrollbar(
-    outer: Rect,
-    buf: &mut Buffer,
-    theme: &Theme,
-    list: &VirtualList,
-    heights: &[u16],
-    len: usize,
-    body: Rect,
-) -> bool {
-    if outer.width < 2 || body.height < 3 || len == 0 {
-        return false;
-    }
-    let total: u32 = heights.iter().map(|h| u32::from(*h)).sum();
-    if total <= u32::from(body.height) {
-        return false;
-    }
-    let get = |i: usize| heights.get(i).copied().unwrap_or(0);
-    let visible = list.visible(body, get, len);
-    let first = visible.first().map(|v| v.index).unwrap_or(0);
-    let skip = visible.first().map(|v| v.skip).unwrap_or(0);
-    let above: u32 = heights
-        .iter()
-        .take(first)
-        .map(|h| u32::from(*h))
-        .sum::<u32>()
-        + u32::from(skip);
-
-    let track = body.height;
-    let thumb = ((u32::from(track) * u32::from(track)) / total).max(1) as u16;
-    let room = track.saturating_sub(thumb);
-    let scrolled = total.saturating_sub(u32::from(body.height)).max(1);
-    let at = ((above * u32::from(room)) / scrolled).min(u32::from(room)) as u16;
-
-    let x = outer.x + outer.width - 1;
-    let style = Style::default().fg(rgb(theme.accent));
-    for i in 0..thumb {
-        let y = body.y + at + i;
-        if y < body.y + body.height {
-            buf.set_string(x, y, SCROLLBAR, style);
-        }
-    }
-    true
 }
 
 /// The oldest message the read state says has not been seen.

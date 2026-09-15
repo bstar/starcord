@@ -2335,12 +2335,8 @@ impl App {
         let Some(track) = self.chat.scrollbar_track() else {
             return;
         };
-        if track.height == 0 {
-            return;
-        }
-        let within = y.clamp(track.y, track.y + track.height - 1) - track.y;
-        let fraction = f32::from(within) / f32::from(track.height.saturating_sub(1).max(1));
-        self.chat.scroll_to_fraction(fraction);
+        self.chat
+            .scroll_to_fraction(starkit::chrome::scrollbar::fraction_at(track, y));
     }
 
     /// Right-click: what can be done to the message under the pointer.
@@ -2894,14 +2890,16 @@ impl App {
             }
             match module {
                 ModuleId::Servers => {
-                    let placed = guilds::render(body, buf, &self.guilds_view(focused));
+                    let placed = guilds::render(rect, body, buf, &self.guilds_view(focused));
                     icons.extend(placed.into_iter().map(|icon| (icon, body)));
                 }
                 ModuleId::Channels if self.nav.guild.is_none() => {
-                    dms::render(body, buf, &self.dms_view(focused))
+                    dms::render(rect, body, buf, &self.dms_view(focused))
                 }
-                ModuleId::Channels => channels::render(body, buf, &self.channels_view(focused)),
-                ModuleId::Members => members::render(body, buf, &self.members_view(focused)),
+                ModuleId::Channels => {
+                    channels::render(rect, body, buf, &self.channels_view(focused))
+                }
+                ModuleId::Members => members::render(rect, body, buf, &self.members_view(focused)),
                 ModuleId::Conversation => {
                     let params = chat::Params {
                         theme: &self.look.theme,

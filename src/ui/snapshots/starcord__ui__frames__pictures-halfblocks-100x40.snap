@@ -19,14 +19,14 @@ expression: "render(&mut app, 100, 40)"
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
-║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 █
-║▀▀▀▀ Robin  11:02                                                                                 █
-║▀▀▀▀ nice ▀▀ one                                                                                  █
-║     [▀▀ 3]                                                                                       █
-║▀▀▀▀ Jordan  11:03                                                                                █
-║▀▀▀▀ https://example.invalid/page                                                                 █
-║     │ A page with a picture on it                                                                █
-║     │ The card's thumbnail is drawn against the right edge, so the                               █
+║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
+║▀▀▀▀ Robin  11:02                                                                                 ║
+║▀▀▀▀ nice ▀▀ one                                                                                  ║
+║     [▀▀ 3]                                                                                       ║
+║▀▀▀▀ Jordan  11:03                                                                                ║
+║▀▀▀▀ https://example.invalid/page                                                                 ║
+║     │ A page with a picture on it                                                                ║
+║     │ The card's thumbnail is drawn against the right edge, so the                               ║
 ║     │ words keep the width they had.                                                             █
 ║                                                                                         ▀▀▀▀▀▀▀▀ █
 ║                                                                                         ▀▀▀▀▀▀▀▀ █
