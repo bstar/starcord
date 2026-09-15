@@ -313,10 +313,10 @@ impl Resolve for Theme {
 
 /// Where the themes come from.
 ///
-/// The same directory names as the rest of STAR/CORD's files, spelled here
-/// with STAR/KIT's `Paths` because that is what [`Registry`] takes.
-pub const THEME_PATHS: starkit::paths::Paths =
-    starkit::paths::Paths::new("starcord", "STARCORD_DIR", "STARCORD_CONFIG_DIR");
+/// The same directories the rest of STAR/CORD's files live under -- this
+/// application's own [`crate::paths::PATHS`], spelled here under the name
+/// [`Registry`] takes.
+pub const THEME_PATHS: starkit::paths::Paths = crate::paths::PATHS;
 
 pub fn registry() -> Registry<Theme> {
     Registry::new(THEME_PATHS)
