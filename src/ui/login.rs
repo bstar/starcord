@@ -28,6 +28,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use starkit::chrome::overlay::{self, Anchor};
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::graphics::{Graphics, ImageId};
 use starkit::input::{Edit, TextInput};
@@ -360,14 +361,10 @@ impl LoginScreen {
             }
             _ => (PANEL_COLS, PANEL_ROWS),
         };
-        let w = want_w.min(area.width);
-        let h = want_h.min(area.height);
-        Rect {
-            x: area.x + (area.width - w) / 2,
-            y: area.y + (area.height.saturating_sub(h)) / 2,
-            width: w,
-            height: h,
-        }
+        // The same shape every overlay opens in, centred: a fixed size rather
+        // than a range, since a panel that changed size between stages would
+        // be one that jumped under the reader.
+        overlay::rect(area, (want_w, want_w), want_h, want_h, Anchor::Centre)
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme, graphics: &mut Graphics) {

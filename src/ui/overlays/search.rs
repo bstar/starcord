@@ -24,13 +24,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use starkit::chrome::overlay::{self, Anchor};
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::input::{Edit, TextInput};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::handle::{RequestId, SearchPage, SearchQuery, SearchScope};
 use crate::discord::model::Message;
@@ -305,16 +304,10 @@ fn snippet(content: &str) -> String {
     }
 }
 
-/// Where the box lands.
+/// Where the box lands: the same shape every overlay opens in, upper-anchored
+/// where the typing boxes sit.
 pub fn rect(area: Rect) -> Rect {
-    let w = area.width.saturating_sub(6).clamp(40, 88);
-    let h = area.height.saturating_sub(4).clamp(8, 22);
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 3,
-        width: w.min(area.width),
-        height: h.min(area.height),
-    }
+    overlay::rect(area, (40, 88), 22, 8, Anchor::Upper)
 }
 
 fn list_rect(r: Rect) -> Rect {
@@ -326,51 +319,43 @@ fn list_rect(r: Rect) -> Rect {
     }
 }
 
-pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) {
+pub fn render(
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &Theme,
+    search: &mut Search,
+) -> Option<(u16, u16)> {
     let r = rect(area);
     if r.width < 16 || r.height < 6 {
-        return;
+        return None;
     }
-    Clear.render(r, buf);
 
     let t = theme;
-    let counted = if search.total > 0 {
+    let footer = if search.total > 0 {
         format!(
-            " {}\u{2013}{} of {} ",
+            "{}\u{2013}{} of {} \u{b7} enter go \u{b7} ctrl+n page \u{b7} esc close",
             search.offset + 1,
             search.offset + search.hits.len() as u32,
             search.total
         )
     } else {
-        String::new()
+        "enter go \u{b7} ctrl+n page \u{b7} esc close".to_string()
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(t.border_focused)))
-        .title(Span::styled(
-            format!(
-                "{}search {} ",
-                starkit::chrome::frame::TITLE_LEAD,
-                search.where_
-            ),
-            Style::default()
-                .fg(rgb(t.header_fg))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                format!("{counted}\u{b7} enter go \u{b7} ctrl+n page \u{b7} esc close "),
-                Style::default().fg(rgb(t.dim)),
-            ))
-            .right_aligned(),
-        )
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    let inner = block.inner(r);
-    block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
+    // The core theme type -- a struct literal is not a coercion site, so the
+    // deref from this crate's own `Theme` is spelled out here.
+    let core: &starkit::theme::Theme = t;
+    let inner = overlay::render(
+        r,
+        buf,
+        &overlay::Overlay {
+            theme: core,
+            title: "search",
+            detail: Some(&search.where_),
+            footer: Some(&footer),
+        },
+    );
     if inner.width < 4 || inner.height < 2 {
-        return;
+        return None;
     }
 
     buf.set_string(
@@ -379,7 +364,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
         "\u{203a} ",
         Style::default().fg(rgb(t.accent)),
     );
-    search.query.render(
+    let caret = search.query.render(
         Rect {
             x: inner.x + 2,
             y: inner.y,
@@ -392,7 +377,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
 
     let list = list_rect(r);
     if list.height == 0 {
-        return;
+        return caret;
     }
     if search.hits.is_empty() {
         let text = if search.loading {
@@ -408,16 +393,12 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
             fit(&text, list.width),
             Style::default().fg(rgb(t.empty_fg)),
         );
-        return;
+        return caret;
     }
 
     // Keep the cursor on screen.
     let rows = usize::from(list.height);
-    if search.cursor < search.scroll {
-        search.scroll = search.cursor;
-    } else if search.cursor >= search.scroll + rows {
-        search.scroll = search.cursor + 1 - rows;
-    }
+    search.scroll = starkit::list::clamp_scroll(search.cursor, search.scroll, rows);
 
     for (n, hit) in search.hits.iter().enumerate().skip(search.scroll) {
         let row = (n - search.scroll) as u16;
@@ -448,6 +429,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
             style,
         );
     }
+    caret
 }
 
 #[cfg(test)]
@@ -646,7 +628,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("search #general"), "{text}");
+        assert!(text.contains("SEARCH \u{2014} #general"), "{text}");
         assert!(
             text.contains("hello there"),
             "the markup is taken out: {text}"

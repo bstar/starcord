@@ -564,3 +564,18 @@ fn a_settings_row_changes_the_program() {
     a.change_setting(Setting::Avatars, true);
     assert_ne!(a.cfg.chat.show_avatars, before);
 }
+
+/// The quick switcher is a text field, so it wants a real caret -- and while
+/// it is open, that caret is the one on screen rather than the composer's own
+/// showing through underneath it. Symbol-only snapshots never show a caret
+/// (it is a reversed cell), so this is asserted here instead.
+#[test]
+fn the_quick_switcher_shows_a_caret_while_it_is_open() {
+    use starkit::crossterm::event::{KeyCode, KeyModifiers};
+    let mut a = app();
+    a.login = None;
+    a.handle(Action::QuickSwitch);
+    a.key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE));
+    let _ = frame(&mut a, 100, 30);
+    assert!(a.caret.is_some(), "the quick switcher drew no caret");
+}

@@ -12,13 +12,12 @@
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
+use starkit::chrome::overlay::{self, Anchor};
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::input::{Edit, TextInput};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::snowflake::{ChannelId, GuildId, UserId};
 use crate::ui::panels::{fit, rgb};
@@ -205,50 +204,40 @@ pub enum Action {
     Quit,
 }
 
-/// Where the box lands.
+/// Where the box lands: the same shape every overlay opens in, upper-anchored
+/// where the typing boxes sit, sized to the hits it has to show.
 pub fn rect(area: Rect, hits: usize) -> Rect {
-    let w = area.width.saturating_sub(8).clamp(30, 64);
-    let h = (hits as u16 + 4).clamp(5, area.height.saturating_sub(2).max(5));
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 3,
-        width: w,
-        height: h.min(area.height),
-    }
+    overlay::rect(area, (30, 64), hits as u16 + 4, 5, Anchor::Upper)
 }
 
-pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, quick: &mut Quick) {
+pub fn render(
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &Theme,
+    quick: &mut Quick,
+) -> Option<(u16, u16)> {
     let hits: Vec<Item> = quick.hits().into_iter().cloned().collect();
     let r = rect(area, hits.len());
     if r.width < 10 || r.height < 4 {
-        return;
+        return None;
     }
-    Clear.render(r, buf);
 
     let t = theme;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(t.border_focused)))
-        .title(Span::styled(
-            format!("{}jump to ", starkit::chrome::frame::TITLE_LEAD),
-            Style::default()
-                .fg(rgb(t.header_fg))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                " enter go \u{b7} esc close ",
-                Style::default().fg(rgb(t.dim)),
-            ))
-            .right_aligned(),
-        )
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    let inner = block.inner(r);
-    block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
+    // The core theme type -- a struct literal is not a coercion site, so the
+    // deref from this crate's own `Theme` is spelled out here.
+    let core: &starkit::theme::Theme = t;
+    let inner = overlay::render(
+        r,
+        buf,
+        &overlay::Overlay {
+            theme: core,
+            title: "jump to",
+            detail: None,
+            footer: Some("enter go \u{b7} esc close"),
+        },
+    );
     if inner.height == 0 || inner.width == 0 {
-        return;
+        return None;
     }
 
     // The query line, with a real caret: this is a text field and looking like
@@ -265,7 +254,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, quick: &mut Quick) {
         width: inner.width.saturating_sub(2),
         height: 1,
     };
-    quick
+    let caret = quick
         .query
         .render(field, buf, Style::default().fg(rgb(t.fg)));
 
@@ -276,7 +265,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, quick: &mut Quick) {
             fit("nothing matches", inner.width),
             Style::default().fg(rgb(t.empty_fg)),
         );
-        return;
+        return caret;
     }
 
     for (n, item) in hits.iter().enumerate() {
@@ -309,6 +298,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, quick: &mut Quick) {
             );
         }
     }
+    caret
 }
 
 #[cfg(test)]
@@ -434,7 +424,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("jump to"), "{text}");
+        assert!(text.contains("JUMP TO"), "{text}");
         assert!(text.contains("#general"), "{text}");
         assert!(text.contains("First Guild"), "{text}");
     }

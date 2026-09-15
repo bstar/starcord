@@ -11,13 +11,12 @@
 
 use std::path::{Path, PathBuf};
 
+use starkit::chrome::overlay::{self, Anchor};
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::input::{Edit, TextInput};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::style::Style;
 
 use crate::ui::panels::{fit, rgb};
 use crate::ui::theme::Theme;
@@ -138,49 +137,39 @@ pub fn human(bytes: u64) -> String {
     }
 }
 
-/// Where the box lands.
+/// Where the box lands: the same shape every overlay opens in, upper-anchored
+/// where the typing boxes sit.
 pub fn rect(area: Rect) -> Rect {
-    let w = area.width.saturating_sub(6).clamp(30, 72);
-    let h = 5.min(area.height);
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 3,
-        width: w,
-        height: h,
-    }
+    overlay::rect(area, (30, 72), 5, 5, Anchor::Upper)
 }
 
-pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, attach: &mut Attach) {
+pub fn render(
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &Theme,
+    attach: &mut Attach,
+) -> Option<(u16, u16)> {
     let r = rect(area);
     if r.width < 12 || r.height < 4 {
-        return;
+        return None;
     }
-    Clear.render(r, buf);
 
     let t = theme;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(t.border_focused)))
-        .title(Span::styled(
-            format!("{}attach a file ", starkit::chrome::frame::TITLE_LEAD),
-            Style::default()
-                .fg(rgb(t.header_fg))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                " enter attach \u{b7} esc cancel ",
-                Style::default().fg(rgb(t.dim)),
-            ))
-            .right_aligned(),
-        )
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    let inner = block.inner(r);
-    block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
+    // The core theme type -- a struct literal is not a coercion site, so the
+    // deref from this crate's own `Theme` is spelled out here.
+    let core: &starkit::theme::Theme = t;
+    let inner = overlay::render(
+        r,
+        buf,
+        &overlay::Overlay {
+            theme: core,
+            title: "attach a file",
+            detail: None,
+            footer: Some("enter attach \u{b7} esc cancel"),
+        },
+    );
     if inner.width < 4 || inner.height == 0 {
-        return;
+        return None;
     }
 
     buf.set_string(
@@ -189,7 +178,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, attach: &mut Attach) 
         "\u{203a} ",
         Style::default().fg(rgb(t.accent)),
     );
-    attach.path.render(
+    let caret = attach.path.render(
         Rect {
             x: inner.x + 2,
             y: inner.y,
@@ -211,6 +200,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, attach: &mut Attach) 
             Style::default().fg(rgb(colour)),
         );
     }
+    caret
 }
 
 #[cfg(test)]
@@ -284,7 +274,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("attach a file"), "{text}");
+        assert!(text.contains("ATTACH A FILE"), "{text}");
         assert!(text.contains("no such file"), "{text}");
     }
 

@@ -25,12 +25,11 @@
 
 use std::path::PathBuf;
 
+use starkit::chrome::overlay::{self, Anchor};
 use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::style::Style;
 
 use crate::discord::media::MediaKey;
 use crate::discord::snowflake::MessageId;
@@ -214,16 +213,10 @@ impl Viewer {
 }
 
 /// Where the box lands: most of the window, with a margin so the conversation
-/// behind it is still visible at the edges.
+/// behind it is still visible at the edges -- the same margin every overlay
+/// keeps clear, so this is `overlay::rect` with no upper bound on either side.
 pub fn rect(area: Rect) -> Rect {
-    let w = area.width.saturating_sub(4).max(8);
-    let h = area.height.saturating_sub(2).max(5);
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 2,
-        width: w,
-        height: h,
-    }
+    overlay::rect(area, (8, u16::MAX), u16::MAX, 5, Anchor::Centre)
 }
 
 pub fn render(
@@ -237,39 +230,30 @@ pub fn render(
     if r.width < 8 || r.height < 5 {
         return Vec::new();
     }
-    Clear.render(r, buf);
 
     let t = theme;
     let item = viewer.current();
     let counter = format!("{}/{}", viewer.index + 1, viewer.items.len());
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(t.border_focused)))
-        .title(Span::styled(
-            format!(
-                "{}{} \u{b7} {counter} ",
-                starkit::chrome::frame::TITLE_LEAD,
-                item.filename
-            ),
-            Style::default()
-                .fg(rgb(t.header_fg))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                format!(
-                    " h l move \u{b7} z {} \u{b7} s save \u{b7} o open \u{b7} y copy \u{b7} esc close ",
-                    viewer.zoom.name()
-                ),
-                Style::default().fg(rgb(t.dim)),
-            ))
-            .right_aligned(),
-        )
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    let inner = block.inner(r);
-    block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
+    let detail = format!("{} \u{b7} {counter}", item.filename);
+    let footer = format!(
+        "h l move \u{b7} z {} \u{b7} s save \u{b7} o open \u{b7} y copy \u{b7} esc close",
+        viewer.zoom.name()
+    );
+    // The core theme type -- a struct literal is not a coercion site, so the
+    // deref from this crate's own `Theme` is spelled out here.
+    let core: &starkit::theme::Theme = t;
+    let inner = overlay::render(
+        r,
+        buf,
+        &overlay::Overlay {
+            theme: core,
+            // The filename must keep its own case, so it and the counter go
+            // in the detail rather than the title `frame::frame` uppercases.
+            title: "media",
+            detail: Some(&detail),
+            footer: Some(&footer),
+        },
+    );
     if inner.width == 0 || inner.height == 0 {
         return Vec::new();
     }
