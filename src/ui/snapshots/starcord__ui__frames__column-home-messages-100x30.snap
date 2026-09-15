@@ -8,8 +8,8 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MESSAGES ═══════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║CONVERSATIONS                                                                                     ║
-║○ Wren of the Long Display Name                                                                   ║
+║CONVERSATIONS                                                                                     █
+║○ Wren of the Long Display Name                                                                   █
 ║○ Alex, Jordan [3]                                                                                ║
 ║● Alex (1)                                                                                        ║
 ║ONLINE                                                                                            ║

@@ -19,7 +19,7 @@ expression: "render(&mut app, 100, 30)"
 ║  │ A page title                                                                                  ║
 ║  │ Two sentences of description, as a link unfurl carries. The                                   ║
 ║  │ second is there so the wrapping has something to do.                                          ║
-║  Alex  09:20                                                                                     █
+║  Alex  09:20                                                                                     ║
 ║  https://tenor.invalid/view/a-cat-12345                                                          █
 ║  [gif ▶ a cat, falling over]                                                                     █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝

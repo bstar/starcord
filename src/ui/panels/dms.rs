@@ -6,6 +6,7 @@
 //! `Home` is the chosen server, in the place the channel list otherwise has,
 //! and it is a flat vector of rows for the same reason the channel list is.
 
+use starkit::chrome::scrollbar;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
@@ -82,7 +83,7 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     (index < v.rows.len()).then_some(index)
 }
 
-pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
+pub fn render(outer: Rect, body: Rect, buf: &mut Buffer, v: &View<'_>) {
     let t = v.theme;
     if v.rows.is_empty() {
         empty(body, buf, t, "no conversations");
@@ -176,6 +177,10 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
             }
         }
     }
+
+    let track = scrollbar::track(outer, body);
+    let thumb = scrollbar::rows(v.scroll, v.rows.len(), body.height);
+    scrollbar::render(track, buf, t, thumb);
 }
 
 fn sel_fg(t: &Theme, focused: bool) -> starkit::theme::color::Rgb {
@@ -362,6 +367,7 @@ mod tests {
         let area = Rect::new(0, 0, 24, 5);
         let mut buf = Buffer::empty(area);
         render(
+            area,
             area,
             &mut buf,
             &View {

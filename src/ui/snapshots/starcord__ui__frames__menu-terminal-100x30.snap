@@ -19,7 +19,7 @@ expression: "render(&mut app, 100, 30)"
 ║  │ A page title       ║ react  +                                         ║                       ║
 ║  │ Two sentences of de║ copy the text  y                                 ║                       ║
 ║  │ second is there so ║ open elsewhere  o                                ║                       ║
-║  Alex  09:20          ║ copy a link  ctrl+y                              ║                       █
+║  Alex  09:20          ║ copy a link  ctrl+y                              ║                       ║
 ║  https://tenor.invalid║                                                  ║                       █
 ║  [gif ▶ a cat, falling╚════════════════════════ enter choose · esc close ╝                       █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
