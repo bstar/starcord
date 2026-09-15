@@ -54,6 +54,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use starkit::chrome::frame::{self, Badge, Tone};
+use starkit::chrome::scrollbar::Scrollbars;
 use starkit::crossterm::event::{
     self, Event as TermEvent, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -66,7 +67,7 @@ use starkit::ratatui::style::{Modifier, Style};
 use starkit::term;
 
 use super::keymap::{self, Action, PrefixKey};
-use super::layout::{Drag, LayoutState, Regions};
+use super::layout::{LayoutState, Regions};
 use super::login::{LoginScreen, Outcome};
 use super::overlays::attach::Attach;
 use super::overlays::confirm::{Confirm, Pending};
@@ -181,6 +182,10 @@ pub struct App {
     pub nav: Nav,
     pub view: ViewData,
     pub chat: ChatState,
+    /// Every scrollbar drawn this frame, and the one the pointer is holding.
+    /// One registry for the whole column: a drag does not care which module
+    /// it started in, only which bar's track the press landed on.
+    bars: Scrollbars<ModuleId>,
     pub composer: Composer,
     pub over: Overlays,
     conn: Arc<Connection>,
@@ -252,6 +257,7 @@ impl App {
                 ..ViewData::default()
             },
             chat: ChatState::new(),
+            bars: Scrollbars::new(),
             composer: Composer::new(),
             over: Overlays::default(),
             conn,
@@ -2275,6 +2281,32 @@ impl App {
         if self.login.is_some() {
             return;
         }
+
+        // Every scrollbar in the column, ahead of both the overlay block and
+        // the panel dispatch below: a drag or a release answers regardless of
+        // what else is going on, and a press does too except that a modal is
+        // in front of the panels and must not let one through to whatever bar
+        // is behind it. Overlays draw no bars of their own, so this never
+        // steals a click from one.
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) if !self.over.open() => {
+                if let Some((key, above)) = self.bars.press(m.column, m.row) {
+                    self.scroll_bar_to(key, above);
+                    return;
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if let Some((key, above)) = self.bars.drag(m.row) {
+                    self.scroll_bar_to(key, above);
+                    return;
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.bars.release();
+            }
+            _ => {}
+        }
+
         if self.over.open() {
             match m.kind {
                 MouseEventKind::ScrollDown => self.over.scroll(3),
@@ -2316,27 +2348,29 @@ impl App {
                     self.open_menu(x, y);
                 }
             }
-            MouseEventKind::Drag(MouseButton::Left) => self.drag_to(x, y),
-            MouseEventKind::Up(MouseButton::Left) => self.layout.drag = None,
             MouseEventKind::ScrollDown => self.scroll_module(&regions, x, y, 3),
             MouseEventKind::ScrollUp => self.scroll_module(&regions, x, y, -3),
             _ => {}
         }
     }
 
-    fn drag_to(&mut self, _x: u16, y: u16) {
-        if self.layout.drag == Some(Drag::Scrollbar) {
-            self.drag_scrollbar(y);
+    /// Apply a scrollbar drag or press: `above` is in whatever unit that
+    /// module's bar was last recorded with -- rows for every list but the
+    /// conversation, which counts through [`starkit::vlist::VirtualList`].
+    fn scroll_bar_to(&mut self, key: ModuleId, above: u32) {
+        match key {
+            ModuleId::Conversation => self.chat.scroll_to_above(above),
+            ModuleId::Servers => {
+                let step = u32::from(guilds::row_rows(self.pictures())).max(1);
+                self.nav.guild_scroll = (above / step) as usize;
+            }
+            ModuleId::Channels if self.nav.guild.is_none() => {
+                self.nav.dm_scroll = above as usize;
+            }
+            ModuleId::Channels => self.nav.channel_scroll = above as usize,
+            ModuleId::Members => self.nav.member_scroll = above as usize,
+            ModuleId::Compose => {}
         }
-    }
-
-    /// The pointer on the scrollbar's track: that fraction of the way down.
-    fn drag_scrollbar(&mut self, y: u16) {
-        let Some(track) = self.chat.scrollbar_track() else {
-            return;
-        };
-        self.chat
-            .scroll_to_fraction(starkit::chrome::scrollbar::fraction_at(track, y));
     }
 
     /// Right-click: what can be done to the message under the pointer.
@@ -2504,10 +2538,6 @@ impl App {
                 if let Some(channel) = self.nav.channel {
                     self.core.send(Command::LoadOlder(channel));
                 }
-            }
-            Hit::Scrollbar => {
-                self.layout.drag = Some(Drag::Scrollbar);
-                self.drag_scrollbar(y);
             }
         }
     }
@@ -2818,6 +2848,19 @@ impl App {
     }
 
     pub fn draw(&mut self, area: Rect, buf: &mut Buffer) {
+        // Taken out for the frame rather than borrowed: `draw_inner` needs it
+        // mutably at the same time as `&self` views like `guilds_view`, which
+        // a field of `self` cannot be alongside a borrow of the rest of it.
+        // Put back before every return out of `draw_inner`, early ones
+        // included, which is what making it a separate call buys -- one
+        // restore here rather than one before each of that function's own
+        // returns.
+        let mut bars = std::mem::take(&mut self.bars);
+        self.draw_inner(area, buf, &mut bars);
+        self.bars = bars;
+    }
+
+    fn draw_inner(&mut self, area: Rect, buf: &mut Buffer, bars: &mut Scrollbars<ModuleId>) {
         self.caret = None;
         let bg = Style::default()
             .bg(rgb(self.look.theme.bg))
@@ -2852,6 +2895,7 @@ impl App {
         // Everything asked for after this counts as on screen; what is not
         // asked for again before `end_frame` has scrolled away.
         self.chat.media.begin_frame();
+        bars.begin_frame();
         let mut icons: Vec<(guilds::Icon, Rect)> = Vec::new();
         for module in COLUMN {
             let rect = regions.rect_of(module);
@@ -2890,16 +2934,18 @@ impl App {
             }
             match module {
                 ModuleId::Servers => {
-                    let placed = guilds::render(rect, body, buf, &self.guilds_view(focused));
+                    let placed = guilds::render(rect, body, buf, &self.guilds_view(focused), bars);
                     icons.extend(placed.into_iter().map(|icon| (icon, body)));
                 }
                 ModuleId::Channels if self.nav.guild.is_none() => {
-                    dms::render(rect, body, buf, &self.dms_view(focused))
+                    dms::render(rect, body, buf, &self.dms_view(focused), bars)
                 }
                 ModuleId::Channels => {
-                    channels::render(rect, body, buf, &self.channels_view(focused))
+                    channels::render(rect, body, buf, &self.channels_view(focused), bars)
                 }
-                ModuleId::Members => members::render(rect, body, buf, &self.members_view(focused)),
+                ModuleId::Members => {
+                    members::render(rect, body, buf, &self.members_view(focused), bars)
+                }
                 ModuleId::Conversation => {
                     let params = chat::Params {
                         theme: &self.look.theme,
@@ -2910,7 +2956,7 @@ impl App {
                         me: self.core.state().me().map(|u| u.id),
                         tz: self.tz.clone(),
                     };
-                    self.chat.render(rect, body, buf, &params);
+                    self.chat.render(rect, body, buf, &params, bars);
                 }
                 ModuleId::Compose => {
                     let view = super::panels::composer::View {

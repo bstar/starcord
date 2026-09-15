@@ -65,17 +65,6 @@ const COMPOSER_MIN_ROWS: u16 = 4;
 
 pub const MIN_ROWS: u16 = 3 * COLLAPSED_ROWS + CHAT_MIN_ROWS + COMPOSER_MIN_ROWS + 1;
 
-/// What the pointer is in the middle of.
-///
-/// One thing, now that there are no seams: the message list's scrollbar. It
-/// carries nothing, because where the pointer is on the track is the whole of
-/// the answer, so a drag that has wandered off the column sideways still
-/// scrolls.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Drag {
-    Scrollbar,
-}
-
 /// One frame's geometry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Regions {
@@ -101,8 +90,7 @@ impl Regions {
     }
 }
 
-/// Which module has the keyboard, which list is open, and what the pointer is
-/// dragging.
+/// Which module has the keyboard, and which list is open.
 pub struct LayoutState {
     focus: ModuleId,
     /// The one list that is expanded, if any. The accordion is this field
@@ -111,7 +99,6 @@ pub struct LayoutState {
     expanded: Option<ModuleId>,
     /// `[ui] list_rows`: the tallest an open list may grow to.
     pub list_rows: u16,
-    pub drag: Option<Drag>,
     pub last: Option<Regions>,
 }
 
@@ -121,7 +108,6 @@ impl LayoutState {
             focus: ModuleId::Servers,
             expanded: Some(ModuleId::Servers),
             list_rows,
-            drag: None,
             last: None,
         }
     }

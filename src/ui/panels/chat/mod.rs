@@ -39,7 +39,7 @@ pub mod render;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use starkit::chrome::scrollbar;
+use starkit::chrome::scrollbar::{self, Scrollbars};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
@@ -91,9 +91,6 @@ pub enum Hit {
     /// click; anything else is selected on one and opened on two.
     Attachment(MessageId, String, ExternalKind),
     LoadOlder,
-    /// The bar down the right border: a click or a drag scrolls to that
-    /// fraction of the conversation.
-    Scrollbar,
 }
 
 /// The whole of the message panel's state.
@@ -299,8 +296,11 @@ impl ChatState {
         (above as f32 / room as f32).clamp(0.0, 1.0)
     }
 
-    /// Put the view that far down the conversation. For a scrollbar drag.
-    pub fn scroll_to_fraction(&mut self, fraction: f32) {
+    /// Put the view so that `above` rows of it are above the viewport. For a
+    /// scrollbar drag: `above` is what [`starkit::chrome::scrollbar::Scrollbars::drag`]
+    /// handed back, in the same units [`scrollbar::virtual_extent`] recorded
+    /// the bar with.
+    pub fn scroll_to_above(&mut self, above: u32) {
         if self.heights.len() != self.rows.len() || self.rows.is_empty() {
             return;
         }
@@ -310,22 +310,12 @@ impl ChatState {
         if room == 0 {
             return;
         }
-        let want = (fraction.clamp(0.0, 1.0) * room as f32) as u32;
-        if want >= room {
+        if above >= room {
             self.to_bottom();
             return;
         }
-        let mut acc = 0u32;
-        let mut index = 0usize;
-        for (i, h) in self.heights.iter().enumerate() {
-            if acc + u32::from(*h) > want {
-                index = i;
-                break;
-            }
-            acc += u32::from(*h);
-            index = i;
-        }
-        self.list.scroll_to(index);
+        self.list
+            .scroll_to(scrollbar::index_at(&self.heights, above));
         self.follow_end = false;
         self.media.viewport_moved();
     }
@@ -830,7 +820,14 @@ impl ChatState {
 
     /// Draw the panel. `outer` is the framed rect, for the scrollbar on its
     /// right border; `body` is what the frame left for contents.
-    pub fn render(&mut self, outer: Rect, body: Rect, buf: &mut Buffer, v: &Params<'_>) {
+    pub fn render(
+        &mut self,
+        outer: Rect,
+        body: Rect,
+        buf: &mut Buffer,
+        v: &Params<'_>,
+        bars: &mut Scrollbars<super::ModuleId>,
+    ) {
         self.hits.clear();
         self.slots.clear();
         if body.width == 0 || body.height == 0 {
@@ -924,22 +921,11 @@ impl ChatState {
         }
 
         let track = scrollbar::track(outer, body);
-        let thumb = scrollbar::virtual_list(&self.list, body, &heights, self.rows.len());
-        scrollbar::render(track, buf, t, thumb);
-        if thumb.is_some() {
-            // The whole track, not the thumb: a click anywhere on it goes
-            // there, which is what every scrollbar has always done and what
-            // makes a drag work from wherever the pointer happens to be.
-            self.hits.push((track, Hit::Scrollbar));
+        if let Some((total, above)) =
+            scrollbar::virtual_extent(&self.list, body, &heights, self.rows.len())
+        {
+            bars.draw(super::ModuleId::Conversation, track, buf, t, total, above);
         }
-    }
-
-    /// Where the scrollbar's track is, for a drag that has left it sideways.
-    pub fn scrollbar_track(&self) -> Option<Rect> {
-        self.hits
-            .iter()
-            .find(|(_, hit)| *hit == Hit::Scrollbar)
-            .map(|(rect, _)| *rect)
     }
 
     /// This frame's pictures, for the pass that draws them.
@@ -1398,6 +1384,7 @@ mod tests {
                 me: None,
                 tz: jiff::tz::TimeZone::UTC,
             },
+            &mut Scrollbars::new(),
         );
         (0..BODY.height)
             .map(|y| {
@@ -1556,6 +1543,7 @@ mod tests {
                 me: None,
                 tz: jiff::tz::TimeZone::UTC,
             },
+            &mut Scrollbars::new(),
         );
         assert_eq!(chat.width, 60);
     }
@@ -1643,6 +1631,7 @@ mod tests {
                 me: None,
                 tz: jiff::tz::TimeZone::UTC,
             },
+            &mut Scrollbars::new(),
         );
         let slot = chat
             .take_slots()
@@ -1724,7 +1713,7 @@ mod tests {
             me: None,
             tz: jiff::tz::TimeZone::UTC,
         };
-        chat.render(body, body, &mut buf, &params);
+        chat.render(body, body, &mut buf, &params, &mut Scrollbars::new());
         let slots = chat.take_slots();
 
         assert!(!slots.is_empty(), "nothing was placed");

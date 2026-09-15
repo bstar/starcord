@@ -55,6 +55,35 @@ fn click(a: &mut App, x: u16, y: u16, w: u16, h: u16) {
     );
 }
 
+/// A loaded app, past login and with a channel open, but built on whatever
+/// `cfg` says rather than always [`Config::default`] -- for a test that needs
+/// a smaller `[ui] list_rows` than the default leaves room for.
+fn loaded_with(cfg: Config) -> (App, fake::Idle) {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/gateway/session.json");
+    let session = fake::Session::read(&path).expect("the replay fixture");
+    let (core, idle) = fake::loaded(&session, 1_000);
+    let mut a = App::new(
+        core,
+        cfg,
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        Graphics::disabled(),
+    );
+    a.tz = jiff::tz::TimeZone::UTC;
+    a.tick();
+    (a, idle)
+}
+
+fn mouse(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column: x,
+        row: y,
+        modifiers: starkit::crossterm::event::KeyModifiers::NONE,
+    }
+}
+
 fn frame(app: &mut App, w: u16, h: u16) -> String {
     let area = Rect::new(0, 0, w, h);
     let mut buf = Buffer::empty(area);
@@ -578,4 +607,118 @@ fn the_quick_switcher_shows_a_caret_while_it_is_open() {
     a.key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE));
     let _ = frame(&mut a, 100, 30);
     assert!(a.caret.is_some(), "the quick switcher drew no caret");
+}
+
+/// A drag on the conversation's own scrollbar moves it exactly as the
+/// keyboard would, with no key pressed at all.
+#[test]
+fn dragging_the_conversation_scrollbar_scrolls_it() {
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.tick();
+    frame(&mut a, 100, 30);
+    assert!(
+        a.chat.scrolled() > 0.99,
+        "a freshly opened channel does not start at the bottom"
+    );
+
+    let rect = a
+        .layout
+        .last
+        .as_ref()
+        .expect("a frame was drawn")
+        .rect_of(ModuleId::Conversation);
+    let body = frame::body(rect, &panels::words(ModuleId::Conversation));
+    let track_x = rect.x + rect.width - 1;
+
+    // Anywhere on the track grabs the bar -- on the thumb it holds still, off
+    // it it jumps -- so the middle row is as good a place to press as any.
+    a.handle_mouse(
+        mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            track_x,
+            body.y + body.height / 2,
+        ),
+        Rect::new(0, 0, 100, 30),
+    );
+    assert_eq!(
+        a.bars.held(),
+        Some(ModuleId::Conversation),
+        "the press did not land on the conversation's bar"
+    );
+
+    a.handle_mouse(
+        mouse(MouseEventKind::Drag(MouseButton::Left), track_x, body.y),
+        Rect::new(0, 0, 100, 30),
+    );
+    assert!(
+        a.chat.scrolled() < 0.5,
+        "dragging to the top of the track left the view near the bottom: {}",
+        a.chat.scrolled()
+    );
+
+    a.handle_mouse(
+        mouse(MouseEventKind::Up(MouseButton::Left), track_x, body.y),
+        Rect::new(0, 0, 100, 30),
+    );
+    assert_eq!(a.bars.held(), None, "releasing did not let the bar go");
+}
+
+/// The same drag, on the channel list. `[ui] list_rows` is turned down so the
+/// list is shorter than what First Guild's channels and categories need,
+/// whatever the fixture's exact count -- the scrollbar this needs does not
+/// depend on guessing that count right.
+#[test]
+fn dragging_the_channel_list_scrollbar_moves_it() {
+    let mut cfg = Config::default();
+    cfg.ui.list_rows = 2;
+    let (mut a, _idle) = loaded_with(cfg);
+    a.open_channel(CHANNEL);
+    a.tick();
+    a.layout.focus_set(ModuleId::Channels);
+    frame(&mut a, 100, 30);
+
+    let rect = a
+        .layout
+        .last
+        .as_ref()
+        .expect("a frame was drawn")
+        .rect_of(ModuleId::Channels);
+    let body = frame::body(rect, &panels::words(ModuleId::Channels));
+    let view = a.channels_view(false);
+    assert!(
+        view.rows.len() > usize::from(body.height),
+        "the fixture does not overflow the channel list at this size -- skipping"
+    );
+    assert_eq!(a.nav.channel_scroll, 0);
+
+    let track_x = rect.x + rect.width - 1;
+    a.handle_mouse(
+        mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            track_x,
+            body.y + body.height / 2,
+        ),
+        Rect::new(0, 0, 100, 30),
+    );
+    assert_eq!(a.bars.held(), Some(ModuleId::Channels));
+
+    a.handle_mouse(
+        mouse(
+            MouseEventKind::Drag(MouseButton::Left),
+            track_x,
+            body.y + body.height - 1,
+        ),
+        Rect::new(0, 0, 100, 30),
+    );
+    assert!(
+        a.nav.channel_scroll > 0,
+        "dragging toward the bottom of the track did not move the scroll"
+    );
+
+    a.handle_mouse(
+        mouse(MouseEventKind::Up(MouseButton::Left), track_x, body.y),
+        Rect::new(0, 0, 100, 30),
+    );
+    assert_eq!(a.bars.held(), None);
 }
