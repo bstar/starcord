@@ -34,6 +34,7 @@ use starkit::input::{Edit, TextInput};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::text::Span;
 use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 use starkit::ratatui_image::Image;
 use starkit::theme::color::Rgb;
@@ -118,6 +119,10 @@ pub enum Stage {
     /// a second or two of real network and is worth saying out loud.
     Qr(Option<Box<Code>>),
     PasteToken(Box<TextInput>),
+    /// Discord wants a captcha. The page at the URL shows it; the browser has
+    /// been asked to open it, and the login carries on by itself once it is
+    /// answered.
+    Captcha(String),
     Connecting,
     Error(String),
 }
@@ -136,6 +141,8 @@ pub enum Outcome {
     CancelQr,
     /// Log in with what was typed.
     Submit(String),
+    /// Open the captcha page again, for a browser that did not appear.
+    OpenUrl(String),
     /// Quit the program.
     Quit,
 }
@@ -145,6 +152,11 @@ pub struct LoginScreen {
     /// What the core last said, kept under the panel so that a failure is
     /// visible while the next attempt is typed.
     pub message: Option<String>,
+    /// Why this screen is being shown at all, when there is a reason worth
+    /// giving: a keyring that has a token and would not hand it over. Stays
+    /// through every stage, because it is about the machine rather than the
+    /// attempt, and the attempt is what the stages are about.
+    pub notice: Option<String>,
 }
 
 impl Default for LoginScreen {
@@ -158,6 +170,7 @@ impl LoginScreen {
         Self {
             stage: Stage::Choosing,
             message: None,
+            notice: None,
         }
     }
 
@@ -169,6 +182,13 @@ impl LoginScreen {
     pub fn failed(&mut self, reason: impl Into<String>) {
         let reason = reason.into();
         self.message = Some(reason.clone());
+        // Not over a token being typed. A failure that arrives then is from
+        // the handshake that was left for the field, and taking the field
+        // away to announce it is the one thing it must not do; the line under
+        // the panel says it without moving anything.
+        if matches!(self.stage, Stage::PasteToken(_)) {
+            return;
+        }
         self.stage = Stage::Error(reason);
     }
 
@@ -208,6 +228,17 @@ impl LoginScreen {
 
     pub fn is_qr(&self) -> bool {
         matches!(self.stage, Stage::Qr(_))
+    }
+
+    /// Something about the machine, under the panel, whatever the stage.
+    pub fn notice(&mut self, text: impl Into<String>) {
+        self.notice = Some(text.into());
+    }
+
+    /// Discord wants a captcha before it finishes the scanned login.
+    pub fn captcha(&mut self, url: String) {
+        self.message = None;
+        self.stage = Stage::Captcha(url);
     }
 
     pub fn connecting(&mut self) {
@@ -250,6 +281,18 @@ impl LoginScreen {
                 KeyCode::Char('r') => {
                     self.stage = Stage::Qr(None);
                     Outcome::StartQr
+                }
+                KeyCode::Char('2') => {
+                    self.stage = Stage::PasteToken(Box::new(TextInput::single()));
+                    Outcome::CancelQr
+                }
+                _ => Outcome::Nothing,
+            },
+            Stage::Captcha(url) => match key.code {
+                KeyCode::Char('o') => Outcome::OpenUrl(url.clone()),
+                KeyCode::Esc => {
+                    self.stage = Stage::Choosing;
+                    Outcome::CancelQr
                 }
                 KeyCode::Char('2') => {
                     self.stage = Stage::PasteToken(Box::new(TextInput::single()));
@@ -345,11 +388,22 @@ impl LoginScreen {
 
         Clear.render(panel, buf);
         // The same double frame the modules behind it use, so the first
-        // screen is not the one screen drawn in a different weight.
+        // screen is not the one screen drawn in a different weight, and the
+        // name on its border the way the top of the window carries it.
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Double)
             .border_style(Style::default().fg(rgb(t.border_focused)))
+            .title(Span::styled(
+                format!(
+                    "{}{} ",
+                    starkit::chrome::frame::TITLE_LEAD,
+                    super::panels::HEADING
+                ),
+                Style::default()
+                    .fg(rgb(t.titlebar_active_fg))
+                    .add_modifier(Modifier::BOLD),
+            ))
             .style(Style::default().bg(rgb(t.panel_bg)))
             .render(panel, buf);
         starkit::chrome::frame::render_corners(panel, buf, t, true);
@@ -370,21 +424,15 @@ impl LoginScreen {
             *y += 1;
         };
 
-        put(
-            buf,
-            &mut y,
-            TITLE,
-            Style::default()
-                .fg(rgb(t.accent))
-                .add_modifier(Modifier::BOLD),
-        );
-        put(buf, &mut y, "", Style::default());
-
         let dim = Style::default().fg(rgb(t.dim));
         let body = Style::default().fg(rgb(t.fg));
         let key = Style::default()
             .fg(rgb(t.hint_key_fg))
             .add_modifier(Modifier::BOLD);
+
+        // The first row inside a module is its header row; the box keeps the
+        // same gap under its border, so the text sits where theirs does.
+        put(buf, &mut y, "", dim);
 
         match &self.stage {
             Stage::Choosing => {
@@ -404,8 +452,10 @@ impl LoginScreen {
                 // Whatever the core could say, whole. A close code from the
                 // remote-auth socket is the only evidence there is, and
                 // shortening it to "login failed" throws it away.
+                // In the body colour: it is the one thing on the screen that
+                // has to be read, and dim is for what can be skipped.
                 for line in starkit::wrap::wrap(reason, inner.width) {
-                    put(buf, &mut y, line.drawn(reason), dim);
+                    put(buf, &mut y, line.drawn(reason), body);
                 }
                 put(buf, &mut y, "", dim);
                 put(buf, &mut y, "r   try again", key);
@@ -483,6 +533,40 @@ impl LoginScreen {
                 put(buf, &mut y, "or in a private file if there is", dim);
                 put(buf, &mut y, "no keyring. Never in the config.", dim);
             }
+            Stage::Captcha(url) => {
+                put(buf, &mut y, "one more step", body);
+                put(buf, &mut y, "", dim);
+                put(
+                    buf,
+                    &mut y,
+                    "Discord wants a captcha before it lets this",
+                    dim,
+                );
+                put(
+                    buf,
+                    &mut y,
+                    "machine in. It is open in your browser; answer",
+                    dim,
+                );
+                put(
+                    buf,
+                    &mut y,
+                    "it there and this screen carries on by itself.",
+                    dim,
+                );
+                put(buf, &mut y, "", dim);
+                put(buf, &mut y, "if no browser appeared, open this:", dim);
+                for line in starkit::wrap::wrap(url, inner.width) {
+                    put(buf, &mut y, line.drawn(url), body);
+                }
+                put(buf, &mut y, "", dim);
+                put(
+                    buf,
+                    &mut y,
+                    "o  open it again    2  paste a token    esc  back",
+                    dim,
+                );
+            }
             Stage::Connecting => {
                 put(buf, &mut y, "connecting\u{2026}", body);
                 put(buf, &mut y, "", dim);
@@ -495,6 +579,24 @@ impl LoginScreen {
             let y = panel.y + panel.height.saturating_sub(2);
             let text: String = message.chars().take(usize::from(inner.width)).collect();
             buf.set_string(inner.x, y, text, Style::default().fg(rgb(t.error)));
+        } else if let Some(notice) = &self.notice {
+            // Wrapped, and the last rows of the panel: it is about why the
+            // screen is here, not about what is on it, so it sits under
+            // everything else.
+            let lines: Vec<String> = starkit::wrap::wrap(notice, inner.width)
+                .into_iter()
+                .map(|l| l.drawn(notice).to_string())
+                .collect();
+            let rows = lines.len().min(3);
+            let top = panel.y + panel.height.saturating_sub(1 + rows as u16);
+            for (i, line) in lines.iter().take(rows).enumerate() {
+                buf.set_string(
+                    inner.x,
+                    top + i as u16,
+                    line,
+                    Style::default().fg(rgb(t.warn)),
+                );
+            }
         }
     }
 }
@@ -682,8 +784,12 @@ mod tests {
     #[test]
     fn the_title_is_the_name_as_it_is_written() {
         assert_eq!(TITLE, "STAR/CORD");
+        // The heading is the title, letter-spaced: one space between every
+        // character, the slash included.
+        let spaced: Vec<String> = TITLE.chars().map(String::from).collect();
+        assert_eq!(super::super::panels::HEADING, spaced.join(" "));
         let s = LoginScreen::new();
-        assert!(screen_text(&s, 80, 24).contains("STAR/CORD"));
+        assert!(screen_text(&s, 80, 24).contains("S T A R / C O R D"));
     }
 
     #[test]
@@ -788,7 +894,7 @@ mod tests {
         insta::assert_snapshot!("qr-halfblocks-100x30", screen_text(&s, 100, 30));
 
         let drawn = screen_text(&s, 100, 30);
-        assert!(drawn.contains("STAR/CORD"));
+        assert!(drawn.contains("S T A R / C O R D"));
         assert!(drawn.contains("Scan QR Code"), "{drawn}");
         assert!(drawn.contains("waiting for scan\u{2026} 1:42"), "{drawn}");
         assert!(
@@ -856,6 +962,56 @@ mod tests {
         let mut s = code_screen();
         assert_eq!(s.handle(key('2')), Outcome::CancelQr);
         assert!(matches!(s.stage, Stage::PasteToken(_)));
+    }
+
+    /// A refused keyring is said under the panel, and stays said while the
+    /// stages change: it is about the machine, not the attempt.
+    #[test]
+    fn a_refused_keyring_is_said_under_every_stage() {
+        let mut s = LoginScreen::new();
+        s.start_qr();
+        s.notice("the keyring refused the stored token (no permission)");
+        assert!(screen_text(&s, 80, 24).contains("keyring refused"));
+        s.failed("nope");
+        assert!(matches!(s.stage, Stage::Error(_)));
+        assert_eq!(s.handle(key('2')), Outcome::Consumed);
+        assert!(screen_text(&s, 80, 24).contains("keyring refused"));
+    }
+
+    /// The captcha stage: `o` reopens the page, `esc` and `2` leave it the
+    /// way they leave the code, closing the handshake behind them.
+    #[test]
+    fn the_captcha_stage_reopens_and_leaves() {
+        let mut s = LoginScreen::new();
+        s.captcha("http://127.0.0.1:1/abc/".into());
+        assert_eq!(
+            s.handle(key('o')),
+            Outcome::OpenUrl("http://127.0.0.1:1/abc/".into())
+        );
+        assert!(matches!(s.stage, Stage::Captcha(_)));
+        assert_eq!(s.handle(key('2')), Outcome::CancelQr);
+        assert!(matches!(s.stage, Stage::PasteToken(_)));
+
+        let mut s = LoginScreen::new();
+        s.captcha("http://127.0.0.1:1/abc/".into());
+        assert_eq!(
+            s.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Outcome::CancelQr
+        );
+        assert!(matches!(s.stage, Stage::Choosing));
+    }
+
+    /// A failure that lands while a token is being typed is the cancelled
+    /// handshake reporting in, and it must not take the field away.
+    #[test]
+    fn a_late_failure_does_not_take_the_token_field_away() {
+        let mut s = code_screen();
+        assert_eq!(s.handle(key('2')), Outcome::CancelQr);
+        assert!(matches!(s.stage, Stage::PasteToken(_)));
+
+        s.failed("the login was cancelled");
+        assert!(matches!(s.stage, Stage::PasteToken(_)));
+        assert_eq!(s.message.as_deref(), Some("the login was cancelled"));
     }
 
     /// The quiet zone is real: the modules the core sent are inside it, and

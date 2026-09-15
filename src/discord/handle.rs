@@ -342,6 +342,10 @@ impl Command {
 pub enum AuthEvent {
     /// There is no stored token, or the stored one was rejected.
     NeedsLogin,
+    /// There may well be a stored token, but the keyring would not hand it
+    /// over, for this reason. Sent after `NeedsLogin`, so the login screen
+    /// can say why it is being shown.
+    StoreRefused(String),
     QrReady {
         url: String,
         fingerprint: String,
@@ -355,6 +359,12 @@ pub enum AuthEvent {
     QrScanned {
         username: String,
         avatar: Option<MediaKey>,
+    },
+    /// Discord wants a captcha before it will finish the scanned login. The
+    /// page at `url` shows it; the core has already asked the browser to open
+    /// it, and carries on by itself once it is answered.
+    CaptchaNeeded {
+        url: String,
     },
     LoggedIn {
         user: Arc<User>,

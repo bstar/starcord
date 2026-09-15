@@ -9,8 +9,7 @@ expression: "screen_text(&s, 100, 30)"
                                                                                                     
                                                                                                     
                                                                                                     
-                      ╔══════════════════════════════════════════════════════╗                      
-                      ║ STAR/CORD                                            ║                      
+                      ╔═ S T A R / C O R D ══════════════════════════════════╗                      
                       ║                                                      ║                      
                       ║ that did not work                                    ║                      
                       ║                                                      ║                      
@@ -19,6 +18,7 @@ expression: "screen_text(&s, 100, 30)"
                       ║ r   try again                                        ║                      
                       ║ 2   paste a token                                    ║                      
                       ║ q   quit                                             ║                      
+                      ║                                                      ║                      
                       ║                                                      ║                      
                       ║                                                      ║                      
                       ║                                                      ║                      

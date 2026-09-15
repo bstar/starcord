@@ -73,7 +73,7 @@ fn frame(app: &mut App, w: u16, h: u16) -> String {
 fn it_opens_on_the_login_screen() {
     let mut a = app();
     assert!(a.login.is_some());
-    assert!(frame(&mut a, 100, 30).contains("STAR/CORD"));
+    assert!(frame(&mut a, 100, 30).contains("S T A R / C O R D"));
 }
 
 /// The whole frame while there is no session: no panels behind it, so
@@ -237,7 +237,7 @@ fn choosing_a_server_opens_its_channels() {
     );
 
     let drawn = frame(&mut a, 100, 30);
-    assert!(drawn.contains("channels \u{b7} First Guild"), "{drawn}");
+    assert!(drawn.contains("CHANNELS \u{2014} First Guild"), "{drawn}");
 }
 
 /// Home is the first server, and choosing it lists the conversations and then
@@ -275,7 +275,7 @@ fn choosing_home_lists_conversations_then_friends() {
     assert!(first_dm < first_friend, "the friends came first");
 
     let drawn = frame(&mut a, 100, 30);
-    assert!(drawn.contains("messages"), "{drawn}");
+    assert!(drawn.contains("\u{2550} MESSAGES "), "{drawn}");
     assert!(drawn.contains("CONVERSATIONS"), "{drawn}");
 }
 
@@ -292,6 +292,35 @@ fn opening_a_channel_folds_the_lists_and_focuses_the_composer() {
     let drawn = frame(&mut a, 100, 30);
     assert!(drawn.contains("First Guild"), "{drawn}");
     assert!(drawn.contains("# general"), "{drawn}");
+}
+
+/// `‹` and `›` walk the conversations in the order they were opened, and a
+/// fresh move forgets what was ahead.
+#[test]
+fn back_and_forward_walk_the_history() {
+    const OTHER: ChannelId = ChannelId(200000000000000012);
+    let (mut a, _idle) = loaded();
+    a.open_channel(CHANNEL);
+    a.open_channel(OTHER);
+    assert_eq!(a.nav.back, vec![CHANNEL]);
+
+    a.handle(Action::HistoryBack);
+    assert_eq!(a.nav.channel, Some(CHANNEL));
+    assert_eq!(a.nav.forward, vec![OTHER]);
+
+    a.handle(Action::HistoryForward);
+    assert_eq!(a.nav.channel, Some(OTHER));
+    assert!(a.nav.forward.is_empty());
+
+    // Back, then somewhere new: the way forward is gone.
+    a.handle(Action::HistoryBack);
+    a.open_channel(ChannelId(200000000000000013));
+    assert!(a.nav.forward.is_empty());
+    assert_eq!(a.nav.back, vec![CHANNEL]);
+
+    // Nothing ahead is a note, not a move.
+    a.handle(Action::HistoryForward);
+    assert_eq!(a.nav.channel, Some(ChannelId(200000000000000013)));
 }
 
 /// A click anywhere on a folded list opens it.

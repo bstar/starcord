@@ -983,6 +983,14 @@ fn report_auth(started: Instant, auth: &AuthEvent) -> Option<String> {
             println!("scanned by {username}");
             None
         }
+        AuthEvent::CaptchaNeeded { url } => {
+            println!("discord wants a captcha; answer it at {url}");
+            None
+        }
+        AuthEvent::StoreRefused(why) => {
+            println!("the keyring refused the stored token: {why}");
+            None
+        }
     }
 }
 

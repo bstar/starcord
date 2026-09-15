@@ -81,7 +81,10 @@ pub fn run(
 /// it needs `&mut Core` and a task does not have one.
 #[derive(Debug)]
 enum Internal {
-    RemoteAuth(Result<Box<Authenticated>, String>),
+    /// A scanned login finished. The number is which one: a cancelled run
+    /// and the run started in its place can both answer, and only the answer
+    /// from the current one is news.
+    RemoteAuth(u64, Result<Box<Authenticated>, String>),
 }
 
 /// A running gateway connection, and the means to stop it.
@@ -108,6 +111,10 @@ struct Core {
     /// Live only while a QR code is on screen. Cancelling it closes the socket
     /// and drops the key.
     remote: Option<CancellationToken>,
+    /// Counts scanned logins started, so that `finish` can tell the answer
+    /// from the one still running apart from the answer from one that was
+    /// cancelled a moment before it.
+    remote_generation: u64,
     /// How a spawned task hands an answer back to the command loop.
     ///
     /// The QR login runs for minutes and must not hold up the keystroke behind
@@ -166,6 +173,7 @@ impl Core {
             ops,
             media: None,
             remote: None,
+            remote_generation: 0,
             internal: None,
             gifs,
             session: Arc::new(std::sync::Mutex::new(SessionStore::load(paths))),
@@ -195,7 +203,8 @@ impl Core {
         }
         let housekeeping = self.start_housekeeping();
 
-        match self.store.load() {
+        let loaded = self.store.load_reporting();
+        match loaded.found {
             Some((token, kind)) => {
                 tracing::info!("found a token in {}", kind.describe());
                 self.token = Some(token);
@@ -206,6 +215,12 @@ impl Core {
             None => {
                 self.bridge.set_status(Connection::LoggedOut);
                 self.bridge.events.send(Event::Auth(AuthEvent::NeedsLogin));
+                if let Some(why) = loaded.refused {
+                    tracing::warn!("the keyring refused the stored token: {why}");
+                    self.bridge
+                        .events
+                        .send(Event::Auth(AuthEvent::StoreRefused(why)));
+                }
             }
         }
 
@@ -527,11 +542,19 @@ impl Core {
                     media.cancel(key);
                 }
             }
-            Command::OpenExternal { url, kind } => {
-                if let Some(media) = &self.media {
-                    media.open_external(url, kind);
+            Command::OpenExternal { url, kind } => match &self.media {
+                Some(media) => media.open_external(url, kind),
+                // Before a login there is no media core. The one link there
+                // is to open then is the captcha page, and it goes straight
+                // to the browser.
+                None => {
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(e) = webbrowser::open(&url) {
+                            tracing::debug!("could not open {url}: {e}");
+                        }
+                    });
                 }
-            }
+            },
 
             // The picker's own task, because `run` sleeps out the gap between
             // two searches and the command loop must not sleep with it.
@@ -619,6 +642,8 @@ impl Core {
 
         let cancel = CancellationToken::new();
         self.remote = Some(cancel.clone());
+        self.remote_generation += 1;
+        let generation = self.remote_generation;
 
         let http = Arc::clone(&self.http);
         let props = self.http.props();
@@ -631,12 +656,20 @@ impl Core {
             })
             .await;
 
+            // A cancellation is not news: it was asked for, by the person
+            // who has already moved on to the token field or a new code, and
+            // reporting it as a failure would take that screen away from them.
+            if matches!(result, Err(remote::RemoteError::Cancelled)) {
+                tracing::debug!("the scanned login stopped as asked");
+                return;
+            }
+
             // The error is a sentence, not a type: nothing downstream branches
             // on which part of the handshake failed, and the string is what the
             // status line shows.
             let result = result.map(Box::new).map_err(|e| e.to_string());
             if let Some(back) = back {
-                let _ = back.send(Internal::RemoteAuth(result)).await;
+                let _ = back.send(Internal::RemoteAuth(generation, result)).await;
             }
         });
     }
@@ -644,13 +677,19 @@ impl Core {
     /// Act on something a task finished.
     async fn finish(&mut self, answer: Internal) {
         match answer {
-            Internal::RemoteAuth(Ok(authenticated)) => {
+            // A run that was cancelled and then raced its own cancellation
+            // to the finish. Whatever it says, the person asked for it to
+            // stop, and the run they started since is the one being watched.
+            Internal::RemoteAuth(generation, _) if generation != self.remote_generation => {
+                tracing::debug!("ignoring the answer from a superseded scanned login");
+            }
+            Internal::RemoteAuth(_, Ok(authenticated)) => {
                 self.remote = None;
                 let Authenticated { token, user } = *authenticated;
                 tracing::info!("signed in by a scanned code");
                 self.finish_login(token, user).await;
             }
-            Internal::RemoteAuth(Err(reason)) => {
+            Internal::RemoteAuth(_, Err(reason)) => {
                 self.remote = None;
                 self.http.set_token(None);
                 tracing::info!("the scanned login ended: {reason}");

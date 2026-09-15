@@ -20,6 +20,7 @@ use starkit::chrome::header;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::text::{Line, Span};
 use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use super::keymap::Module;
@@ -104,6 +105,10 @@ impl ModuleId {
 /// it was over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Word {
+    /// `‹` and `›`: the conversation before this one, and the one stepped
+    /// back out of. On the top module, where a browser keeps them.
+    Back,
+    Forward,
     Settings,
     Search,
     Pins,
@@ -115,6 +120,8 @@ pub enum Word {
 impl header::Word for Word {
     fn word(self) -> Cow<'static, str> {
         match self {
+            Word::Back => "\u{2039}".into(),
+            Word::Forward => "\u{203a}".into(),
             Word::Settings => "settings".into(),
             Word::Search => "search".into(),
             Word::Pins => "pins".into(),
@@ -133,7 +140,7 @@ impl header::Word for Word {
 /// making it disappear and a way of finding it again.
 pub fn words(module: ModuleId) -> Vec<Word> {
     match module {
-        ModuleId::Servers => vec![Word::Settings],
+        ModuleId::Servers => vec![Word::Back, Word::Forward, Word::Settings],
         ModuleId::Channels => vec![Word::Settings],
         ModuleId::Conversation => vec![Word::Search, Word::Pins, Word::Settings],
         ModuleId::Compose => vec![Word::Attach, Word::Emoji, Word::Gif],
@@ -141,13 +148,28 @@ pub fn words(module: ModuleId) -> Vec<Word> {
     }
 }
 
+/// The application's name as the top of the window says it: letter-spaced,
+/// with the slash spaced along with the rest, exactly as STAR/AMP's player
+/// says `S T A R / A M P`. Pulling the slash tight against its neighbours
+/// would make the seam read as a typo in one word rather than the join
+/// between two.
+pub const HEADING: &str = "S T A R / C O R D";
+
 /// Everything a module needs that is not its own contents.
 pub struct Frame<'a> {
     pub theme: &'a Theme,
     pub focused: bool,
-    /// The title on the border, which is not always the module's own name: the
-    /// channel list says which server it is listing.
-    pub title: &'a str,
+    /// The module's name. The border says it in capitals, as STAR/AMP's
+    /// panels say `LIBRARY` and `PLAYLIST`.
+    pub name: &'a str,
+    /// What the name is about, after a dash: the server whose channels these
+    /// are, the channel whose conversation this is. `PLAYLIST — name` is the
+    /// shape it copies.
+    pub detail: Option<&'a str>,
+    /// Whether this module carries the application's name instead, the way
+    /// STAR/AMP's top panel does. Its own name then sits at the right end of
+    /// the same border, where the player keeps its badge.
+    pub heading: bool,
     pub words: &'a [Word],
 }
 
@@ -164,44 +186,73 @@ pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
     } else {
         t.border
     };
+    // The title as STAR/AMP draws one: one border character in from the
+    // corner, the name in capitals, a space, and the border again. The colour
+    // is the header's, at the same weight focused or not -- focus is carried
+    // by the border, and a title that changed weight with it said the same
+    // thing twice.
+    let (title, style) = if f.heading {
+        (
+            format!("{}{HEADING} ", starkit::chrome::frame::TITLE_LEAD),
+            Style::default()
+                .fg(rgb(t.titlebar_active_fg))
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        let name = f.name.to_uppercase();
+        let text = match f.detail {
+            Some(detail) => format!(
+                "{}{name} \u{2014} {detail} ",
+                starkit::chrome::frame::TITLE_LEAD
+            ),
+            None => format!("{}{name} ", starkit::chrome::frame::TITLE_LEAD),
+        };
+        (text, Style::default().fg(rgb(t.header_fg)))
+    };
+    // All of it or none of it. A clipped title is a word cut off mid-way that
+    // reads as a fault rather than as a label: `= CHANNELS — Some Long Serv`
+    // is not the name of anything.
+    let room = area.width.saturating_sub(2);
+    let left = if width_of(&title) <= room {
+        width_of(&title)
+    } else {
+        0
+    };
+    // Under the heading, the module's own name at the right end of the
+    // border, dim, the way the player keeps ` bit-perfect ═` there.
+    let right = f
+        .heading
+        .then(|| format!(" {}{}", f.name, starkit::chrome::frame::TITLE_TRAIL))
+        .filter(|right| left + 1 + width_of(right) <= room);
+
     // Double, as every STAR/AMP panel is drawn. The two share a title
     // treatment -- `TITLE_LEAD` and `TITLE_TRAIL` are `\u{2550}`, the double
     // horizontal -- so a single-line frame put a heavier seam on a lighter
-    // edge and the title read as pasted on. `render_corners` only recolours
-    // cells that already hold a box-drawing character, so the block keeps its
-    // own corners and the gradient follows them across.
-    let block = Block::default()
+    // edge and the title read as pasted on.
+    //
+    // The titles go on the block, and the block is drawn *before* the
+    // corners, which is the order STAR/AMP draws in and the one that matters:
+    // `render_corners` recolours every box-drawing cell in its run, and the
+    // title's leading `═` is one. Drawn afterwards, the title kept its own
+    // colour on that cell and the gradient stopped dead at the corner; drawn
+    // first, the gradient runs through it, and the corner reads as one thing.
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(rgb(border)))
         .style(Style::default().bg(rgb(t.panel_bg)));
+    if left > 0 {
+        block = block.title(Span::styled(title, style));
+    }
+    if let Some(right) = right {
+        block = block.title_top(
+            Line::from(Span::styled(right, Style::default().fg(rgb(t.dim)))).right_aligned(),
+        );
+    }
     block.render(area, buf);
 
     if area.width >= 2 && area.height >= 2 {
         starkit::chrome::frame::render_corners(area, buf, t, f.focused);
-        let title = format!(
-            "{}{}{}",
-            starkit::chrome::frame::TITLE_LEAD,
-            f.title,
-            starkit::chrome::frame::TITLE_TRAIL
-        );
-        // All of it or none of it. A clipped title is a word cut off mid-way
-        // that reads as a fault rather than as a label: `= channels · Some Long
-        // Serv` is not the name of anything.
-        let room = area.width.saturating_sub(2);
-        let title = if width_of(&title) <= room {
-            title
-        } else {
-            String::new()
-        };
-        let style = if f.focused {
-            Style::default()
-                .fg(rgb(t.titlebar_active_fg))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(rgb(t.titlebar_inactive_fg))
-        };
-        buf.set_string(area.x + 1, area.y, title, style);
     }
 
     header::render(area, f.words, buf, t);
@@ -326,6 +377,9 @@ mod tests {
                         matches!(w, Word::Search | Word::Pins | Word::Settings)
                     }
                     ModuleId::Compose => matches!(w, Word::Attach | Word::Emoji | Word::Gif),
+                    ModuleId::Servers => {
+                        matches!(w, Word::Back | Word::Forward | Word::Settings)
+                    }
                     _ => matches!(w, Word::Settings),
                 };
                 assert!(allowed, "{m:?} offers {w:?}");
@@ -360,9 +414,11 @@ mod tests {
             &Frame {
                 theme: &theme,
                 focused: false,
-                // An empty title still writes its lead and trail over the
-                // first cells of the top edge; the cell checked is past them.
-                title: "",
+                // An empty name still writes its lead over the first cells of
+                // the top edge; the cell checked is past them.
+                name: "",
+                detail: None,
+                heading: false,
                 words: &[],
             },
         );

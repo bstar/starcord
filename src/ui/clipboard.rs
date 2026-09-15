@@ -28,6 +28,21 @@ pub fn copy(text: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// The text on the clipboard, if that is what is there.
+pub fn text() -> Result<String, String> {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.get_text())
+        .map_err(|e| e.to_string())
+}
+
+/// The files on the clipboard: what a copy in a file manager, or "copy
+/// image" in a desktop client that keeps its pictures as files, puts there.
+pub fn files() -> Result<Vec<std::path::PathBuf>, String> {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.get().file_list())
+        .map_err(|e| e.to_string())
+}
+
 /// A picture off the clipboard, as PNG bytes and its size in pixels.
 pub fn image() -> Result<(Vec<u8>, (u32, u32)), String> {
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;

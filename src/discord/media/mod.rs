@@ -333,6 +333,9 @@ pub struct MediaConfig {
     /// The program that plays a video, as argv. Never a shell command: a
     /// filename with a space or a semicolon in it is somebody else's filename.
     pub player: Vec<String>,
+    /// The program that shows a picture, as argv. Empty means whatever the
+    /// desktop opens pictures with: `open` on macOS, `xdg-open` elsewhere.
+    pub viewer: Vec<String>,
 }
 
 impl Default for MediaConfig {
@@ -342,6 +345,7 @@ impl Default for MediaConfig {
             max_attachment_mib: 25,
             // `--` so that a file called `-x` is a file rather than an option.
             player: vec!["mpv".into(), "--".into()],
+            viewer: Vec::new(),
         }
     }
 }

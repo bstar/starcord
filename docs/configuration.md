@@ -64,6 +64,7 @@ written by the old version still loads.
 | `[media] max_attachment_mib` | the largest attachment worth downloading. Default `25`, which is what an account without Nitro may upload |
 | `[media] save_dir` | where the media viewer's `s` puts a file. `~` is expanded. Default `"~/Downloads"` |
 | `[media] player` | argv for playing a video, never a shell line. The path is appended. Default `["mpv", "--"]`, where `--` is what keeps a file called `-x` a file rather than an option |
+| `[media] viewer` | argv for showing a picture, the same way. Default `[]`, which is the desktop's own opener -- `open` on macOS, `xdg-open` elsewhere -- so a click on a photograph reaches whatever you already look at pictures with |
 
 `player` is a list because a file name with a space or a semicolon in it is
 somebody else's file name, and it reaches a program without ever reaching a

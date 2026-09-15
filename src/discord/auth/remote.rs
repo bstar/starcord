@@ -33,13 +33,18 @@
 //! nothing else. [`PROOF_IS_HASHED`] is kept as a constant anyway, so that the
 //! day Discord changes its mind the other answer is one line away.
 //!
-//! What that run did *not* exercise is everything after the scan: the shape of
-//! the ticket payload, the login exchange and the token decrypt all need a
-//! phone. Those are still from the documentation, and `AGENTS.md` says so.
+//! Everything after the scan was settled by a phone on 2026-09-14, including
+//! the one thing the documentation does not mention: Discord may answer the
+//! ticket exchange with a captcha. When it does, the handshake keeps its
+//! heartbeats going while [`captcha`] puts the widget in a browser, and the
+//! exchange is sent again with the answer, which is what Discord's own client
+//! does.
 //!
 //! The private key is never printed. [`Keys`] has a hand-written `Debug`, and
 //! the nonce, the ticket and the token are never logged at any level.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -52,9 +57,10 @@ use sha2::{Digest as _, Sha256};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 
+use super::captcha;
 use super::Token;
 use crate::discord::handle::{AuthEvent, MediaKey};
-use crate::discord::http::{api, Http};
+use crate::discord::http::{api, CaptchaAnswer, CaptchaChallenge, Http, HttpError};
 use crate::discord::model::User;
 use crate::discord::props::ClientProps;
 use crate::discord::snowflake::UserId;
@@ -89,6 +95,9 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(15);
 /// sent on 2026-09-13 was six minutes.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(150);
 
+/// How long looking like a browser may delay the code appearing.
+const PRIME_BUDGET: Duration = Duration::from_secs(5);
+
 #[derive(Debug, thiserror::Error)]
 pub enum RemoteError {
     #[error("could not reach the login gateway: {0}")]
@@ -105,7 +114,15 @@ pub enum RemoteError {
     Cancelled,
     #[error("exchanging the ticket failed: {0}")]
     Exchange(String),
+    /// Discord wants a person to answer a captcha before the ticket is
+    /// exchanged. Handled inside the handshake; it reaches a caller only if
+    /// the captcha could not be shown.
+    #[error("discord wants a captcha solved first")]
+    Captcha(CaptchaChallenge),
 }
+
+/// A ticket exchange that is waiting on a person.
+type Exchange<'a> = Pin<Box<dyn Future<Output = Result<Authenticated, RemoteError>> + Send + 'a>>;
 
 /// The private half of the handshake.
 ///
@@ -276,6 +293,11 @@ pub async fn run(
     cancel: CancellationToken,
     emit: &mut impl FnMut(AuthEvent),
 ) -> Result<Authenticated, RemoteError> {
+    // Before the socket is opened, not before the exchange: the ticket lives
+    // for seconds, and two requests to discord.com are not what it should be
+    // spent on. Bounded, because a login must not wait on a slow page.
+    let _ = tokio::time::timeout(PRIME_BUDGET, http.prime(crate::discord::props::APP_URL)).await;
+
     for attempt in 0..2 {
         if cancel.is_cancelled() {
             return Err(RemoteError::Cancelled);
@@ -363,6 +385,13 @@ where
     let mut awaiting_ack = false;
     // Replaced by the server's own `timeout_ms` the moment `hello` arrives.
     let mut deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
+    // The exchange, once Discord has asked for a captcha and the answer is
+    // in a browser. Polled beside the socket rather than awaited in place, so
+    // the heartbeats keep going while somebody clicks pictures; and once it
+    // exists, the socket closing is not the end of anything, because the
+    // ticket is already in hand.
+    let mut pending: Option<Exchange<'_>> = None;
+    let mut socket_open = true;
 
     loop {
         let tick = async {
@@ -374,15 +403,33 @@ where
             }
         };
 
+        let waiting = pending.is_some();
+        let solved = async {
+            match pending.as_mut() {
+                Some(exchange) => exchange.await,
+                None => std::future::pending().await,
+            }
+        };
+
         let message = tokio::select! {
             _ = cancel.cancelled() => return Ok(Outcome::Cancelled),
 
-            _ = tokio::time::sleep_until(deadline) => {
+            // The gateway's clock is for the scan. Once the ticket is in
+            // hand the captcha has a clock of its own.
+            _ = tokio::time::sleep_until(deadline), if !waiting => {
                 return Ok(Outcome::TimedOut);
             }
 
-            _ = tick => {
+            authenticated = solved => {
+                return Ok(Outcome::Authenticated(Box::new(authenticated?)));
+            }
+
+            _ = tick, if socket_open => {
                 if awaiting_ack {
+                    if waiting {
+                        socket_open = false;
+                        continue;
+                    }
                     return Err(RemoteError::Socket(
                         "the login gateway stopped acknowledging heartbeats".into(),
                     ));
@@ -392,16 +439,27 @@ where
                 continue;
             }
 
-            message = socket.next() => message,
+            message = socket.next(), if socket_open => message,
         };
 
         let message = match message {
             Some(Ok(message)) => message,
-            Some(Err(e)) => return Err(RemoteError::Socket(e.to_string())),
+            Some(Err(e)) => {
+                if pending.is_some() {
+                    tracing::debug!("the login gateway dropped while a captcha was open: {e}");
+                    socket_open = false;
+                    continue;
+                }
+                return Err(RemoteError::Socket(e.to_string()));
+            }
             None => {
+                if pending.is_some() {
+                    socket_open = false;
+                    continue;
+                }
                 return Err(RemoteError::Closed(
                     "the login gateway closed the connection".into(),
-                ))
+                ));
             }
         };
 
@@ -415,6 +473,11 @@ where
             },
             Message::Close(frame) => {
                 let code = frame.as_ref().map(|f| u16::from(f.code)).unwrap_or(1006);
+                if pending.is_some() {
+                    tracing::debug!("the login gateway closed ({code}) while a captcha was open");
+                    socket_open = false;
+                    continue;
+                }
                 if is_timeout(code) {
                     return Ok(Outcome::TimedOut);
                 }
@@ -494,10 +557,26 @@ where
                 });
             }
 
-            Incoming::PendingLogin { ticket } => {
-                let authenticated = exchange(http, keys, &ticket).await?;
-                return Ok(Outcome::Authenticated(Box::new(authenticated)));
-            }
+            Incoming::PendingLogin { ticket } => match exchange(http, keys, &ticket).await {
+                Ok(authenticated) => return Ok(Outcome::Authenticated(Box::new(authenticated))),
+                Err(RemoteError::Captcha(challenge)) => {
+                    let solver = captcha::Solver::new(&challenge)
+                        .await
+                        .map_err(|e| RemoteError::Exchange(e.to_string()))?;
+                    let url = solver.url();
+                    tracing::info!("discord wants a captcha; serving it at {url}");
+                    emit(AuthEvent::CaptchaNeeded { url: url.clone() });
+                    open_browser(url);
+                    pending = Some(Box::pin(async move {
+                        let answer = solver
+                            .wait(&challenge)
+                            .await
+                            .map_err(|e| RemoteError::Exchange(e.to_string()))?;
+                        exchange_solved(http, keys, &ticket, &answer).await
+                    }));
+                }
+                Err(e) => return Err(e),
+            },
 
             Incoming::Cancel => return Ok(Outcome::Cancelled),
 
@@ -506,13 +585,53 @@ where
     }
 }
 
+/// Ask the browser to show the captcha page. Best effort: the URL is on the
+/// screen as well, for a machine where nothing answers.
+fn open_browser(url: String) {
+    tokio::task::spawn_blocking(move || {
+        if let Err(e) = webbrowser::open(&url) {
+            tracing::debug!("could not open {url} in a browser: {e}");
+        }
+    });
+}
+
 /// Turn a ticket into a session.
 async fn exchange(http: &Http, keys: &Keys, ticket: &str) -> Result<Authenticated, RemoteError> {
-    let answer = api::remote_auth_login(http, ticket)
-        .await
-        .map_err(|e| RemoteError::Exchange(e.to_string()))?;
+    let answer = match api::remote_auth_login(http, ticket).await {
+        Ok(answer) => answer,
+        Err(HttpError::Captcha(challenge)) => return Err(RemoteError::Captcha(challenge)),
+        Err(e) => return Err(RemoteError::Exchange(e.to_string())),
+    };
+    finish(http, keys, &answer.encrypted_token).await
+}
 
-    let raw = keys.decrypt(&answer.encrypted_token)?;
+/// The exchange again, with the captcha answered. A second captcha here is
+/// a wrong answer, and is reported rather than asked again: the page has
+/// said "done" and a person who is asked twice will not trust the third.
+async fn exchange_solved(
+    http: &Http,
+    keys: &Keys,
+    ticket: &str,
+    solved: &CaptchaAnswer,
+) -> Result<Authenticated, RemoteError> {
+    let answer = api::remote_auth_login_solved(http, ticket, solved)
+        .await
+        .map_err(|e| match e {
+            HttpError::Captcha(_) => {
+                RemoteError::Exchange("discord did not accept the captcha answer".into())
+            }
+            e => RemoteError::Exchange(e.to_string()),
+        })?;
+    finish(http, keys, &answer.encrypted_token).await
+}
+
+/// Unseal the token and prove it works.
+async fn finish(
+    http: &Http,
+    keys: &Keys,
+    encrypted_token: &str,
+) -> Result<Authenticated, RemoteError> {
+    let raw = keys.decrypt(encrypted_token)?;
     let raw =
         String::from_utf8(raw).map_err(|_| RemoteError::Crypto("the token was not text".into()))?;
     let token = Token::new(raw).map_err(|e| RemoteError::Crypto(e.to_string()))?;

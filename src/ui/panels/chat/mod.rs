@@ -52,6 +52,7 @@ use self::media::{MediaStore, Placement};
 use self::render::{Cache, Key, Names, RenderCtx, Rendered, Revealed, SlotKind};
 use super::{empty, fit, rgb};
 use crate::config::Config;
+use crate::discord::handle::ExternalKind;
 use crate::discord::media::MediaKey;
 use crate::discord::model::{Message, PartialEmoji};
 use crate::discord::snowflake::{ChannelId, MessageId};
@@ -93,7 +94,9 @@ pub enum Hit {
     Reaction(MessageId, PartialEmoji),
     /// The `↩` line: jump to what was quoted.
     Reply(MessageId),
-    Attachment(MessageId, String),
+    /// An attachment, and what opening it means. A picture opens on one
+    /// click; anything else is selected on one and opened on two.
+    Attachment(MessageId, String, ExternalKind),
     LoadOlder,
     /// The bar down the right border: a click or a drag scrolls to that
     /// fraction of the conversation.
@@ -1181,8 +1184,15 @@ fn collect_hits(
         }
     }
     for attachment in &rendered.attachments {
-        if let Some(rect) = place(attachment.row, 0, area.width) {
-            out.push((rect, Hit::Attachment(id, attachment.url.clone())));
+        // Every row of a picture, not just its first: the target is the
+        // picture, and a click on the middle of it is a click on it.
+        for r in 0..attachment.rows {
+            if let Some(rect) = place(attachment.row + r, attachment.col, attachment.cols) {
+                out.push((
+                    rect,
+                    Hit::Attachment(id, attachment.url.clone(), attachment.kind),
+                ));
+            }
         }
     }
     if let Some(row) = rendered.reply_row {
@@ -1642,6 +1652,83 @@ mod tests {
         assert_eq!(
             chat.hit(link.x, link.y.saturating_sub(1)),
             Some(Hit::Message(MessageId(100)))
+        );
+    }
+
+    /// The whole of a picture is a click on it, not just its first row, and
+    /// the hit says it is a picture so the click can open it.
+    #[test]
+    fn a_click_anywhere_on_a_picture_is_a_click_on_it() {
+        use crate::discord::model::Attachment;
+
+        let mut chat = ChatState::new();
+        chat.open(ChannelId(1));
+        let mut m = message(300, 1_000_000);
+        m.attachments.push(Attachment {
+            id: crate::discord::snowflake::AttachmentId(700),
+            filename: "harbour.png".into(),
+            content_type: Some("image/png".into()),
+            url: "https://cdn.invalid/harbour.png".into(),
+            width: Some(400),
+            height: Some(400),
+            ..Attachment::default()
+        });
+        chat.messages = vec![Arc::new(m)];
+        chat.rows = layout::rows(&Shape {
+            messages: &chat.messages,
+            pending: 0,
+            group_window_secs: 420,
+            has_older: false,
+            first_unread: None,
+            typing: false,
+            tz: jiff::tz::TimeZone::UTC,
+        });
+        let t = theme("terminal");
+        let cfg = Config::default();
+        let body = Rect::new(0, 0, 60, 20);
+        let mut buf = Buffer::empty(body);
+        chat.render(
+            body,
+            body,
+            &mut buf,
+            &Params {
+                theme: &t,
+                cfg: &cfg,
+                focused: true,
+                pictures: true,
+                aspect: 2.0,
+                me: None,
+                tz: jiff::tz::TimeZone::UTC,
+            },
+        );
+        let slot = chat
+            .take_slots()
+            .into_iter()
+            .next()
+            .expect("a picture was placed");
+        assert!(
+            slot.rect.height > 1,
+            "the picture took one row: {:?}",
+            slot.rect
+        );
+
+        let middle = (
+            slot.rect.x + slot.rect.width / 2,
+            slot.rect.y + slot.rect.height / 2,
+        );
+        assert_eq!(
+            chat.hit(middle.0, middle.1),
+            Some(Hit::Attachment(
+                MessageId(300),
+                "https://cdn.invalid/harbour.png".into(),
+                ExternalKind::Image
+            ))
+        );
+        // Beside the picture is still the message.
+        let beside = slot.rect.x + slot.rect.width + 1;
+        assert_eq!(
+            chat.hit(beside, middle.1),
+            Some(Hit::Message(MessageId(300)))
         );
     }
 

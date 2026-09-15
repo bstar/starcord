@@ -57,9 +57,6 @@ live session:
 
 - the exact READY shape under the capabilities this client identifies with,
   and whether member-list subscriptions want op 37 or op 14
-- everything after the phone scans the code: the handshake gets as far as the
-  fingerprint against Discord's own gateway, and the rest is from the
-  documentation
 - whether the nonce sent with a message comes back on the gateway echo as well
   as in the response body
 - what the sixteen themes and the pictures look like in every terminal: the

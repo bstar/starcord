@@ -2,8 +2,7 @@
 source: src/ui/login.rs
 expression: "screen_text(&s, 60, 12)"
 ---
-  ╔══════════════════════════════════════════════════════╗  
-  ║ STAR/CORD                                            ║  
+  ╔═ S T A R / C O R D ══════════════════════════════════╗  
   ║                                                      ║  
   ║ scan this with the Discord app                       ║  
   ║ open Discord on your phone → Settings → Scan QR Code ║  
@@ -13,4 +12,5 @@ expression: "screen_text(&s, 60, 12)"
   ║                                                      ║  
   ║ waiting for scan… 1:42                               ║  
   ║                                                      ║  
+  ║ esc  back        r  a new code                       ║  
   ╚══════════════════════════════════════════════════════╝

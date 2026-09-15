@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use arc_swap::{ArcSwap, ArcSwapOption};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::discord::auth::Token;
 use crate::discord::props::ClientProps;
@@ -80,6 +80,41 @@ pub enum HttpError {
     TooLarge { limit: u64 },
     #[error("the client could not be built: {0}")]
     Build(String),
+    /// A 400 whose body names a captcha. Not a refusal: the same request with
+    /// the answer in `X-Captcha-Key` is what Discord is waiting for.
+    #[error("discord wants a captcha solved first")]
+    Captcha(CaptchaChallenge),
+}
+
+/// What Discord sends when it wants a person to prove they are one.
+///
+/// `rqdata` binds the widget to this request and `rqtoken` binds the answer
+/// to it; both go back exactly as they came, the first into the widget and
+/// the second into a header.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CaptchaChallenge {
+    #[serde(rename = "captcha_service", default = "hcaptcha")]
+    pub service: String,
+    #[serde(rename = "captcha_sitekey")]
+    pub sitekey: String,
+    #[serde(rename = "captcha_rqdata", default)]
+    pub rqdata: Option<String>,
+    #[serde(rename = "captcha_rqtoken", default)]
+    pub rqtoken: Option<String>,
+    #[serde(rename = "captcha_session_id", default)]
+    pub session_id: Option<String>,
+}
+
+fn hcaptcha() -> String {
+    "hcaptcha".into()
+}
+
+/// A solved captcha, ready to go back with the request it was for.
+#[derive(Debug, Clone)]
+pub struct CaptchaAnswer {
+    pub key: String,
+    pub rqtoken: Option<String>,
+    pub session_id: Option<String>,
 }
 
 impl HttpError {
@@ -138,6 +173,22 @@ fn tls_config() -> Result<rustls::ClientConfig, HttpError> {
     Ok(config)
 }
 
+fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, HttpError> {
+    if bytes.is_empty() {
+        // 204 No Content. `null` is the only JSON an empty body can mean,
+        // and it deserialises into `()` and into every `Option`.
+        return serde_json::from_str("null").map_err(HttpError::Decode);
+    }
+    serde_json::from_slice(bytes).map_err(HttpError::Decode)
+}
+
+/// The one field of `GET /experiments` that matters here.
+#[derive(Debug, Deserialize)]
+struct Experiments {
+    #[serde(default)]
+    fingerprint: Option<String>,
+}
+
 pub struct Http {
     client: reqwest::Client,
     /// A second client for media, with a longer timeout and — the point — no
@@ -145,6 +196,10 @@ pub struct Http {
     media: reqwest::Client,
     props: ArcSwap<ClientProps>,
     token: ArcSwapOption<Token>,
+    /// The `X-Fingerprint` the web client sends before it has a token. Set by
+    /// [`Http::prime`]; absent until then, and absent is what every request
+    /// sent before this existed.
+    fingerprint: ArcSwapOption<String>,
     limits: RateLimiter,
     base: String,
     retry: RetryPolicy,
@@ -174,9 +229,12 @@ impl Http {
         // server, which cannot serve https; `download` refuses a non-https URL
         // regardless of what the client would allow.
         let https_only = base.starts_with("https://");
-        let build = |timeout: Duration| {
+        let build = |timeout: Duration, cookies: bool| {
             reqwest::Client::builder()
                 .user_agent(props.user_agent())
+                // Only the API client keeps cookies. The media client talks to
+                // CDNs, and a cookie Discord set has no business going there.
+                .cookie_store(cookies)
                 .https_only(https_only)
                 .redirect(reqwest::redirect::Policy::limited(5))
                 .connect_timeout(CONNECT_TIMEOUT)
@@ -187,10 +245,11 @@ impl Http {
         };
 
         Ok(Self {
-            client: build(REQUEST_TIMEOUT)?,
-            media: build(DOWNLOAD_TIMEOUT)?,
+            client: build(REQUEST_TIMEOUT, true)?,
+            media: build(DOWNLOAD_TIMEOUT, false)?,
             props: ArcSwap::from(props),
             token: ArcSwapOption::empty(),
+            fingerprint: ArcSwapOption::empty(),
             limits: RateLimiter::new(),
             base,
             retry: RetryPolicy::default(),
@@ -224,6 +283,40 @@ impl Http {
         &self.limits
     }
 
+    /// Look like a browser that has been to discord.com before.
+    ///
+    /// Two things distinguish a login from the web client and one from a
+    /// process that has only ever called the API: the `__dcfduid` and
+    /// `__sdcfduid` cookies the app page sets, and the `X-Fingerprint` from
+    /// `/experiments`. Discord answers a login without them with a captcha,
+    /// which a terminal cannot solve. Best effort — both are hints, a failure
+    /// here is logged and the login proceeds without — and idempotent: the
+    /// second call finds the jar full and the fingerprint set and does nothing.
+    pub async fn prime(&self, app_url: &str) {
+        if self.fingerprint.load().is_some() {
+            return;
+        }
+        match self.client.get(app_url).send().await {
+            Ok(response) => tracing::debug!("primed cookies from {app_url}: {}", response.status()),
+            Err(e) => tracing::debug!("could not prime cookies from {app_url}: {e}"),
+        }
+        match self
+            .request::<Experiments>(Route::Experiments, None::<&()>)
+            .await
+        {
+            Ok(Experiments {
+                fingerprint: Some(fingerprint),
+            }) => {
+                tracing::debug!("got a fingerprint");
+                self.fingerprint.store(Some(Arc::new(fingerprint)));
+            }
+            Ok(Experiments { fingerprint: None }) => {
+                tracing::debug!("the experiments came without a fingerprint")
+            }
+            Err(e) => tracing::debug!("could not fetch a fingerprint: {e}"),
+        }
+    }
+
     /// Send a request and decode its body.
     pub async fn request<T: DeserializeOwned>(
         &self,
@@ -248,12 +341,34 @@ impl Http {
         body: Option<&(impl Serialize + ?Sized)>,
     ) -> Result<T, HttpError> {
         let bytes = self.request_bytes(route, path, body).await?;
-        if bytes.is_empty() {
-            // 204 No Content. `null` is the only JSON an empty body can mean,
-            // and it deserialises into `()` and into every `Option`.
-            return serde_json::from_str("null").map_err(HttpError::Decode);
-        }
-        serde_json::from_slice(&bytes).map_err(HttpError::Decode)
+        decode(&bytes)
+    }
+
+    /// The same request again, with a captcha's answer on it.
+    ///
+    /// Three headers, as Discord's own client sends them after its widget
+    /// closes: the answer, the `rqtoken` that ties it to the challenge, and
+    /// the session the challenge was served in.
+    pub async fn request_solved<T: DeserializeOwned>(
+        &self,
+        route: Route,
+        body: &(impl Serialize + ?Sized),
+        answer: &CaptchaAnswer,
+    ) -> Result<T, HttpError> {
+        let path = route.path().into_owned();
+        let bytes = self
+            .send_with(route, &path, |req| {
+                let mut req = req.header("X-Captcha-Key", answer.key.as_str());
+                if let Some(rqtoken) = &answer.rqtoken {
+                    req = req.header("X-Captcha-Rqtoken", rqtoken.as_str());
+                }
+                if let Some(session) = &answer.session_id {
+                    req = req.header("X-Captcha-Session-Id", session.as_str());
+                }
+                req.json(body)
+            })
+            .await?;
+        decode(&bytes)
     }
 
     /// Send a request whose body is a multipart form, and decode the answer.
@@ -313,7 +428,15 @@ impl Http {
                 .request(route.method(), &url)
                 .header("X-Super-Properties", props.super_properties_header())
                 .header("X-Discord-Locale", props.locale())
+                // What a page at discord.com sends: the API is same-origin to
+                // the web client, and a request with no origin is one from
+                // something that is not a page.
+                .header(reqwest::header::ORIGIN, "https://discord.com")
+                .header(reqwest::header::REFERER, "https://discord.com/")
                 .header(reqwest::header::ACCEPT, "*/*");
+            if let Some(fingerprint) = self.fingerprint.load_full() {
+                req = req.header("X-Fingerprint", fingerprint.as_str());
+            }
             if route.authenticated() {
                 if let Some(token) = self.token.load_full() {
                     // No `Bearer` and no `Bot`: a user token is sent bare, which
@@ -365,18 +488,33 @@ impl Http {
             }
 
             if !status.is_success() {
-                let body: serde_json::Value = response.json().await.unwrap_or_default();
+                // Not every error is `{code, message}`: a captcha challenge is
+                // a 400 whose body is `{captcha_key, ...}`, and an edge error
+                // is not JSON at all. Keep the body when there is no message,
+                // because "Bad Request" on its own says nothing.
+                let text = response.text().await.unwrap_or_default();
+                let body: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                tracing::debug!("{key} returned {status}: {text}");
+                if status == reqwest::StatusCode::BAD_REQUEST && body.get("captcha_key").is_some() {
+                    if let Ok(challenge) = serde_json::from_value::<CaptchaChallenge>(body.clone())
+                    {
+                        return Err(HttpError::Captcha(challenge));
+                    }
+                }
+                let message = match body.get("message").and_then(serde_json::Value::as_str) {
+                    Some(message) => message.to_string(),
+                    None if text.trim().is_empty() => {
+                        status.canonical_reason().unwrap_or("error").to_string()
+                    }
+                    None => text.chars().take(300).collect(),
+                };
                 return Err(HttpError::Status {
                     status: status.as_u16(),
                     code: body
                         .get("code")
                         .and_then(serde_json::Value::as_u64)
                         .unwrap_or(0),
-                    message: body
-                        .get("message")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or_else(|| status.canonical_reason().unwrap_or("error"))
-                        .to_string(),
+                    message,
                 });
             }
 
