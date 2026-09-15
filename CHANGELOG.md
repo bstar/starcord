@@ -5,7 +5,68 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- **Back and forward.** `‹` and `›` on the top module, and `alt+left` /
+  `alt+right`, walk the conversations in the order they were opened, the way
+  a browser's arrows do; a fresh move forgets what was ahead, and a
+  conversation that has gone since is skipped.
+- **A click on a photograph opens it.** In whatever the desktop opens
+  pictures with -- `open` on macOS, `xdg-open` elsewhere -- or in the
+  `[media] viewer` named in the configuration. The whole picture is the
+  target, not just its first row. A file or a video is chosen on one click
+  and opened on two, as before, and a video still goes to `player`.
+- **A captcha no longer ends the scanned login.** On a machine or a network
+  Discord does not trust it answers the ticket exchange with a captcha, and
+  a terminal cannot show one. Now starcord serves Discord's own hCaptcha widget
+  on a page at `127.0.0.1`, opens it in the browser, and finishes the login
+  with the answer -- the same retry Discord's web client makes after its
+  modal. The screen says what is happening, shows the address in case no
+  browser appeared, and `o` opens it again.
+
+### Fixed
+
+- **A copied picture pasted with the terminal's own paste is attached.** A
+  terminal hands `cmd+v` on as the clipboard's text flavour, and a copied
+  picture or file has one -- on macOS the file's name with the extension
+  off -- which used to land in the composer as words. The clipboard is asked
+  what was really copied: files are attached, a picture is attached as a
+  picture, and text is still text. `ctrl+v` does what it did.
+
+- **Leaving the code for the token field no longer bounces back to "that did
+  not work".** Pressing `2` (or `esc`) while a code was on screen cancelled the
+  handshake, and the core reported the cancellation as a failure, which took
+  the token field away again. A cancellation is not reported, a stale
+  handshake's answer is ignored, and a failure that arrives while a token is
+  being typed goes under the panel instead of over it.
+- **A keyring that refuses says so.** On macOS the Keychain ties an item to
+  the signed identity of the binary that wrote it, and an unsigned build has
+  a new identity every time it is built, so a developer met the login screen
+  after every build with nothing to say why. The refusal is now under the
+  panel, through every stage, and `starcord probe` prints it; the fix for
+  such a machine is `[auth] store = "file"`.
+- **Discord's reason is shown, whole.** An error without a `message` used to
+  be "Bad Request"; the body is kept now, in the normal text colour rather
+  than dim.
+
 ### Changed
+
+- **The titles are STAR/AMP's.** The top of the column says
+  `═ S T A R / C O R D ` in the titlebar colour, letter-spaced with the slash
+  spaced along with the rest, exactly as STAR/AMP's player says its name, and
+  the module's own name sits at the right end of that border where the player
+  keeps its badge. Every other module is titled the way STAR/AMP's panels
+  are: `═ CHANNELS — First Guild `, capitals, an em dash before what it is
+  about, no trailing rule, in the header colour at one weight whether focused
+  or not -- focus is the border's to say. The login box carries the same
+  heading on its border instead of as a line inside it. The titles are drawn
+  before the corner gradient, as STAR/AMP draws them, so the gradient runs
+  through the title's leading `═` instead of stopping at the corner cell --
+  the one cell that made the two frames look like different frames.
+- **Every request looks like the browser's.** A cookie jar on the API client,
+  so the pair `discord.com/app` sets comes back; the `X-Fingerprint` from
+  `/experiments`; `Origin` and `Referer`; and an `os_version` on macOS, where
+  a real Chrome sends one.
 
 - **The borders are STAR/AMP's**: every module, the login box and the overlays
   are framed in double lines. The titles were already seamed with `═` --

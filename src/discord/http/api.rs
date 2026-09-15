@@ -12,7 +12,7 @@ use crate::discord::model::{Message, User};
 use crate::discord::snowflake::{ChannelId, MessageId};
 
 use super::route::{GifProvider, GifRequest, History, Route, SearchIn, SearchTerms, PAGE};
-use super::{Http, HttpError};
+use super::{CaptchaAnswer, Http, HttpError};
 
 /// The longest message this client will send.
 ///
@@ -361,6 +361,16 @@ pub struct RemoteAuthToken {
 
 pub async fn remote_auth_login(http: &Http, ticket: &str) -> Result<RemoteAuthToken, HttpError> {
     http.request(Route::RemoteAuthLogin, Some(&RemoteAuthLogin { ticket }))
+        .await
+}
+
+/// The exchange again, with the captcha Discord asked for answered.
+pub async fn remote_auth_login_solved(
+    http: &Http,
+    ticket: &str,
+    answer: &CaptchaAnswer,
+) -> Result<RemoteAuthToken, HttpError> {
+    http.request_solved(Route::RemoteAuthLogin, &RemoteAuthLogin { ticket }, answer)
         .await
 }
 

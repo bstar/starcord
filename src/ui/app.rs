@@ -130,7 +130,15 @@ pub struct Nav {
     pub member_cursor: usize,
     pub member_scroll: usize,
     pub collapsed: HashSet<ChannelId>,
+    /// Where you have been: the conversations opened before this one, most
+    /// recent last, and the ones stepped back out of, for `›`. A fresh move
+    /// forgets the forward list, the way a browser's does.
+    pub back: Vec<ChannelId>,
+    pub forward: Vec<ChannelId>,
 }
+
+/// How much of where you have been is kept.
+const HISTORY: usize = 100;
 
 /// What the panels draw, copied out of `State` under the lock and kept until
 /// the core says something changed.
@@ -475,6 +483,15 @@ impl App {
                         screen.scanned(username.clone());
                     }
                     self.note(format!("scanned by {username}"));
+                }
+                AuthEvent::StoreRefused(why) => {
+                    self.login
+                        .get_or_insert_with(LoginScreen::new)
+                        .notice(format!("the keyring refused the stored token ({why})"));
+                }
+                AuthEvent::CaptchaNeeded { url } => {
+                    self.login.get_or_insert_with(LoginScreen::new).captcha(url);
+                    self.note("Discord wants a captcha; it is open in your browser");
                 }
             },
             Event::SessionLoaded(session) => {
@@ -899,6 +916,57 @@ impl App {
     }
 
     pub fn open_channel(&mut self, channel: ChannelId) {
+        // A move made on purpose is one to come back from. The forward list
+        // is what was stepped out of, and a new move makes it moot.
+        if let Some(previous) = self.nav.channel {
+            if previous != channel {
+                self.nav.back.push(previous);
+                if self.nav.back.len() > HISTORY {
+                    self.nav.back.remove(0);
+                }
+                self.nav.forward.clear();
+            }
+        }
+        self.go_to(channel);
+    }
+
+    /// `‹`: the conversation before this one.
+    fn history_back(&mut self) {
+        let Some(previous) = self.nav.back.pop() else {
+            self.note("nowhere to go back to");
+            return;
+        };
+        if self.core.state().channel(previous).is_none() {
+            // Gone since it was visited: a channel deleted, a server left.
+            // Skipped rather than announced; the one before it is the answer.
+            self.history_back();
+            return;
+        }
+        if let Some(current) = self.nav.channel {
+            self.nav.forward.push(current);
+        }
+        self.go_to(previous);
+    }
+
+    /// `›`: the conversation this one was stepped back out of.
+    fn history_forward(&mut self) {
+        let Some(next) = self.nav.forward.pop() else {
+            self.note("nowhere to go forward to");
+            return;
+        };
+        if self.core.state().channel(next).is_none() {
+            self.history_forward();
+            return;
+        }
+        if let Some(current) = self.nav.channel {
+            self.nav.back.push(current);
+        }
+        self.go_to(next);
+    }
+
+    /// Open a conversation. What every move, deliberate or a step through the
+    /// history, ends in; the history itself is the callers' business.
+    fn go_to(&mut self, channel: ChannelId) {
         // Anchor and draft belong to where they were written, so they are put
         // away before the move rather than after it.
         if let Some(previous) = self.nav.channel {
@@ -1181,6 +1249,10 @@ impl App {
                     Ok(token) => self.core.send(Command::LoginWithToken(token)),
                     Err(e) => screen.failed(e.to_string()),
                 },
+                Outcome::OpenUrl(url) => self.core.send(Command::OpenExternal {
+                    url,
+                    kind: ExternalKind::Link,
+                }),
                 Outcome::Nothing => {}
             }
             return;
@@ -1277,11 +1349,77 @@ impl App {
             return;
         }
         if self.layout.focus() == ModuleId::Compose {
+            if self.paste_media(text) {
+                return;
+            }
             let sources = std::mem::take(&mut self.view.sources);
             self.composer.paste(text, &sources);
             self.view.sources = sources;
             self.draft_changed();
         }
+    }
+
+    /// A terminal paste of something that was copied but is not text.
+    ///
+    /// `cmd+v` reaches a terminal as the clipboard's *text* flavour, and a
+    /// copied picture or file has one -- on macOS the file's name with the
+    /// extension taken off -- which is what used to land in the composer as
+    /// words. The clipboard itself says what was really copied, so it is
+    /// asked: a list of files is attached, and a picture whose caption is
+    /// exactly what arrived is attached as a picture. Anything else is text
+    /// and is pasted as text.
+    fn paste_media(&mut self, text: &str) -> bool {
+        if self.nav.channel.is_none() {
+            return false;
+        }
+        // What a terminal sends for a copied picture is one short line. A
+        // paste with a body in it is text, whatever else is on the clipboard.
+        if text.contains('\n') || text.chars().count() > 255 {
+            return false;
+        }
+
+        let files: Vec<std::path::PathBuf> = clipboard::files()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| p.is_file())
+            .collect();
+        if !files.is_empty() {
+            let limit = self
+                .cfg
+                .media
+                .max_attachment_mib
+                .saturating_mul(1024 * 1024);
+            for path in files {
+                let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                if limit > 0 && bytes > limit {
+                    let name = super::overlays::attach::name_of(&path);
+                    self.note_at(
+                        format!(
+                            "{name} is {}, over the limit",
+                            super::overlays::attach::human(bytes)
+                        ),
+                        NoteLevel::Warning,
+                    );
+                    continue;
+                }
+                self.attach_file(path);
+            }
+            return true;
+        }
+
+        // A picture, when the paste is the clipboard's own caption for it
+        // rather than words typed somewhere: the same clipboard's text.
+        let own = match clipboard::text() {
+            Ok(caption) => caption.trim() == text.trim(),
+            Err(_) => text.trim().is_empty(),
+        };
+        if own {
+            if let Ok((bytes, dims)) = clipboard::image() {
+                self.attach_clipboard_image(bytes, dims);
+                return true;
+            }
+        }
+        false
     }
 
     /// One action. The single place a key turns into a change.
@@ -1318,6 +1456,8 @@ impl App {
             }
             Action::Activate => self.activate(),
             Action::Back => self.back(),
+            Action::HistoryBack => self.history_back(),
+            Action::HistoryForward => self.history_forward(),
 
             Action::FocusNext => self.step_focus(1),
             Action::FocusPrev => self.step_focus(-1),
@@ -1502,33 +1642,36 @@ impl App {
             return;
         }
         match clipboard::image() {
-            Ok((bytes, dims)) => {
-                let limit = self
-                    .cfg
-                    .media
-                    .max_attachment_mib
-                    .saturating_mul(1024 * 1024);
-                if limit > 0 && bytes.len() as u64 > limit {
-                    self.note_at(
-                        format!(
-                            "that picture is {}, over the limit",
-                            super::overlays::attach::human(bytes.len() as u64)
-                        ),
-                        NoteLevel::Warning,
-                    );
-                    return;
-                }
-                let pending = composer::Pending::clipboard(bytes, dims);
-                let name = pending.name.clone();
-                if self.composer.attach(pending) {
-                    self.note(format!("attached {name}"));
-                    self.focus_module(ModuleId::Compose);
-                }
-            }
+            Ok((bytes, dims)) => self.attach_clipboard_image(bytes, dims),
             Err(e) => {
                 tracing::debug!("no picture on the clipboard: {e}");
                 self.note_at("no picture on the clipboard", NoteLevel::Warning);
             }
+        }
+    }
+
+    /// A picture that came off the clipboard, as a pending attachment.
+    fn attach_clipboard_image(&mut self, bytes: Vec<u8>, dims: (u32, u32)) {
+        let limit = self
+            .cfg
+            .media
+            .max_attachment_mib
+            .saturating_mul(1024 * 1024);
+        if limit > 0 && bytes.len() as u64 > limit {
+            self.note_at(
+                format!(
+                    "that picture is {}, over the limit",
+                    super::overlays::attach::human(bytes.len() as u64)
+                ),
+                NoteLevel::Warning,
+            );
+            return;
+        }
+        let pending = composer::Pending::clipboard(bytes, dims);
+        let name = pending.name.clone();
+        if self.composer.attach(pending) {
+            self.note(format!("attached {name}"));
+            self.focus_module(ModuleId::Compose);
         }
     }
 
@@ -2350,13 +2493,14 @@ impl App {
                     }
                 });
             }
-            Hit::Attachment(id, url) => {
+            Hit::Attachment(id, url, kind) => {
                 self.chat.select(id);
-                if double {
-                    self.core.send(Command::OpenExternal {
-                        url,
-                        kind: ExternalKind::Image,
-                    });
+                // A photograph opens on the click that lands on it, in the
+                // viewer the desktop opens pictures with. A file or a video is
+                // chosen on one click and opened on two, as before.
+                if kind == ExternalKind::Image || double {
+                    self.core.send(Command::OpenExternal { url, kind });
+                    self.note("opening");
                 }
             }
             Hit::LoadOlder => {
@@ -2373,6 +2517,8 @@ impl App {
 
     fn word_click(&mut self, module: ModuleId, word: panels::Word) {
         match word {
+            panels::Word::Back => self.handle(Action::HistoryBack),
+            panels::Word::Forward => self.handle(Action::HistoryForward),
             panels::Word::Settings => self.over.open_settings(module),
             panels::Word::Search => self.handle(Action::Search),
             panels::Word::Pins => self.handle(Action::TogglePin),
@@ -2713,7 +2859,7 @@ impl App {
         for module in COLUMN {
             let rect = regions.rect_of(module);
             let focused = module == focus;
-            let title = self.module_title(module);
+            let (name, detail) = self.module_title(module);
             let words = panels::words(module);
             let body = panels::frame(
                 rect,
@@ -2721,7 +2867,11 @@ impl App {
                 &panels::Frame {
                     theme: &self.look.theme,
                     focused,
-                    title: &title,
+                    name: &name,
+                    detail: detail.as_deref(),
+                    // The top of the column says what the window is, as the
+                    // top of STAR/AMP's does.
+                    heading: module == ModuleId::Servers,
                     words: &words,
                 },
             );
@@ -2895,23 +3045,26 @@ impl App {
         buf[(x, y)].modifier |= Modifier::REVERSED;
     }
 
-    /// What a module's border says.
+    /// What a module's border says: its name, and what the name is about.
     ///
     /// The second module names the server it is listing, because the folded
     /// row above it is one line and `channels` on its own is not an answer to
     /// "which server's".
-    fn module_title(&self, module: ModuleId) -> String {
+    fn module_title(&self, module: ModuleId) -> (String, Option<String>) {
         match module {
-            ModuleId::Channels if self.nav.guild.is_none() => "messages".into(),
+            ModuleId::Channels if self.nav.guild.is_none() => ("messages".into(), None),
             ModuleId::Channels => match self.nav.guild {
                 Some(g) => match self.core.state().guild(g) {
-                    Some(guild) => format!("channels \u{b7} {}", guild.name),
-                    None => module.title().to_string(),
+                    Some(guild) => (module.title().to_string(), Some(guild.name.clone())),
+                    None => (module.title().to_string(), None),
                 },
-                None => module.title().to_string(),
+                None => (module.title().to_string(), None),
             },
-            ModuleId::Conversation => chat::title(&self.view.location),
-            _ => module.title().to_string(),
+            ModuleId::Conversation => {
+                let location = chat::title(&self.view.location);
+                (module.title().to_string(), Some(location))
+            }
+            _ => (module.title().to_string(), None),
         }
     }
 }

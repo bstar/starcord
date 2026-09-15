@@ -355,10 +355,14 @@ fn media_error(error: HttpError, cap: u64) -> MediaError {
 /// Hand something to a program that can show it.
 ///
 /// A plain link goes to whatever the desktop opens links with. A picture or a
-/// video is downloaded into the cache first and the configured player is given
-/// the **path**, as `argv` — never a shell command line. A filename that came
-/// off a stranger's computer can contain a space, a quote or a semicolon, and
-/// the only way that is safe is for it never to be parsed by anything.
+/// video is downloaded into the cache first and the viewer or the player is
+/// given the **path**, as `argv` — never a shell command line. A filename that
+/// came off a stranger's computer can contain a space, a quote or a semicolon,
+/// and the only way that is safe is for it never to be parsed by anything.
+///
+/// A picture goes to the desktop's own opener unless a viewer is configured:
+/// `open` on macOS and `xdg-open` elsewhere hand a file to whatever the person
+/// already looks at pictures with, which is what a click on a photograph means.
 async fn open_external(context: &Context, url: &str, kind: ExternalKind) {
     if kind == ExternalKind::Link {
         open_in_browser(context, url.to_string()).await;
@@ -406,19 +410,39 @@ async fn open_external(context: &Context, url: &str, kind: ExternalKind) {
         },
     };
 
-    if context.config.player.is_empty() {
-        // No player configured: the browser is a better answer than nothing,
+    let program: Vec<String> = match kind {
+        ExternalKind::Image if context.config.viewer.is_empty() => default_opener(),
+        ExternalKind::Image => context.config.viewer.clone(),
+        _ => context.config.player.clone(),
+    };
+    if program.is_empty() {
+        // Nothing to hand it to: the browser is a better answer than nothing,
         // and it is what the user gets for a link anyway.
         open_in_browser(context, url.to_string()).await;
         return;
     }
 
-    match play(&context.config.player, &path).await {
+    match play(&program, &path).await {
         Ok(()) => {}
         Err(e) => context.events.send(Event::Note(Note::warning(
             "open-external",
-            format!("{} could not be started: {e}", context.config.player[0]),
+            format!("{} could not be started: {e}", program[0]),
         ))),
+    }
+}
+
+/// What opens a file in whatever the desktop opens it with.
+///
+/// The path is appended as its own argument, so a name starting with `-`
+/// cannot become an option: `open` and `xdg-open` both take `--`, and
+/// Windows' `start` needs the empty title before anything that could be one.
+fn default_opener() -> Vec<String> {
+    if cfg!(target_os = "macos") {
+        vec!["open".into(), "--".into()]
+    } else if cfg!(target_os = "windows") {
+        vec!["cmd".into(), "/C".into(), "start".into(), "".into()]
+    } else {
+        vec!["xdg-open".into(), "--".into()]
     }
 }
 

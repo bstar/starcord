@@ -175,10 +175,18 @@ nonce itself — a live handshake against `remote-auth-gateway.discord.gg` on
 2026-09-13 got past that step and came back with a fingerprint, which a wrong
 proof cannot do (the failure is a close 4002). `PROOF_IS_HASHED` in
 `auth/remote.rs` is kept as a constant so the other answer stays one line away.
-What that run could not reach is **everything after the scan**: the shape of
-`pending_ticket`'s payload, the `pending_login` exchange and the token decrypt
-are still from the documentation, and settling them needs a phone and
-`starcord probe --qr` run to completion.
+**Everything after the scan is settled too**, by a phone on 2026-09-14: the
+`pending_ticket` payload is `id:discriminator:avatar:username`, the
+`pending_login` exchange is `POST /users/@me/remote-auth/login {ticket}`, and
+the token unseals with the same key. What that day also found is that
+**Discord may answer the exchange with a captcha** (`400`, `captcha_key`), on
+a machine or network it does not trust, whatever the request looks like — the
+web client on the same machine got the same challenge. `auth/captcha.rs`
+serves Discord's hCaptcha widget on a loopback page, opens the browser, and
+retries with `X-Captcha-Key`/`X-Captcha-Rqtoken`/`X-Captcha-Session-Id`, which
+is what Discord's own client does after its modal closes. hCaptcha serves
+Discord's site key to `127.0.0.1` (checked against `checksiteconfig`); the
+`rqdata` goes in through `setData`, without which the answer is refused.
 
 There is one more, added with the message milestone: **whether a `nonce` sent
 on a `POST /messages` comes back on the gateway echo** as well as in the

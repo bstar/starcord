@@ -2,8 +2,7 @@
 source: src/ui/frames.rs
 expression: "render(&mut app, 60, 12)"
 ---
-  ╔══════════════════════════════════════════════════════╗
-  ║ STAR/CORD                                            ║
+  ╔═ S T A R / C O R D ══════════════════════════════════╗
   ║                                                      ║
   ║ sign in                                              ║
   ║                                                      ║
@@ -13,4 +12,5 @@ expression: "render(&mut app, 60, 12)"
   ║ q   quit                                             ║
   ║                                                      ║
   ║ scanning is the safer of the two: no                 ║
+  ║ password is typed into this terminal.                ║
   ╚══════════════════════════════════════════════════════╝

@@ -95,6 +95,10 @@ reqwest = { version = "0.13", default-features = false, features = [
     # normal one; when the attachments endpoint refuses, the file goes up in the
     # message itself as `payload_json` plus `files[0]`, which is multipart.
     "multipart",
+    # A cookie jar, so the `__dcfduid`/`__sdcfduid` pair `discord.com/app`
+    # sets comes back on the login that follows. Without them a login-class
+    # request is answered with a captcha. Pure Rust (`cookie_store`).
+    "cookies",
 ] }
 
 # The provider itself, so `ring` is a direct and visible choice rather than

@@ -12,6 +12,7 @@
 //! standard input rather than through `argv`, which is world-readable in
 //! `/proc` on Linux.
 
+pub mod captcha;
 pub mod remote;
 
 use std::fmt;
@@ -118,6 +119,15 @@ pub struct TokenStore {
     prefer: StorePreference,
 }
 
+/// What [`TokenStore::load_reporting`] found, and what stood in its way.
+#[derive(Debug)]
+pub struct Loaded {
+    pub found: Option<(Token, TokenStoreKind)>,
+    /// The keyring's reason for not answering, when there was one and no
+    /// token came from anywhere else.
+    pub refused: Option<String>,
+}
+
 impl TokenStore {
     pub fn new(paths: Paths, prefer: StorePreference) -> Self {
         Self { paths, prefer }
@@ -130,28 +140,58 @@ impl TokenStore {
     /// keyring that is misbehaving and finds it still being used.
     /// [`TokenStore::clear`] is the asymmetric one: it clears everything.
     pub fn load(&self) -> Option<(Token, TokenStoreKind)> {
-        match self.prefer {
-            StorePreference::None => None,
-            StorePreference::Keyring => self.load_keyring().map(|t| (t, TokenStoreKind::Keyring)),
-            StorePreference::File => self.load_file().map(|t| (t, TokenStoreKind::File)),
-            StorePreference::Auto => self
-                .load_keyring()
-                .map(|t| (t, TokenStoreKind::Keyring))
-                .or_else(|| self.load_file().map(|t| (t, TokenStoreKind::File))),
-        }
+        self.load_reporting().found
     }
 
-    fn load_keyring(&self) -> Option<Token> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()?;
+    /// The stored token, and if the keyring would not hand one over, why.
+    ///
+    /// The refusal is worth carrying to the screen: on macOS the Keychain
+    /// ties an item to the signed identity of the binary that wrote it, and
+    /// an unsigned build has a new identity every time it is built, so a
+    /// developer sees the login screen after every build with nothing to say
+    /// which of the two stores is at fault.
+    pub fn load_reporting(&self) -> Loaded {
+        let mut refused = None;
+        let mut keyring = || match self.load_keyring() {
+            Ok(token) => token.map(|t| (t, TokenStoreKind::Keyring)),
+            Err(why) => {
+                refused = Some(why);
+                None
+            }
+        };
+        let found = match self.prefer {
+            StorePreference::None => None,
+            StorePreference::Keyring => keyring(),
+            StorePreference::File => self.load_file().map(|t| (t, TokenStoreKind::File)),
+            StorePreference::Auto => {
+                keyring().or_else(|| self.load_file().map(|t| (t, TokenStoreKind::File)))
+            }
+        };
+        // A token that was found is the answer; a refusal on the way to it
+        // is a detail for the log.
+        if found.is_some() {
+            if let Some(why) = refused.take() {
+                tracing::debug!("the keyring refused, but the file answered: {why}");
+            }
+        }
+        Loaded { found, refused }
+    }
+
+    /// `Ok(None)` is no entry; `Err` is an entry that could not be read.
+    fn load_keyring(&self) -> std::result::Result<Option<Token>, String> {
+        let entry =
+            keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
         match entry.get_password() {
-            Ok(secret) => Token::new(secret).ok(),
-            Err(keyring::Error::NoEntry) => None,
+            Ok(secret) => Ok(Token::new(secret).ok()),
+            Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => {
                 // A locked keyring, a headless session with no secret-service,
-                // a Keychain that refused. All of them mean "fall through to
-                // the file", none of them means "stop".
+                // a Keychain that refused this build. All of them mean "fall
+                // through to the file", none of them means "stop" -- but the
+                // reason travels, because "sign in again" with no why is a
+                // door that keeps closing.
                 tracing::debug!("the keyring did not answer: {e}");
-                None
+                Err(e.to_string())
             }
         }
     }

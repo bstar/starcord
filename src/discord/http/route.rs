@@ -84,6 +84,11 @@ pub enum Route {
     /// and the path live with every other route; the remote-auth state machine
     /// that calls it arrives at M5.
     RemoteAuthLogin,
+    /// The unauthenticated experiment assignments, fetched for the
+    /// `fingerprint` in them: the web client sends it as `X-Fingerprint` on
+    /// every request it makes before it has a token, and a login without one
+    /// is a login from a client Discord has never seen.
+    Experiments,
     /// A channel's history.
     ChannelMessages {
         channel: ChannelId,
@@ -239,9 +244,11 @@ impl Default for GifProvider {
 impl Route {
     pub fn method(&self) -> reqwest::Method {
         match self {
-            Route::Me | Route::ChannelMessages { .. } | Route::Gifs(_) | Route::Search { .. } => {
-                reqwest::Method::GET
-            }
+            Route::Me
+            | Route::Experiments
+            | Route::ChannelMessages { .. }
+            | Route::Gifs(_)
+            | Route::Search { .. } => reqwest::Method::GET,
             Route::RemoteAuthLogin
             | Route::CreateMessage(_)
             | Route::CreateAttachments(_)
@@ -262,6 +269,7 @@ impl Route {
         match self {
             Route::Me => Cow::Borrowed("/users/@me"),
             Route::RemoteAuthLogin => Cow::Borrowed("/users/@me/remote-auth/login"),
+            Route::Experiments => Cow::Borrowed("/experiments"),
             Route::ChannelMessages {
                 channel,
                 history,
@@ -349,6 +357,7 @@ impl Route {
         match self {
             Route::Me => Cow::Borrowed("GET /users/@me"),
             Route::RemoteAuthLogin => Cow::Borrowed("POST /users/@me/remote-auth/login"),
+            Route::Experiments => Cow::Borrowed("GET /experiments"),
             Route::ChannelMessages { channel, .. } => {
                 Cow::Owned(format!("GET /channels/{channel}/messages"))
             }
@@ -506,6 +515,7 @@ mod tests {
         for route in [
             Route::Me,
             Route::RemoteAuthLogin,
+            Route::Experiments,
             Route::RefreshAttachmentUrls,
             history(1),
             Route::CreateMessage(ChannelId(1)),

@@ -32,6 +32,8 @@ use starkit::ratatui::style::{Modifier, Style};
 use starkit::ratatui::text::{Line, Span};
 use starkit::wrap::{clusters, width_of};
 
+use crate::discord::handle::ExternalKind;
+
 use crate::config::{Spoilers, Timestamps};
 use crate::discord::markdown::ast::{Block, Emoji, Inline, ListItem, Mention};
 use crate::discord::markdown::parse;
@@ -249,9 +251,18 @@ pub struct SpoilerSpan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentRef {
     pub row: u16,
+    /// The rows it takes: the picture's, when it is drawn as one, else the
+    /// chip's single row. A click anywhere on the picture is a click on it.
+    pub rows: u16,
+    /// The columns, from `col`. `u16::MAX` is the whole width.
+    pub col: u16,
+    pub cols: u16,
     pub url: String,
     pub filename: String,
     pub viewable: bool,
+    /// What opening it means: a picture goes to the viewer, a video to the
+    /// player, and anything else to the browser.
+    pub kind: ExternalKind,
 }
 
 /// One reaction chip and the cells it sits on.
@@ -870,13 +881,6 @@ impl<'a> Writer<'a> {
         for attachment in &msg.attachments {
             self.flush();
             let row = self.row();
-            self.out.attachments.push(AttachmentRef {
-                row,
-                url: attachment.url.clone(),
-                filename: attachment.filename.clone(),
-                viewable: attachment.is_image(),
-            });
-
             let chip = attachment_chip(attachment);
             let key = MediaKey::Attachment {
                 message: msg.id,
@@ -884,6 +888,22 @@ impl<'a> Writer<'a> {
                 url: attachment.url.clone(),
             };
             let (cols, rows) = self.picture_box(attachment, &key);
+            self.out.attachments.push(AttachmentRef {
+                row,
+                rows: rows.max(1),
+                col: if rows > 0 { gutter } else { 0 },
+                cols: if rows > 0 { cols } else { u16::MAX },
+                url: attachment.url.clone(),
+                filename: attachment.filename.clone(),
+                viewable: attachment.is_image(),
+                kind: if attachment.is_video() {
+                    ExternalKind::Video
+                } else if attachment.is_image() {
+                    ExternalKind::Image
+                } else {
+                    ExternalKind::Link
+                },
+            });
             if rows > 0 {
                 self.out.images.push(ImageSlot {
                     row,
@@ -1036,9 +1056,13 @@ impl<'a> Writer<'a> {
             if let Some(url) = embed.url.clone() {
                 self.out.attachments.push(AttachmentRef {
                     row: self.row(),
+                    rows: 1,
+                    col: 0,
+                    cols: u16::MAX,
                     url,
                     filename: title.clone(),
                     viewable: false,
+                    kind: ExternalKind::Link,
                 });
             }
             // The still is drawn with a play marker over it; the file itself

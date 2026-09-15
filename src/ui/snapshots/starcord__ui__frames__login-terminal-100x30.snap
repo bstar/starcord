@@ -9,8 +9,7 @@ expression: "render(&mut app, 100, 30)"
 
 
 
-                      ╔══════════════════════════════════════════════════════╗
-                      ║ STAR/CORD                                            ║
+                      ╔═ S T A R / C O R D ══════════════════════════════════╗
                       ║                                                      ║
                       ║ sign in                                              ║
                       ║                                                      ║
@@ -21,6 +20,7 @@ expression: "render(&mut app, 100, 30)"
                       ║                                                      ║
                       ║ scanning is the safer of the two: no                 ║
                       ║ password is typed into this terminal.                ║
+                      ║                                                      ║
                       ║                                                      ║
                       ║                                                      ║
                       ║                                                      ║

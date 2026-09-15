@@ -218,6 +218,10 @@ pub struct Media {
     /// argv, never a shell line: a file name with a space in it is a file name
     /// with a space in it, not two arguments.
     pub player: Vec<String>,
+    /// The same for a picture. Empty is the desktop's own opener, which is
+    /// what a click on a photograph should reach.
+    #[serde(default)]
+    pub viewer: Vec<String>,
 }
 
 impl Default for Media {
@@ -229,6 +233,7 @@ impl Default for Media {
             save_dir: "~/Downloads".into(),
             // `--` so that a file called `-x` is a file rather than an option.
             player: vec!["mpv".into(), "--".into()],
+            viewer: Vec::new(),
         }
     }
 }
@@ -351,6 +356,7 @@ impl Config {
                 cache_max_mib: self.media.cache_max_mib,
                 max_attachment_mib: self.media.max_attachment_mib,
                 player: self.media.player.clone(),
+                viewer: self.media.viewer.clone(),
             },
             gifs: crate::discord::http::route::GifProvider {
                 name: self.gifs.provider.clone(),
@@ -444,6 +450,11 @@ save_dir = "~/Downloads"
 # Arguments, never a shell line. The file is appended to this list, and `--`
 # is what keeps a file called `-x` a file rather than an option.
 player = ["mpv", "--"]
+# What a click on a picture opens it with. Empty is the desktop's own opener
+# -- `open` on macOS, `xdg-open` elsewhere -- which hands the file to whatever
+# you already look at pictures with. Name a program the same way as `player`
+# to choose one instead.
+viewer = []
 
 [notify]
 enabled = true

@@ -75,6 +75,8 @@ pub enum Action {
     FocusMembers,
 
     // Getting somewhere.
+    HistoryBack,
+    HistoryForward,
     NextGuild,
     PrevGuild,
     NextUnread,
@@ -313,6 +315,18 @@ pub const BINDINGS: &[Binding] = &[
         group: "navigation",
     },
     Binding {
+        action: Action::HistoryBack,
+        keys: "alt+left",
+        label: "where you were",
+        group: "navigation",
+    },
+    Binding {
+        action: Action::HistoryForward,
+        keys: "alt+right",
+        label: "forward again",
+        group: "navigation",
+    },
+    Binding {
         action: Action::QuickSwitch,
         keys: "ctrl+k",
         label: "jump to anything",
@@ -486,6 +500,8 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         action: Action::PasteImage,
         keys: "ctrl+v",
+        // The terminal's own paste of a copied picture or file attaches it
+        // too; this is the key for a picture the terminal has no text for.
         label: "paste a picture",
         group: "composer",
     },
@@ -642,8 +658,13 @@ pub const MOUSE: &[MouseHelp] = &[
         group: "chat",
     },
     MouseHelp {
-        gesture: "double-click",
-        label: "open the attachment",
+        gesture: "click a picture",
+        label: "open it",
+        group: "chat",
+    },
+    MouseHelp {
+        gesture: "double-click a file",
+        label: "open it",
         group: "chat",
     },
     MouseHelp {

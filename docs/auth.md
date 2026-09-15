@@ -44,6 +44,20 @@ Your password is never typed. What happens underneath is:
 
 The token is never displayed and never touches the clipboard.
 
+### One more step
+
+On a machine or a network Discord has not seen you on, it may ask for a
+captcha before it hands over the token. The screen says so, and your browser
+opens a page — served by starcord itself, on `127.0.0.1` — with Discord's
+captcha on it. Answer it there; the page says when it is done, and the
+terminal carries on by itself. If no browser appeared, the address is on the
+screen and `o` opens it again.
+
+That page loads the captcha widget from hCaptcha and nothing else. The answer
+goes back to the terminal, the terminal sends it to Discord with the ticket,
+and the token arrives sealed to the key exactly as it would have without the
+detour.
+
 A code lasts about six minutes. If nobody scans it, the terminal generates one
 more by itself and then stops — at that point you have walked away, and a
 client that keeps regenerating a login code unattended is a client leaving a
@@ -96,6 +110,13 @@ request-splitting bug waiting for a worse day.
 | the OS keyring | Preferred. secret-service on Linux (GNOME Keyring, KWallet), the Keychain on macOS. Service `starcord`, account `token`. |
 | `~/.local/starcord/credentials.toml` | Mode 0600, when there is no keyring. Written to a temporary sibling and renamed, so it never exists readable even for an instant. |
 
+**Building from source on macOS.** The Keychain ties an item to the signed
+identity of the binary that wrote it, and a build that is not signed with a
+stable identity has a new one every time it is built -- so every rebuild is a
+stranger to the token the last one stored, and the login screen comes back
+with a line under it saying the keyring refused. On a machine like that, set
+`store = "file"`; the file is read by every build.
+
 `[auth] store` in `config.toml` chooses:
 
 ```toml
@@ -144,10 +165,10 @@ up there like any other.
 
 ## What is not supported
 
-**Email and password, with or without a code from an authenticator.** Not
-because it is hard, but because Discord gates it behind a captcha for anything
-that does not look like a browser, and a terminal cannot solve one. Attempting
-it would mean a login that fails in a way the user cannot do anything about.
+**Email and password, with or without a code from an authenticator.** The
+whole point of the scan is that a password is never typed into a terminal,
+and the captcha page above would make a password login possible without
+making it a good idea.
 
 **Multiple accounts.** One token, one keyring entry. Running a second account
 means a second `$STARCORD_DIR`:

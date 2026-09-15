@@ -82,6 +82,7 @@ pub struct ClientProps {
 impl ClientProps {
     pub fn new(locale: impl Into<String>, build_number: u64) -> Self {
         let os = host_os().to_string();
+        let os_version = os_version_for(&os).to_string();
         let browser_user_agent = user_agent_for(&os);
         let props = SuperProperties {
             os,
@@ -90,7 +91,7 @@ impl ClientProps {
             system_locale: locale.into(),
             browser_user_agent,
             browser_version: BROWSER_VERSION.into(),
-            os_version: String::new(),
+            os_version,
             referrer: String::new(),
             referring_domain: String::new(),
             referrer_current: String::new(),
@@ -154,6 +155,18 @@ fn host_os() -> &'static str {
         "Windows"
     } else {
         "Linux"
+    }
+}
+
+/// What the web client puts in `os_version`, which it parses out of the user
+/// agent: the frozen `10_15_7` on a Mac, `10` on Windows, and nothing at all
+/// on Linux, where the UA carries no version. A Mac with an empty version is
+/// a pair no real browser produces.
+fn os_version_for(os: &str) -> &'static str {
+    match os {
+        "Mac OS X" => "10.15.7",
+        "Windows" => "10",
+        _ => "",
     }
 }
 

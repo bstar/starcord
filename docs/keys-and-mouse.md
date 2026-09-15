@@ -39,6 +39,8 @@ _everywhere_
 | `]`            | next server |
 | `alt+up`       | previous unread |
 | `alt+down`     | next unread |
+| `alt+left`     | where you were |
+| `alt+right`    | forward again |
 | `ctrl+k`       | jump to anything |
 | `ctrl+f / /`   | search here |
 | `alt+f`        | search the server |
@@ -153,7 +155,8 @@ _everywhere_
 |---|---|---|
 | chat     | wheel                 | scroll three rows |
 | chat     | click                 | select a message |
-| chat     | double-click          | open the attachment |
+| chat     | click a picture       | open it |
+| chat     | double-click a file   | open it |
 | chat     | click a reaction      | add or remove yours |
 | chat     | click a link          | open it |
 | chat     | click the ↩ line      | go to the quoted |
