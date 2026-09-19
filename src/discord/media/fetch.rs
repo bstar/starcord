@@ -433,16 +433,19 @@ async fn open_external(context: &Context, url: &str, kind: ExternalKind) {
 
 /// What opens a file in whatever the desktop opens it with.
 ///
-/// The path is appended as its own argument, so a name starting with `-`
-/// cannot become an option: `open` and `xdg-open` both take `--`, and
-/// Windows' `start` needs the empty title before anything that could be one.
+/// The path is appended as its own argument. It is always a cache path
+/// (`<dir>/<hash>.<ext>`), so it cannot start with `-`; still, `open` takes
+/// `--` and Windows' `start` needs the empty title before anything that could
+/// be one. `xdg-open` gets no `--`: xdg-utils rejects it ("unexpected option
+/// '--'") unless `XDG_UTILS_ENABLE_DOUBLE_HYPEN` is set, and since the child
+/// is detached with its stderr nulled, that failure would be silent.
 fn default_opener() -> Vec<String> {
     if cfg!(target_os = "macos") {
         vec!["open".into(), "--".into()]
     } else if cfg!(target_os = "windows") {
         vec!["cmd".into(), "/C".into(), "start".into(), "".into()]
     } else {
-        vec!["xdg-open".into(), "--".into()]
+        vec!["xdg-open".into()]
     }
 }
 
