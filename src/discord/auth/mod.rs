@@ -276,22 +276,38 @@ impl TokenStore {
         Ok(())
     }
 
-    /// Forget the token everywhere, whatever the preference says.
+    /// Forget the token in every store this preference could read.
     ///
-    /// Both stores are cleared rather than the configured one, because a logout
-    /// that leaves a working credential in the other place is not a logout.
+    /// `auto` clears both, because a logout that leaves a working credential
+    /// in the place it would fall back to is not a logout. `file` and
+    /// `keyring` clear only their own: [`TokenStore::load`] never reads the
+    /// other one, so there is nothing there to forget -- and a `file` store
+    /// over a temporary directory, which is what every test builds, used to
+    /// reach past its directory and delete the real keyring entry. That
+    /// signed the developer out on every `cargo test`, which is to say on
+    /// every build.
     pub fn clear(&self) {
-        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
-            match entry.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => {}
-                Err(e) => tracing::debug!("could not clear the keyring entry: {e}"),
+        let (keyring, file) = match self.prefer {
+            StorePreference::Auto => (true, true),
+            StorePreference::Keyring => (true, false),
+            StorePreference::File => (false, true),
+            StorePreference::None => (false, false),
+        };
+        if keyring {
+            if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
+                match entry.delete_credential() {
+                    Ok(()) | Err(keyring::Error::NoEntry) => {}
+                    Err(e) => tracing::debug!("could not clear the keyring entry: {e}"),
+                }
             }
         }
-        if let Ok(path) = self.paths.credentials_file() {
-            match std::fs::remove_file(&path) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => tracing::warn!("could not remove {}: {e}", path.display()),
+        if file {
+            if let Ok(path) = self.paths.credentials_file() {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => tracing::warn!("could not remove {}: {e}", path.display()),
+                }
             }
         }
     }
@@ -388,6 +404,30 @@ mod tests {
         store.clear();
         assert!(!path.exists());
         assert!(store.load().is_none());
+    }
+
+    /// A `file` store over a temporary directory must not reach the keyring
+    /// when it clears -- that is the developer's real login it would be
+    /// deleting, on every test run. Checked against the keyring itself:
+    /// whatever entry is there before must still be there after. On a
+    /// machine with no secret service the entry cannot be read either way
+    /// and the test proves nothing, which is fine; the one that matters is
+    /// the developer's.
+    #[test]
+    fn a_file_store_clearing_leaves_the_keyring_alone() {
+        let before = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+            .and_then(|entry| entry.get_password())
+            .ok();
+        let dir = tempfile::tempdir().unwrap();
+        let store = TokenStore {
+            paths: test_paths(dir.path()),
+            prefer: StorePreference::File,
+        };
+        store.clear();
+        let after = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+            .and_then(|entry| entry.get_password())
+            .ok();
+        assert_eq!(before.is_some(), after.is_some(), "clear() reached the keyring");
     }
 
     #[test]
