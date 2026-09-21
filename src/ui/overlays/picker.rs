@@ -900,6 +900,7 @@ fn emoji_grid(
                         key,
                         shape: Shape::Emoji { name: name.clone() },
                         alt: String::new(),
+                        room: None,
                     });
                 }
             }
@@ -966,6 +967,7 @@ fn gif_grid(
                 key: MediaKey::Gif { url },
                 shape: Shape::Picture,
                 alt: String::new(),
+                room: None,
             });
         }
         let caption = Rect {

@@ -613,8 +613,8 @@ mod tests {
                             url: "https://x.invalid/a.gif".into(),
                             filename: "a.gif".into(),
                         }],
+                        media::Open::First,
                         None,
-                        2.0,
                     )
                     .unwrap(),
                 )

@@ -69,7 +69,7 @@ use super::layout::{Drag, LayoutState, Regions};
 use super::login::{LoginScreen, Outcome};
 use super::overlays::attach::Attach;
 use super::overlays::confirm::{Confirm, Pending};
-use super::overlays::media::Viewer;
+use super::overlays::media::{self as viewer, Viewer};
 use super::overlays::menu::{Choice, Menu};
 use super::overlays::picker::{Kind, Picker};
 use super::overlays::quick::{self, Target};
@@ -1886,14 +1886,25 @@ impl App {
 
     /// `enter` on a message with something worth looking at.
     fn open_viewer(&mut self) {
+        let on = match self.chat.selected() {
+            Some(msg) => viewer::Open::Message(msg.id),
+            None => viewer::Open::First,
+        };
+        self.open_viewer_on(on);
+    }
+
+    /// The viewer, opened on one particular picture.
+    ///
+    /// The cell size rather than the aspect: the viewer grows a picture to
+    /// fill the window, which is a number of pixels rather than a ratio.
+    fn open_viewer_on(&mut self, on: viewer::Open) {
         let Some(channel) = self.nav.channel else {
             self.note("no channel open");
             return;
         };
         let items = core_ext::viewer_items(&self.core.state(), channel);
-        let on = self.chat.selected().map(|m| m.id);
-        let aspect = self.look.graphics.cell_aspect().unwrap_or(2.0);
-        match Viewer::new(items, on, aspect) {
+        let cell = self.look.graphics.cell_size();
+        match Viewer::new(items, on, cell) {
             Some(viewer) => self.over.open_viewer(viewer),
             None => self.note("no pictures in this channel"),
         }
@@ -3174,6 +3185,7 @@ impl App {
                         colour: self.look.theme.row_fg,
                     },
                     alt: String::new(),
+                    room: None,
                 }),
         );
 
@@ -3203,13 +3215,12 @@ impl App {
             return;
         }
         // An overlay's picture is far larger than the slot the message list
-        // fetched it for, so it is asked for again at the size it is about to
-        // be drawn at. Bounded: the size only ever grows.
-        for place in &places {
-            self.chat
-                .media
-                .want_bigger(&place.key, place.rect.width, place.rect.height);
-        }
+        // fetched it for. Asking for it again at the size it is about to be
+        // drawn at is the paint pass's own job -- one request per placement,
+        // through the box or the pixels it named -- and a second ask from here
+        // used to race it: whichever of the two the core started first was the
+        // one the other was dropped as a duplicate of, so the viewer drew the
+        // thumbnail about half the time.
         let painted = chat::media::paint(
             &places,
             &mut self.look.graphics,

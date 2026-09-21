@@ -15,6 +15,19 @@
 //! "all of it" and "how big is it really", and everything between them is a
 //! control nobody would find.
 //!
+//! ## Fitting includes growing
+//!
+//! `Resize::Fit` never upsizes, so a picture smaller than the window used to
+//! sit in the middle of it at whatever size it happened to be -- which is most
+//! of what a conversation carries, and is the one thing somebody who opened the
+//! viewer was asking for. So the rectangle is measured in *pixels*, through
+//! [`Graphics::cell_size`](starkit::graphics::Graphics::cell_size): the core is
+//! asked for the picture at that many rather than at a cell-count estimate, and
+//! the paint pass grows whatever is smaller than the rectangle to fill it --
+//! see [`fill_up`]. The meta line says `×2.4` when it did. A terminal that
+//! never measured a cell has no honest pixel count to work from and gets what
+//! it always got.
+//!
 //! ## Saving asks for the bytes again
 //!
 //! What the media store holds has been resized to fit a rectangle. Writing
@@ -32,9 +45,9 @@ use starkit::ratatui::style::{Modifier, Style};
 use starkit::ratatui::text::{Line, Span};
 use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
-use crate::discord::media::MediaKey;
+use crate::discord::media::{Decoded, MediaKey};
 use crate::discord::snowflake::MessageId;
-use crate::ui::panels::chat::media::{MediaStore, Placement, Shape};
+use crate::ui::panels::chat::media::{fill_up, MediaStore, Placement, Shape};
 use crate::ui::panels::{fit, rgb};
 use crate::ui::theme::Theme;
 
@@ -86,29 +99,60 @@ pub enum Action {
     Quit,
 }
 
+/// Which of the channel's pictures the viewer opens on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Open {
+    /// The oldest one there is.
+    First,
+    /// The first one on this message, which is what `enter` on a message
+    /// means.
+    Message(MessageId),
+    /// This exact picture. A click landed on it, and a message with three
+    /// photographs on it would otherwise open on the wrong one.
+    Attachment { message: MessageId, url: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct Viewer {
     pub items: Vec<Item>,
     pub index: usize,
     pub zoom: Zoom,
+    /// How many pixels a cell is, where the terminal said. The aspect is
+    /// taken from it, and so is the pixel size of the rectangle a picture is
+    /// grown to fill.
+    cell: Option<(u16, u16)>,
     /// Cell aspect, for drawing a picture at its own shape.
     aspect: f32,
 }
 
 impl Viewer {
-    /// A viewer over `items`, opened on the first one belonging to `message`.
-    pub fn new(items: Vec<Item>, message: Option<MessageId>, aspect: f32) -> Option<Self> {
+    /// A viewer over `items`, opened on whichever of them `on` names.
+    pub fn new(items: Vec<Item>, on: Open, cell: Option<(u16, u16)>) -> Option<Self> {
         if items.is_empty() {
             return None;
         }
-        let index = message
-            .and_then(|id| items.iter().position(|i| i.message == id))
-            .unwrap_or(0);
+        // A picture named by its URL, then by its message, then the first
+        // there is: the same click that reaches an attachment carries both,
+        // and a link that has been re-signed since the list was built still
+        // lands on the right message.
+        let index = match &on {
+            Open::First => None,
+            Open::Message(id) => items.iter().position(|i| i.message == *id),
+            Open::Attachment { message, url } => items
+                .iter()
+                .position(|i| i.url == *url)
+                .or_else(|| items.iter().position(|i| i.message == *message)),
+        }
+        .unwrap_or(0);
         Some(Self {
             items,
             index,
             zoom: Zoom::Fit,
-            aspect: if aspect > 0.0 { aspect } else { 2.0 },
+            cell: cell.filter(|(w, h)| *w > 0 && *h > 0),
+            aspect: match cell {
+                Some((w, h)) if w > 0 && h > 0 => f32::from(h) / f32::from(w),
+                _ => 2.0,
+            },
         })
     }
 
@@ -177,13 +221,19 @@ impl Viewer {
             return box_;
         };
         let (cols, rows) = match self.zoom {
-            // One image pixel per terminal pixel. The cell size is not known
-            // here, so it is taken from the aspect and a sixteen-pixel column,
-            // which is what the media store assumes everywhere else.
-            Zoom::Actual => (
-                (w / 16).max(1) as u16,
-                ((h as f32 / (16.0 * self.aspect)).round() as u16).max(1),
-            ),
+            // One image pixel per terminal pixel, at the cell the terminal
+            // reported. Where it reported none, the aspect and a sixteen-pixel
+            // column, which is what the media store assumes everywhere else.
+            Zoom::Actual => {
+                let (cell_w, cell_h) = self
+                    .cell
+                    .map(|(cw, ch)| (f32::from(cw), f32::from(ch)))
+                    .unwrap_or((16.0, 16.0 * self.aspect));
+                (
+                    ((w as f32 / cell_w).round() as u16).max(1),
+                    ((h as f32 / cell_h).round() as u16).max(1),
+                )
+            }
             Zoom::Fit => {
                 let by_width = (
                     box_.width,
@@ -275,9 +325,36 @@ pub fn render(
 
     let size = store.size(&item.key);
     let picture = viewer.picture_rect(inner, size);
-    let caption = match size {
-        Some((w, h)) => format!("{w}x{h}  {}", item.url),
-        None => item.url.clone(),
+
+    // What the rectangle holds in pixels, which is what the picture is asked
+    // for and grown to. Only for a still: an animation is scaled by the core,
+    // every frame of it at once and inside a pixel budget, because growing one
+    // frame per redraw here would be thirty resizes a second on the thread
+    // that draws.
+    let pixels = match store.decoded(&item.key).as_deref() {
+        Some(Decoded::Animated { .. }) | Some(Decoded::Bytes(_)) => None,
+        Some(Decoded::Still { image, .. }) => Some((image.width(), image.height())),
+        // Nothing has arrived yet. The room is still what to ask for.
+        None => Some((0, 0)),
+    };
+    let room = pixels.and_then(|_| {
+        viewer.cell.map(|(cw, ch)| {
+            (
+                u32::from(picture.width) * u32::from(cw),
+                u32::from(picture.height) * u32::from(ch),
+            )
+        })
+    });
+    let grown = pixels
+        .zip(room)
+        .and_then(|(pixels, room)| fill_up(pixels, room));
+
+    let caption = match (size, grown) {
+        (Some((w, h)), Some(grown)) => {
+            format!("{w}x{h}  \u{d7}{:.1}  {}", grown.factor, item.url)
+        }
+        (Some((w, h)), None) => format!("{w}x{h}  {}", item.url),
+        (None, _) => item.url.clone(),
     };
     buf.set_string(
         inner.x,
@@ -293,6 +370,7 @@ pub fn render(
         key: item.key.clone(),
         shape: Shape::Picture,
         alt: item.filename.clone(),
+        room,
     }]
 }
 
@@ -337,6 +415,10 @@ mod tests {
     use super::*;
     use crate::ui::theme::tests_support::theme;
 
+    /// A measured cell, sixteen by thirty-two: the aspect of two these tests
+    /// were written against, now said in pixels.
+    const CELL: Option<(u16, u16)> = Some((16, 32));
+
     fn item(message: u64, n: u64) -> Item {
         Item {
             message: MessageId(message),
@@ -362,7 +444,7 @@ mod tests {
     /// from there rather than stopping at that message's last picture.
     #[test]
     fn it_opens_on_the_message_and_walks_the_channel() {
-        let mut v = Viewer::new(items(), Some(MessageId(2)), 2.0).expect("four pictures");
+        let mut v = Viewer::new(items(), Open::Message(MessageId(2)), CELL).expect("four pictures");
         assert_eq!(v.current().filename, "2.png");
         v.handle(key('l'));
         assert_eq!(v.current().filename, "3.png", "the same message's second");
@@ -376,12 +458,12 @@ mod tests {
 
     #[test]
     fn nothing_to_show_is_no_viewer_at_all() {
-        assert!(Viewer::new(Vec::new(), None, 2.0).is_none());
+        assert!(Viewer::new(Vec::new(), Open::First, CELL).is_none());
     }
 
     #[test]
     fn the_keys_ask_for_what_they_say() {
-        let mut v = Viewer::new(items(), None, 2.0).unwrap();
+        let mut v = Viewer::new(items(), Open::First, CELL).unwrap();
         assert_eq!(v.handle(key('o')), Action::Open(v.current().url.clone()));
         assert_eq!(v.handle(key('y')), Action::Copy(v.current().url.clone()));
         assert_eq!(v.handle(key('s')), Action::Save);
@@ -399,7 +481,7 @@ mod tests {
     /// `z` swaps the two sizes, and each one keeps the picture's shape.
     #[test]
     fn zoom_fits_then_shows_it_at_its_own_size() {
-        let mut v = Viewer::new(items(), None, 2.0).unwrap();
+        let mut v = Viewer::new(items(), Open::First, CELL).unwrap();
         let inner = Rect::new(0, 0, 80, 30);
 
         let fitted = v.picture_rect(inner, Some((400, 200)));
@@ -424,7 +506,7 @@ mod tests {
     /// A click on the left half goes back and on the right half goes on.
     #[test]
     fn the_halves_of_the_window_are_the_two_directions() {
-        let mut v = Viewer::new(items(), None, 2.0).unwrap();
+        let mut v = Viewer::new(items(), Open::First, CELL).unwrap();
         let area = Rect::new(0, 0, 100, 30);
         v.click(area, 90, 10);
         assert_eq!(v.index, 1);
@@ -434,7 +516,7 @@ mod tests {
 
     #[test]
     fn it_draws_a_frame_and_places_one_picture() {
-        let v = Viewer::new(items(), Some(MessageId(2)), 2.0).unwrap();
+        let v = Viewer::new(items(), Open::Message(MessageId(2)), CELL).unwrap();
         let t = theme("terminal");
         let area = Rect::new(0, 0, 100, 30);
         let mut buf = Buffer::empty(area);
@@ -450,5 +532,81 @@ mod tests {
             .join("\n");
         assert!(text.contains("2.png"), "{text}");
         assert!(text.contains("2/4"), "{text}");
+    }
+
+    /// A click lands on one attachment of a message that carries three, and
+    /// that is the one the viewer opens on -- not the message's first.
+    #[test]
+    fn it_opens_on_the_attachment_that_was_clicked() {
+        let v = Viewer::new(
+            items(),
+            Open::Attachment {
+                message: MessageId(2),
+                url: "https://cdn.invalid/3.png".into(),
+            },
+            CELL,
+        )
+        .expect("four pictures");
+        assert_eq!(v.current().filename, "3.png");
+
+        // A link that has been re-signed since the list was built is still
+        // that message's picture.
+        let v = Viewer::new(
+            items(),
+            Open::Attachment {
+                message: MessageId(2),
+                url: "https://cdn.invalid/3.png?ex=deadbeef".into(),
+            },
+            CELL,
+        )
+        .expect("four pictures");
+        assert_eq!(v.current().filename, "2.png", "it fell back to the message");
+    }
+
+    /// A picture smaller than the window is asked for at the window's pixels
+    /// and grown to them, and the meta line says by how much. With no measured
+    /// cell there are no pixels to talk about, and nothing is asked or grown.
+    #[test]
+    fn a_small_picture_is_grown_to_the_window_and_the_line_says_so() {
+        let v = Viewer::new(items(), Open::First, CELL).unwrap();
+        let mut store = MediaStore::new();
+        store.arrived(
+            v.current().key.clone(),
+            Ok(std::sync::Arc::new(Decoded::Still {
+                image: std::sync::Arc::new(image::RgbaImage::new(64, 64)),
+                natural: (64, 64),
+            })),
+        );
+        let t = theme("terminal");
+        let area = Rect::new(0, 0, 100, 30);
+        let mut buf = Buffer::empty(area);
+
+        let places = render(area, &mut buf, &t, &v, &store);
+        let room = places[0].room.expect("the window, in pixels");
+        assert_eq!(
+            room,
+            (
+                u32::from(places[0].rect.width) * 16,
+                u32::from(places[0].rect.height) * 32
+            )
+        );
+        let line: String = (0..area.width)
+            .map(|x| buf[(x, area.height - 3)].symbol().to_string())
+            .collect();
+        assert!(line.contains("64x64"), "{line:?}");
+        assert!(
+            line.contains('\u{d7}'),
+            "the factor is not on the line: {line:?}"
+        );
+
+        // No cell, no pixels: what it always did.
+        let v = Viewer::new(items(), Open::First, None).unwrap();
+        let mut buf = Buffer::empty(area);
+        let places = render(area, &mut buf, &t, &v, &store);
+        assert_eq!(places[0].room, None);
+        let line: String = (0..area.width)
+            .map(|x| buf[(x, area.height - 3)].symbol().to_string())
+            .collect();
+        assert!(!line.contains('\u{d7}'), "{line:?}");
     }
 }

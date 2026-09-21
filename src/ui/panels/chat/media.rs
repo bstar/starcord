@@ -107,6 +107,9 @@ pub struct MediaStore {
     frame: u64,
     requests: Vec<MediaRequest>,
     cancels: Vec<MediaKey>,
+    /// The one picture this application has scaled up itself -- see
+    /// [`Scaled`].
+    scaled: Option<Scaled>,
     /// The largest decode ever asked for, per picture, and whether it was
     /// asked to fill its box.
     ///
@@ -129,6 +132,86 @@ struct Asked {
     h: u32,
     filled: Option<(u32, u32)>,
 }
+
+/// The one picture this application has grown, kept between frames.
+///
+/// Scaling happens on the drawing thread, so it must not happen per frame:
+/// the copy is rebuilt only when the picture, the frame of it or the size
+/// asked for changes, and there is one of these because one picture at a
+/// time is ever grown -- the media viewer's, which covers the window.
+#[derive(Debug)]
+struct Scaled {
+    key: MediaKey,
+    frame: usize,
+    pixels: (u32, u32),
+    /// [`ImageId::of_arc`] of `image`. The protocol is built from these
+    /// pixels, so it has to be named after them rather than after the
+    /// picture they were made from.
+    id: ImageId,
+    image: Arc<image::RgbaImage>,
+}
+
+/// What [`MediaStore::scale`] answered.
+#[derive(Debug)]
+struct Grown {
+    id: ImageId,
+    image: Arc<image::RgbaImage>,
+    /// The identity the copy this one replaced went under, which now names
+    /// nothing: `ImageId::of_arc` is an address, and the next picture along
+    /// may be handed the one just freed. The caller makes the terminal
+    /// forget it.
+    stale: Option<ImageId>,
+}
+
+/// How much bigger a picture has to be made to fill a box of pixels, and the
+/// size to make it. `None` when it already fills the box or overflows it.
+///
+/// [`starkit::ratatui_image::Resize::Fit`] never upsizes -- its own
+/// documentation says so -- so a picture smaller than the rectangle it was
+/// given sits in the middle of it at whatever size it happens to be, and
+/// growing it is this application's own work: scale the pixels to exactly
+/// the size of the rectangle they will be placed over, and hand *that*
+/// picture to the terminal. This is the whole of the arithmetic, and it is
+/// pure so that the label the viewer writes and the pixels the paint pass
+/// makes cannot disagree about the factor.
+pub fn fill_up(picture: (u32, u32), room: (u32, u32)) -> Option<Grow> {
+    let ((w, h), (room_w, room_h)) = (picture, room);
+    if w == 0 || h == 0 || room_w == 0 || room_h == 0 {
+        return None;
+    }
+    // The rectangle already has the picture's own shape, so the two ratios
+    // are within a rounding of each other; the smaller is taken, so the
+    // result cannot spill past the rectangle and be shrunk straight back by
+    // the encoder.
+    let factor = (f64::from(room_w) / f64::from(w)).min(f64::from(room_h) / f64::from(h));
+    if !factor.is_finite() || factor <= 1.0 {
+        return None;
+    }
+    Some(Grow {
+        pixels: (
+            ((f64::from(w) * factor).round() as u32).clamp(1, room_w),
+            ((f64::from(h) * factor).round() as u32).clamp(1, room_h),
+        ),
+        factor: factor as f32,
+    })
+}
+
+/// What [`fill_up`] decided: the pixels to make, and how much bigger than
+/// itself the picture ends up. The factor is always above one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Grow {
+    pub pixels: (u32, u32),
+    pub factor: f32,
+}
+
+/// The filter a picture is grown with.
+///
+/// Catmull-Rom rather than Lanczos3, which is the choice STAR/FOLD's preview
+/// made for the same reason: both are sharp enough at these sizes, and
+/// Lanczos3's negative lobes ring on a hard edge. A conversation's pictures
+/// are as often a screenshot of text or a diagram as a photograph, and a halo
+/// around every letter is the worse of the two failures.
+const SMOOTH: image::imageops::FilterType = image::imageops::FilterType::CatmullRom;
 
 impl MediaStore {
     pub fn new() -> Self {
@@ -165,15 +248,28 @@ impl MediaStore {
         self.decoded(key)?.natural()
     }
 
-    /// Ask for this picture again, larger, if it has only been fetched small.
+    /// Ask for this picture for a box measured in pixels, not in cells.
     ///
-    /// For the media viewer, which covers the window: what the message list
-    /// asked for was sized to a slot a few rows tall.
-    pub fn want_bigger(&mut self, key: &MediaKey, cols: u16, rows: u16) {
-        let want = (
-            u32::from(cols).max(1) * PX_PER_COL,
-            u32::from(rows).max(1) * PX_PER_ROW,
-        );
+    /// For the media viewer, which covers the window and knows how many
+    /// pixels a cell is: what the message list asked for was sized to a slot
+    /// a few rows tall, through the estimate above. Nothing is asked to
+    /// *fill* the box -- a placement that names its own pixels grows the
+    /// picture itself, with the size the terminal reported and a filter
+    /// chosen for it, and a fill as well would be a second decode of one
+    /// picture whose arrival would decide how sharp it looked.
+    ///
+    /// Only ever asks for more than it asked for last time, since a picture
+    /// genuinely smaller than the box never grows and a plain "ask again"
+    /// would ask on every frame for ever.
+    pub fn want_pixels(&mut self, key: &MediaKey, want: (u32, u32)) {
+        let want = (want.0.max(1), want.1.max(1));
+        let frame = self.frame;
+        let entry = self.entries.entry(key.clone()).or_insert(Entry {
+            state: MediaState::Missing,
+            seen: frame,
+        });
+        entry.seen = frame;
+        let loading = matches!(entry.state, MediaState::Loading);
         let asked = self.asked.get(key).copied().unwrap_or_default();
         if want.0 <= asked.w && want.1 <= asked.h {
             return;
@@ -186,11 +282,12 @@ impl MediaStore {
                 ..asked
             },
         );
-        let frame = self.frame;
+        if loading {
+            return;
+        }
         if let Some(entry) = self.entries.get_mut(key) {
-            entry.seen = frame;
-            if matches!(entry.state, MediaState::Loading) {
-                return;
+            if matches!(entry.state, MediaState::Missing) {
+                entry.state = MediaState::Loading;
             }
         }
         self.requests.push(MediaRequest {
@@ -203,6 +300,56 @@ impl MediaStore {
             priority: MediaPriority::Visible,
             generation: self.generation,
         });
+    }
+
+    /// The pixels to draw for a placement that asked to grow, scaled to
+    /// `pixels` if the copy already held is not that one.
+    ///
+    /// The old copy is dropped only once the new one has been allocated, so
+    /// the two cannot share an address, and the identity the old one went
+    /// under comes back so the caller can make the terminal let go of the
+    /// protocol built from it before anything else inherits that address.
+    fn scale(
+        &mut self,
+        key: &MediaKey,
+        frame: usize,
+        source: &Arc<image::RgbaImage>,
+        pixels: (u32, u32),
+    ) -> Grown {
+        if let Some(held) = self
+            .scaled
+            .as_ref()
+            .filter(|s| s.key == *key && s.frame == frame && s.pixels == pixels)
+        {
+            return Grown {
+                id: held.id,
+                image: Arc::clone(&held.image),
+                stale: None,
+            };
+        }
+        let started = std::time::Instant::now();
+        let image = Arc::new(image::imageops::resize(
+            &**source, pixels.0, pixels.1, SMOOTH,
+        ));
+        tracing::debug!(
+            "grew a picture to {}x{} in {:?}",
+            pixels.0,
+            pixels.1,
+            started.elapsed()
+        );
+        let id = ImageId::of_arc(&image);
+        let stale = self
+            .scaled
+            .replace(Scaled {
+                key: key.clone(),
+                frame,
+                pixels,
+                id,
+                image: Arc::clone(&image),
+            })
+            .map(|old| old.id)
+            .filter(|old| *old != id);
+        Grown { id, image, stale }
     }
 
     /// Ask for a picture nothing said the size of.
@@ -353,8 +500,23 @@ impl MediaStore {
     }
 
     /// Finish a frame: cancel what left the viewport, and bound the pixels.
+    ///
+    /// The scaled copy goes with them when the picture it was made from is no
+    /// longer on screen -- the viewer closed, or moved on to the next
+    /// picture. Safe here and nowhere else: the caller has already told the
+    /// terminal to forget every protocol this frame did not draw, so nothing
+    /// holds an identity that is about to become a freed address.
     pub fn end_frame(&mut self) {
         let frame = self.frame;
+        if let Some(scaled) = &self.scaled {
+            let on_screen = self
+                .entries
+                .get(&scaled.key)
+                .is_some_and(|entry| entry.seen == frame);
+            if !on_screen {
+                self.scaled = None;
+            }
+        }
         for (key, entry) in self.entries.iter_mut() {
             if entry.seen != frame && matches!(entry.state, MediaState::Loading) {
                 // Queued rather than in flight, as far as this side knows. The
@@ -436,6 +598,13 @@ pub struct Placement {
     /// What to say in the cells when the picture will never arrive: the chip
     /// the renderer would have drawn instead of it.
     pub alt: String,
+    /// How many pixels the rectangle holds, where the terminal has measured a
+    /// cell and this placement wants the picture grown to fill it. The media
+    /// viewer is the one that does, and it is also what the core is asked for
+    /// -- pixels rather than the cell-count estimate, and as they are rather
+    /// than filled, since the growing happens here. `None` is every other
+    /// placement: the estimate, and whatever the core's own fill made of it.
+    pub room: Option<(u32, u32)>,
 }
 
 /// What one frame's painting produced, for the caller to act on.
@@ -478,7 +647,13 @@ pub fn paint(
             continue;
         }
 
-        let state = store.want(&place.key, place.rect.width, place.rect.height);
+        let state = match place.room {
+            Some(room) => {
+                store.want_pixels(&place.key, room);
+                store.state(&place.key)
+            }
+            None => store.want(&place.key, place.rect.width, place.rect.height),
+        };
         let MediaState::Ready(decoded) = &state else {
             fallback(place, rect, buf, theme, &state);
             continue;
@@ -498,10 +673,23 @@ pub fn paint(
             out.animated.push(place.key.clone());
         }
 
-        // The frame is part of what the protocol was built from, so two frames
+        // A picture smaller than the rectangle it was given is grown to fill
+        // it, which `Resize::Fit` will not do. The pixels handed over are then
+        // this application's own, so they carry their own identity: the frame
+        // is part of what a protocol is built from either way, so two frames
         // of one picture are two entries rather than one that flickers.
-        let id = ImageId::of(&(&place.key, frame));
-        if draw_one(graphics, id, img, rect, clipped, buf) {
+        let grown = place
+            .room
+            .and_then(|room| fill_up(img.dimensions(), room))
+            .map(|grow| store.scale(&place.key, frame, img, grow.pixels));
+        if let Some(stale) = grown.as_ref().and_then(|g| g.stale) {
+            graphics.forget(stale);
+        }
+        let (id, pixels) = match &grown {
+            Some(grown) => (grown.id, &grown.image),
+            None => (ImageId::of(&(&place.key, frame)), img),
+        };
+        if draw_one(graphics, id, pixels, rect, clipped, buf) {
             out.drawn.insert(id);
         }
         if matches!(place.shape, Shape::Emoji { .. }) {
@@ -694,6 +882,14 @@ mod tests {
         })
     }
 
+    /// What a request asked for: the box, and whether it was to be filled.
+    fn fill_of(r: &MediaRequest) -> (u32, u32, bool) {
+        match r.want {
+            Want::Decoded { max_w, max_h, fill } => (max_w, max_h, fill),
+            Want::Bytes => panic!("bytes"),
+        }
+    }
+
     fn place(key: MediaKey, rect: Rect, clip: Rect) -> Placement {
         Placement {
             rect,
@@ -702,6 +898,7 @@ mod tests {
             key,
             shape: Shape::Picture,
             alt: String::new(),
+            room: None,
         }
     }
 
@@ -799,10 +996,6 @@ mod tests {
     /// its box grows.
     #[test]
     fn a_slot_asks_for_its_box_and_a_measured_picture_is_asked_again() {
-        let fill_of = |r: &MediaRequest| match r.want {
-            Want::Decoded { max_w, max_h, fill } => (max_w, max_h, fill),
-            Want::Bytes => panic!("bytes"),
-        };
         let mut store = MediaStore::new();
         store.begin_frame();
         store.want_measure(&key(5));
@@ -964,6 +1157,7 @@ mod tests {
                     name: format!("e{i}"),
                 },
                 alt: String::new(),
+                room: None,
             });
         }
         store.begin_frame();
@@ -980,5 +1174,101 @@ mod tests {
             painted.emoji, EMOJI_PER_FRAME,
             "the cap was not what stopped it"
         );
+    }
+
+    /// Growing is one way only: to the box when the picture is smaller than
+    /// it, and nothing at all when it already fills it or overflows it --
+    /// scaling *down* is what the encoder's own `Fit` is for, and doing it
+    /// here would be the same work twice.
+    #[test]
+    fn a_picture_grows_to_its_box_and_never_shrinks_to_it() {
+        // Exactly the box: there is nothing to make.
+        assert_eq!(fill_up((800, 600), (800, 600)), None);
+        // Larger in one dimension is still larger.
+        assert_eq!(fill_up((1600, 600), (800, 600)), None);
+        assert_eq!(fill_up((1600, 1200), (800, 600)), None);
+
+        // Half the size of the box, and the box has the same shape: twice.
+        let grown = fill_up((400, 300), (800, 600)).expect("it is smaller than the box");
+        assert_eq!(grown.pixels, (800, 600));
+        assert!((grown.factor - 2.0).abs() < 1e-6, "{grown:?}");
+
+        // A box that is not quite the picture's shape grows by the smaller of
+        // the two ratios, so the result cannot spill past the rectangle and be
+        // shrunk straight back by the encoder.
+        let grown = fill_up((100, 100), (500, 240)).expect("it is smaller than the box");
+        assert_eq!(grown.pixels, (240, 240));
+        assert!((grown.factor - 2.4).abs() < 1e-6, "{grown:?}");
+
+        // Nothing to divide by.
+        assert_eq!(fill_up((0, 100), (500, 500)), None);
+        assert_eq!(fill_up((100, 100), (0, 500)), None);
+    }
+
+    /// The scaled copy is made once and handed out again, and the identity the
+    /// last one went under comes back so the terminal can be told to let go of
+    /// the protocol built from it.
+    #[test]
+    fn one_scaled_copy_is_kept_and_the_old_identity_comes_back() {
+        let mut store = MediaStore::new();
+        let source = Arc::new(image::RgbaImage::new(10, 10));
+
+        let first = store.scale(&key(1), 0, &source, (40, 40));
+        assert_eq!(first.image.dimensions(), (40, 40));
+        assert!(first.stale.is_none(), "nothing preceded it");
+
+        let again = store.scale(&key(1), 0, &source, (40, 40));
+        assert_eq!(again.id, first.id, "it was built a second time");
+        assert!(again.stale.is_none());
+
+        // A different box is different pixels, under a different identity, and
+        // the one before it is now nothing.
+        let bigger = store.scale(&key(1), 0, &source, (80, 80));
+        assert_ne!(bigger.id, first.id);
+        assert_eq!(bigger.stale, Some(first.id));
+        assert_eq!(bigger.image.dimensions(), (80, 80));
+
+        // So is a different picture, and a different frame of one.
+        let other = store.scale(&key(2), 0, &source, (80, 80));
+        assert_eq!(other.stale, Some(bigger.id));
+        let frame = store.scale(&key(2), 1, &source, (80, 80));
+        assert_eq!(frame.stale, Some(other.id));
+    }
+
+    /// A placement that names its pixels is asked for at those pixels, as they
+    /// are rather than filled, and only ever again for more.
+    #[test]
+    fn a_placement_that_names_pixels_asks_for_them_once() {
+        let mut store = MediaStore::new();
+        store.begin_frame();
+        store.want_pixels(&key(7), (1200, 800));
+        let asked = store.take_requests();
+        assert_eq!(asked.len(), 1);
+        assert_eq!(fill_of(&asked[0]), (1200, 800, false));
+
+        store.arrived(key(7), Ok(still()));
+        store.begin_frame();
+        store.want_pixels(&key(7), (1200, 800));
+        assert!(store.take_requests().is_empty(), "the same box asked again");
+        store.want_pixels(&key(7), (1600, 800));
+        assert_eq!(store.take_requests().len(), 1, "a wider box asks again");
+    }
+
+    /// The grown copy is let go of once the picture it was made from is off
+    /// the screen, which is what closing the viewer is.
+    #[test]
+    fn the_grown_copy_goes_when_the_picture_does() {
+        let mut store = MediaStore::new();
+        let source = Arc::new(image::RgbaImage::new(10, 10));
+        store.begin_frame();
+        store.arrived(key(1), Ok(still()));
+        store.want_pixels(&key(1), (40, 40));
+        store.scale(&key(1), 0, &source, (40, 40));
+        store.end_frame();
+        assert!(store.scaled.is_some(), "it was on screen this frame");
+
+        store.begin_frame();
+        store.end_frame();
+        assert!(store.scaled.is_none(), "nothing on screen is it any more");
     }
 }

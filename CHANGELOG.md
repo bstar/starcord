@@ -7,6 +7,22 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- **The viewer grows a picture to the window.** `Resize::Fit` never
+  upsizes, so a picture smaller than the overlay -- most of what a
+  conversation carries -- sat in the middle of it at whatever size it
+  happened to be, which is the one thing somebody who opened the viewer
+  was not asking for. The rectangle is now measured in pixels, through
+  STAR/KIT's `Graphics::cell_size`, the picture is asked for at that many
+  rather than at a cell-count estimate, and anything smaller is scaled up
+  to fill it with Catmull-Rom before the terminal is handed it. The meta
+  line says `×2.4` when it grew one. One scaled copy is kept, per
+  picture and per rectangle, so a redraw costs nothing, and the identity
+  the last one was cached under is forgotten as it is replaced. The
+  overlay also no longer asks for its picture twice: the second ask raced
+  the first, and whichever the core started was the one the other was
+  dropped as a duplicate of, so the viewer drew the message list's
+  thumbnail about half the time. "Actual size" uses the measured cell too,
+  rather than assuming sixteen pixels across.
 - **An inbox.** The conversation module, while nothing is open and on
   `alt+i`, lists what is waiting: every unread direct message, newest
   first, with its last message under the name -- who, when and what, with
