@@ -184,7 +184,12 @@ pub fn fill_up(picture: (u32, u32), room: (u32, u32)) -> Option<Grow> {
     // result cannot spill past the rectangle and be shrunk straight back by
     // the encoder.
     let factor = (f64::from(room_w) / f64::from(w)).min(f64::from(room_h) / f64::from(h));
-    if !factor.is_finite() || factor <= 1.0 {
+    // Under a twentieth there is nothing to see. A rectangle is a whole number
+    // of cells and a picture is not, so one that already fills its box lands
+    // just above one every time, and a resize pass for three per cent costs the
+    // frame it happens on and shows nobody anything -- it would print as
+    // `×1.0` on the meta line, which is a way of saying "not really".
+    if !factor.is_finite() || (factor * 10.0).round() < 11.0 {
         return None;
     }
     Some(Grow {
@@ -197,7 +202,8 @@ pub fn fill_up(picture: (u32, u32), room: (u32, u32)) -> Option<Grow> {
 }
 
 /// What [`fill_up`] decided: the pixels to make, and how much bigger than
-/// itself the picture ends up. The factor is always above one.
+/// itself the picture ends up. The factor is always at least a twentieth above
+/// one, which is the least the meta line can say.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Grow {
     pub pixels: (u32, u32),
@@ -1184,6 +1190,13 @@ mod tests {
     fn a_picture_grows_to_its_box_and_never_shrinks_to_it() {
         // Exactly the box: there is nothing to make.
         assert_eq!(fill_up((800, 600), (800, 600)), None);
+        // And near enough is the same answer: a rectangle is a whole number of
+        // cells and a picture is not, so this is what filling one looks like.
+        assert_eq!(fill_up((1000, 1000), (1020, 1020)), None);
+        assert!(
+            fill_up((1000, 1000), (1060, 1060)).is_some(),
+            "a twentieth is worth the pass"
+        );
         // Larger in one dimension is still larger.
         assert_eq!(fill_up((1600, 600), (800, 600)), None);
         assert_eq!(fill_up((1600, 1200), (800, 600)), None);

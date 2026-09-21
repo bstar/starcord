@@ -29,7 +29,9 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   STAR/KIT's `Graphics::cell_size`, the picture is asked for at that many
   rather than at a cell-count estimate, and anything smaller is scaled up
   to fill it with Catmull-Rom before the terminal is handed it. The meta
-  line says `×2.4` when it grew one. One scaled copy is kept, per
+  line says `×2.4` when it grew one; a picture already within a
+  twentieth of the box is left alone, since a rectangle is a whole number
+  of cells and a picture is not. One scaled copy is kept, per
   picture and per rectangle, so a redraw costs nothing, and the identity
   the last one was cached under is forgotten as it is replaced. The
   overlay also no longer asks for its picture twice: the second ask raced
