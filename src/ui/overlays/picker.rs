@@ -90,8 +90,17 @@ pub enum Kind {
 /// One thing the emoji grid offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Emoji {
-    /// A unicode emoji and its shortcode, with no colon.
-    Unicode { ch: String, name: String },
+    /// A unicode emoji and its shortcode, with no colon. `codes` is every
+    /// shortcode it has, `name` being the first; `terms` is the rest of what
+    /// the query may find it by: the words of its Unicode name and the plain
+    /// words people reach for (see [`SYNONYMS`]). Both lowercase and
+    /// space-separated.
+    Unicode {
+        ch: String,
+        name: String,
+        codes: String,
+        terms: String,
+    },
     /// One of the account's own.
     Custom {
         name: String,
@@ -155,6 +164,126 @@ pub enum Action {
     Quit,
 }
 
+/// How a query found an emoji. Lower is better, and it is the first sort key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Rank {
+    /// The query is one of its shortcodes: `joy` is `:joy:` before anything
+    /// that merely contains it.
+    Shortcode,
+    /// A shortcode starts with the query.
+    ShortcodePrefix,
+    /// A word of its name or a synonym starts with the query: `laugh` finds
+    /// "rolling on the floor laughing" and `:joy:` through "laughing".
+    Word,
+    /// The query is somewhere inside a name.
+    Inside,
+}
+
+/// Where the query lands on one emoji, or `None` for no match at all.
+fn rank(emoji: &Emoji, needle: &str) -> Option<Rank> {
+    if needle.is_empty() {
+        return Some(Rank::Inside);
+    }
+    let name = emoji.name().to_lowercase();
+    let (codes, terms) = match emoji {
+        Emoji::Unicode { codes, terms, .. } => (codes.as_str(), terms.as_str()),
+        Emoji::Custom { .. } => (name.as_str(), ""),
+    };
+    let mut shortcodes = codes.split(' ');
+    if shortcodes.clone().any(|code| code == needle) {
+        return Some(Rank::Shortcode);
+    }
+    if shortcodes.any(|code| code.starts_with(needle)) {
+        return Some(Rank::ShortcodePrefix);
+    }
+    // A word boundary inside a shortcode counts: `smile` finds `:sweat_smile:`
+    // the way it finds "smiling face".
+    let starts_a_word = |text: &str| {
+        text.split(|c: char| c == ' ' || c == '_' || c == '-')
+            .any(|word| word.starts_with(needle))
+    };
+    if starts_a_word(codes) || starts_a_word(terms) {
+        return Some(Rank::Word);
+    }
+    (codes.contains(needle) || terms.contains(needle)).then_some(Rank::Inside)
+}
+
+/// The words people type that the Unicode names and GitHub shortcodes do
+/// not contain. `laugh` is the case that started it: the four laughing faces
+/// are `:joy:`, `:rofl:`, `:laughing:` and `:sweat_smile:`, and a search for
+/// the feeling found one of them. Keyed by the emoji itself so a shortcode
+/// rename upstream cannot silently detach a line.
+const SYNONYMS: &[(&str, &str)] = &[
+    ("😂", "laugh laughing lol haha funny tears crying"),
+    ("🤣", "laugh laughing lol lmao haha funny"),
+    ("😆", "laugh lol haha funny"),
+    ("😅", "laugh nervous phew"),
+    ("😹", "laugh lol funny cat"),
+    ("💀", "dead lol lmao"),
+    ("😀", "happy"),
+    ("😃", "happy"),
+    ("😄", "happy"),
+    ("😁", "happy"),
+    ("🥲", "happy sad bittersweet"),
+    ("😢", "sad tears"),
+    ("😭", "sad cry tears bawling"),
+    ("😡", "angry mad furious"),
+    ("😠", "mad"),
+    ("😤", "angry huff"),
+    ("❤️", "love"),
+    ("😍", "love"),
+    ("🥰", "love"),
+    ("👍", "yes ok like good agree"),
+    ("👎", "no dislike bad disagree"),
+    ("✅", "yes done ok check tick"),
+    ("❌", "no wrong"),
+    ("🎉", "party celebrate congrats hooray"),
+    ("🥳", "party celebrate birthday"),
+    ("🙏", "thanks thank you please"),
+    ("🔥", "lit hot"),
+    ("🤔", "hmm think"),
+    ("😎", "cool"),
+    ("👀", "look watching"),
+    ("😴", "sleep tired"),
+    ("💤", "sleep tired"),
+    ("😱", "scared fear"),
+    ("💯", "perfect"),
+    ("👏", "applause bravo"),
+    ("👋", "hi hello bye"),
+    ("👌", "ok fine"),
+    ("🤷", "idk dunno whatever"),
+    ("🤦", "ugh doh"),
+    ("🙄", "whatever eyeroll"),
+    ("😏", "sly"),
+    ("🙃", "sarcasm"),
+    ("🥺", "please puppy"),
+    ("🤗", "hug"),
+    ("😳", "embarrassed blush"),
+    ("😬", "awkward yikes"),
+    ("😐", "meh"),
+    ("🫠", "melting dying"),
+    ("🤡", "clown"),
+    ("🫡", "salute yes sir"),
+    ("🤝", "deal agree"),
+    ("✨", "sparkle shiny"),
+];
+
+/// Everything one unicode emoji can be found by: its shortcodes, and then
+/// its name and synonyms. Lowercase, space-separated.
+fn search_terms(emoji: &emojis::Emoji) -> (String, String) {
+    let codes = emoji
+        .shortcodes()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut terms = emoji.name().to_lowercase();
+    if let Some((_, words)) = SYNONYMS.iter().find(|(ch, _)| *ch == emoji.as_str()) {
+        terms.push(' ');
+        terms.push_str(words);
+    }
+    (codes, terms)
+}
+
 pub struct Picker {
     pub kind: Kind,
     pub query: TextInput,
@@ -211,9 +340,12 @@ impl Picker {
             let Some(shortcode) = emoji.shortcode() else {
                 continue;
             };
+            let (codes, terms) = search_terms(emoji);
             all.push(Emoji::Unicode {
                 ch: emoji.as_str().to_string(),
                 name: shortcode.to_string(),
+                codes,
+                terms,
             });
         }
         let mut picker = Self {
@@ -302,22 +434,28 @@ impl Picker {
 
     fn filter(&mut self) {
         let needle = self.query.text().trim().to_lowercase();
-        self.shown = self
+        let mut ranked: Vec<(Rank, &Emoji)> = self
             .all
             .iter()
-            .filter(|e| needle.is_empty() || e.name().to_lowercase().contains(&needle))
-            .take(MAX_EMOJI)
-            .cloned()
+            .filter_map(|e| rank(e, &needle).map(|r| (r, e)))
             .collect();
-        // The account's own first, then the shortest name: `:smile:` before
-        // `:smiley_cat:` for a query of `smil`.
-        self.shown.sort_by_key(|e| {
+        // How well it matched first, then the account's own, then the
+        // shortest name: `:smile:` before `:smiley_cat:` for a query of
+        // `smil`. Sorted before the cap, or the cap would keep whichever
+        // happened to come first in Unicode order and drop a better match.
+        ranked.sort_by_key(|(r, e)| {
             (
+                *r,
                 matches!(e, Emoji::Unicode { .. }),
                 e.name().len(),
                 e.name().to_string(),
             )
         });
+        self.shown = ranked
+            .into_iter()
+            .take(MAX_EMOJI)
+            .map(|(_, e)| e.clone())
+            .collect();
         self.cursor = 0;
         self.scroll = 0;
     }
@@ -887,6 +1025,40 @@ mod tests {
         typed(&mut p, "zzzz");
         assert!(p.shown().is_empty());
         assert_eq!(p.choose(), Action::Taken, "nothing chosen is nothing done");
+    }
+
+    /// A feeling finds the faces that show it, not only the one whose
+    /// shortcode happens to contain the word.
+    #[test]
+    fn a_word_finds_every_emoji_it_describes() {
+        let mut p = emoji_picker();
+        typed(&mut p, "laugh");
+        let shown: Vec<&str> = p
+            .shown()
+            .iter()
+            .map(|e| match e {
+                Emoji::Unicode { ch, .. } => ch.as_str(),
+                Emoji::Custom { name, .. } => name.as_str(),
+            })
+            .collect();
+        for face in ["😂", "🤣", "😆", "😅"] {
+            assert!(shown.contains(&face), "{face} is missing from {shown:?}");
+        }
+        assert!(
+            shown.iter().position(|c| *c == "😆") < shown.iter().position(|c| *c == "😹"),
+            "`laughing` starts with the query and comes before a synonym: {shown:?}"
+        );
+
+        // A shortcode typed in full is first, ahead of anything that merely
+        // contains it.
+        let mut p = emoji_picker();
+        typed(&mut p, "joy");
+        assert!(matches!(&p.shown()[0], Emoji::Unicode { ch, .. } if ch == "😂"));
+
+        // The Unicode name works when the shortcode is unguessable.
+        let mut p = emoji_picker();
+        typed(&mut p, "thumbs");
+        assert!(matches!(&p.shown()[0], Emoji::Unicode { ch, .. } if ch == "👍"));
     }
 
     /// The three things `Enter` can mean, spelled out.

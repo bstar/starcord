@@ -9,19 +9,19 @@ expression: "render(&mut app, 100, 30)"
 ╔═ CHANNELS — First Gu╔═ emoji ══════════════════════════════════════════════╗═════════════════════╗
 ║                     ║› pe                                                  ║            settings ║
 ║# general (2)        ║                                                      ║                     ║
-╚═════════════════════║pe  🖊️   🍐   🇵🇪   🍑   🍇   🔁   🎬   🫛   🦚   🥜   ✏️   🐧     ║═════════════════════╝
-╔═ CONVERSATION — #gen║😔   🔈   🎺   ✉️   🏙️   🧜   📰   🙆   📎   😣   🚤   🦸   🔭     ║═════════════════════╗
-║                     ║🇨🇻   🇬🇵   🌶️   🔬   👐   😮   🖇️   🧫   🔂   🫑   🧏   📢   🧑‍🦲     ║arch  pins  settings ║
-║  the picture I took ║🩺   🖋️   ☮️   🧧   🧖   🦹   🪚   ☂️   🧻   🙊   🗣️   🦸‍♂️   🧔     ║                     ║
-║  [image 1024x768 har║🗞️   🚷   🫂   🤺   💬   🏰   🙍   🤾   🤹   🧎   🎭   🧑‍🦰   🫄     ║                     ║
-║  Jordan  09:15      ║🧍   🦸‍♀️   ↖️   📂   🤵   👰   🦹‍♂️   ↗️   🇨🇵   👁️‍🗨️   📨   🔏   🧑‍🦱     ║                     ║
-║  https://example.inv║🧑‍🦳   🫅   🇸🇹   🤐   🗨️   👳   🦹‍♀️   🚟   👱   📩   🧑‍🍼   💁   ⛹️     ║                     ║
-║  │ A page title     ║🏤   🧑‍🤝‍🧑   🫣   🧑‍🦯   🧑‍🦽   🧑‍🦼   💠   🫢                         ║                     ║
-║  │ Two sentences of ║                                                      ║                     ║
-║  │ second is there s║                                                      ║                     ║
-║  Alex  09:20        ║                                                      ║                     █
-║  https://tenor.inval║                                                      ║                     █
-║  [gif ▶ a cat, falli║                                                      ║                     █
+╚═════════════════════║pe  🖊️   📝   🍐   🇵🇪   🍑   🫛   🦚   🥜   ✏️   🐧   😔   😣     ║═════════════════════╝
+╔═ CONVERSATION — #gen║🧫   🧑‍🦲   ☮️   🫂   🤺   🎭   🧑‍🦰   🤵   👰   🧑‍🦱   🧑‍🦳   🫅   👳     ║═════════════════════╗
+║                     ║🧑‍🍼   🧑‍🤝‍🧑   🧑‍🦯   🧑‍🦽   🧑‍🦼   💯   🙇   🛀   🧑   🤷   🏃   🏄   👯     ║arch  pins  settings ║
+║  Jordan  09:15      ║🏌️   💇   💆   🙅   🚣   🏊   🚶   🧗   🤦   🚴   🙆   🤼   🌶️     ║                     ║
+║  https://example.inv║🤽   🫑   🧏   🧓   🤸   🖋️   🙎   🙋   🧖   🛌   🧔   🧘   🚷     ║                     ║
+║  ▌ Example          ║🏋️   🙍   🤾   🤹   🧎   🫄   🧍   🔏   🚵   👱   👲   💁   ⛹️     ║                     ║
+║  ▌ A page title     ║🫣   🕴️   🅰️   🅱️   🆎   🇪🇺   🅾️   📖   🎁   🤗   🔇   🎉   🔉     ║                     ║
+║  ▌ Two sentences of ║🈺   🍇   🔁   🎬   🐬   🔈   🎺   ✉️   😦   🏙️   🧜   📰   📎     ║re so                ║
+║  ▌ the wrapping has ║🚤   🦸   🔭   🇨🇻   🇬🇵   🔊   🔬   👐   😮   🖇️   🔂   🌆   📢     ║                     ║
+║  Alex  09:20        ║🩺   🔠   🌍   🧧   🦹   🪚   🏔️   ☂️   🧻   🙊   🗣️   🦸‍♂️   🗞️     ║                     ║
+║  https://tenor.inval║💬   🏰   🏮   🦸‍♀️   ↖️   🚄   📂   🦹‍♂️   ↗️   🇨🇵   👁️‍🗨️   📨   📬     ║                     ║
+║  ▌ Tenor            ║🇸🇹   🤐   🗨️   🦹‍♀️   🚟   📩   🏤   📭   💠   🫢                 ║                     █
+║  ▌ [gif ▶ a cat, fal║                                                      ║                     █
 ╚═════════════════════║:pepe:                                                ║═════════════════════╝
 ╔═ COMPOSE ═══════════╚══════════════ enter insert · ctrl+g GIFs · esc close ╝═════════════════════╗
 ║                                                                               attach  emoji  gif ║
