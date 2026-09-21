@@ -12,16 +12,16 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  the picture I took   ╔═ message ════════════════════════════════════════╗                       ║
-║  [image 1024x768 harbo║what can be done                                  ║                       ║
-║  Jordan  09:15        ║ reply  r                                         ║                       ║
-║  https://example.inval║ reply, no ping  R                                ║                       ║
-║  │ A page title       ║ react  +                                         ║                       ║
-║  │ Two sentences of de║ copy the text  y                                 ║                       ║
-║  │ second is there so ║ open elsewhere  o                                ║                       ║
-║  Alex  09:20          ║ copy a link  ctrl+y                              ║                       █
-║  https://tenor.invalid║                                                  ║                       █
-║  [gif ▶ a cat, falling╚════════════════════════ enter change · esc close ╝                       █
+║  Jordan  09:15        ╔═ message ════════════════════════════════════════╗                       ║
+║  https://example.inval║what can be done                                  ║                       ║
+║  ▌ Example            ║ reply  r                                         ║                       ║
+║  ▌ A page title       ║ reply, no ping  R                                ║                       ║
+║  ▌ Two sentences of de║ react  +                                         ║here so                ║
+║  ▌ the wrapping has so║ copy the text  y                                 ║                       ║
+║  Alex  09:20          ║ open elsewhere  o                                ║                       ║
+║  https://tenor.invalid║ copy a link  ctrl+y                              ║                       ║
+║  ▌ Tenor              ║                                                  ║                       █
+║  ▌ [gif ▶ a cat, falli╚════════════════════════ enter change · esc close ╝                       █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║

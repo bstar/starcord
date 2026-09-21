@@ -12,16 +12,16 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  the picture I took   ╔═ settings ═══════════════════════════════════════╗                       ║
-║  [image 1024x768 harbo║conversation                                      ║                       ║
-║  Jordan  09:15        ║ theme                                   terminal ║                       ║
-║  https://example.inval║ timestamps                                 short ║                       ║
-║  │ A page title       ║ avatars                                       on ║                       ║
-║  │ Two sentences of de║ animate pictures                         focused ║                       ║
-║  │ second is there so ║ send with                                  enter ║                       ║
-║▕ Alex  09:20          ║ voice channels                               off ║                       █
-║▕ https://tenor.invalid║                                                  ║                       █
-║▕ [gif ▶ a cat, falling╚════════════════════════ enter change · esc close ╝                       █
+║  Jordan  09:15        ╔═ settings ═══════════════════════════════════════╗                       ║
+║  https://example.inval║conversation                                      ║                       ║
+║  ▌ Example            ║ theme                                   terminal ║                       ║
+║  ▌ A page title       ║ timestamps                                 short ║                       ║
+║  ▌ Two sentences of de║ avatars                                       on ║here so                ║
+║  ▌ the wrapping has so║ animate pictures                         focused ║                       ║
+║▕ Alex  09:20          ║ send with                                  enter ║                       ║
+║▕ https://tenor.invalid║ voice channels                               off ║                       ║
+║▕ ▌ Tenor              ║                                                  ║                       █
+║▕ ▌ [gif ▶ a cat, falli╚════════════════════════ enter change · esc close ╝                       █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║

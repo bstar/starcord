@@ -53,8 +53,9 @@ keyring. [Signing in](docs/auth.md) has both routes in full, and
 - **Servers, channels, DMs and threads.** Categories fold, unread and mention
   counts sit beside the names, muted channels stay quiet, and the member list
   loads the part of a server you are looking at.
-- **Pictures, in the terminal.** Attachments, avatars, custom emoji and
-  animated GIFs are drawn as real pixels in kitty, WezTerm, Ghostty and foot,
+- **Pictures, in the terminal.** Attachments, avatars, custom emoji, link
+  cards and animated GIFs -- a Tenor or Giphy link moves, the way it does on
+  the web -- are drawn as real pixels in kitty, WezTerm, Ghostty and foot,
   and as half-blocks where there is no graphics protocol.
 - **Emoji, reactions, GIFs and attachments.** Type `:name:` and complete it;
   react with a key; search the GIF picker and post what it finds; attach a file

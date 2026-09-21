@@ -12,16 +12,16 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — ╔═ jump to ════════════════════════════════════════════════════╗═════════════════╗
 ║                 ║› gen                                                         ║  pins  settings ║
-║  the picture I t║                                                              ║                 ║
-║  [image 1024x768║#general                                           First Guild║                 ║
-║  Jordan  09:15  ║@Wren of the Long Display Name                          friend║                 ║
-║  https://example╚════════════════════════════════════════ enter go · esc close ╝                 ║
-║  │ A page title                                                                                  ║
-║  │ Two sentences of description, as a link unfurl carries. The                                   ║
-║  │ second is there so the wrapping has something to do.                                          ║
-║  Alex  09:20                                                                                     █
-║  https://tenor.invalid/view/a-cat-12345                                                          █
-║  [gif ▶ a cat, falling over]                                                                     █
+║  Jordan  09:15  ║                                                              ║                 ║
+║  https://example║#general                                           First Guild║                 ║
+║  ▌ Example      ║@Wren of the Long Display Name                          friend║                 ║
+║  ▌ A page title ╚════════════════════════════════════════ enter go · esc close ╝                 ║
+║  ▌ Two sentences of description, as a link unfurl carries. The second is there so                ║
+║  ▌ the wrapping has something to do.                                                             ║
+║  Alex  09:20                                                                                     ║
+║  https://tenor.invalid/view/a-cat-12345                                                          ║
+║  ▌ Tenor                                                                                         █
+║  ▌ [gif ▶ a cat, falling over]                                                                   █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║

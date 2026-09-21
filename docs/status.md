@@ -30,7 +30,7 @@ a short list of rough edges below.
 | The window | the column of modules and the accordion that folds them, the login screen including the QR code, the server, channel, conversation and member lists, the status line, the help overlay and the quick switcher |
 | Reading a conversation | grouping, Discord's markdown, replies, reactions, embed cards, code blocks, spoilers, day and unread dividers, the typing line, virtual scrolling, history paging, a scrollbar that can be dragged |
 | Writing one | drafts per channel, reply and edit modes, `@`, `#` and `:` autocomplete, sending, editing, deleting with a confirmation |
-| Pictures | avatars, server icons, inline attachments, card thumbnails and custom emoji, through the terminal's own protocol or as half blocks |
+| Pictures | avatars, server icons, inline attachments, card pictures, moving Tenor and Giphy GIFs and custom emoji, through the terminal's own protocol or as half blocks |
 | Animated GIFs | only what is on screen, at most four at once, stopped by `[media] animate` |
 | Pickers | emoji, reactions and GIFs, in one overlay with a search field and a grid |
 | Attachments | by path with `alt+a`, from the clipboard with `ctrl+v`, as chips in the composer, with the upload's progress on the row it belongs to |

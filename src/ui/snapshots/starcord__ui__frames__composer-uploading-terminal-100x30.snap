@@ -12,15 +12,15 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  [image 1024x768 harbour.png]                                                                    ║
-║  Jordan  09:15                                                                                   ║
 ║  https://example.invalid/page                                                                    ║
-║  │ A page title                                                                                  ║
-║  │ Two sentences of description, as a link unfurl carries. The                                   ║
-║  │ second is there so the wrapping has something to do.                                          ║
+║  ▌ Example                                                                                       ║
+║  ▌ A page title                                                                                  ║
+║  ▌ Two sentences of description, as a link unfurl carries. The second is there so                ║
+║  ▌ the wrapping has something to do.                                                             ║
 ║  Alex  09:20                                                                                     ║
 ║  https://tenor.invalid/view/a-cat-12345                                                          ║
-║  [gif ▶ a cat, falling over]                                                                     █
+║  ▌ Tenor                                                                                         ║
+║  ▌ [gif ▶ a cat, falling over]                                                                   █
 ║  · here they are  (2 files, 37%)                                                                 █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗

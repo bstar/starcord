@@ -12,16 +12,16 @@ expression: "render(&mut app, 100, 30)"
 ╚═══════════════║░░░░░░░░░░░ ░░░░░░░░░░░ ░░░░░░░░░░░                               ║═══════════════╝
 ╔═ CONVERSATION ║░░░░░░░░░░░ ░░░░░░░░░░░ ░░░░░░░░░░░                               ║═══════════════╗
 ║               ║░░░░░░░░░░░ ░░░░░░░░░░░ ░░░░░░░░░░░                               ║pins  settings ║
-║  the picture I║░░░░░░░░░░░ ░░░░░░░░░░░ ░░░░░░░░░░░                               ║               ║
-║  [image 1024x7║a cat, wavi a wave      a party                                   ║               ║
-║  Jordan  09:15║                                                                  ║               ║
-║  https://examp║                                                                  ║               ║
-║  │ A page titl║                                                                  ║               ║
-║  │ Two sentenc║                                                                  ║               ║
-║  │ second is t║                                                                  ║               ║
-║  Alex  09:20  ║                                                                  ║               █
-║  https://tenor║                                                                  ║               █
-║  [gif ▶ a cat,║                                                                  ║               █
+║  Jordan  09:15║░░░░░░░░░░░ ░░░░░░░░░░░ ░░░░░░░░░░░                               ║               ║
+║  https://examp║a cat, wavi a wave      a party                                   ║               ║
+║  ▌ Example    ║                                                                  ║               ║
+║  ▌ A page titl║                                                                  ║               ║
+║  ▌ Two sentenc║                                                                  ║               ║
+║  ▌ the wrappin║                                                                  ║               ║
+║  Alex  09:20  ║                                                                  ║               ║
+║  https://tenor║                                                                  ║               ║
+║  ▌ Tenor      ║                                                                  ║               █
+║  ▌ [gif ▶ a ca║                                                                  ║               █
 ╚═══════════════║                                                                  ║═══════════════╝
 ╔═ COMPOSE ═════║                                                                  ║═══════════════╗
 ║               ║                                                                  ║ch  emoji  gif ║

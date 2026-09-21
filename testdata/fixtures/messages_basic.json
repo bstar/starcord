@@ -424,7 +424,7 @@
        "type": "link",
        "url": "https://example.invalid/page",
        "title": "A page with a picture on it",
-       "description": "The card's thumbnail is drawn against the right edge, so the words keep the width they had.",
+       "description": "The card's thumbnail is drawn under the words, small, with the bar beside it.",
        "thumbnail": {
         "url": "https://example.invalid/thumb.png",
         "proxy_url": "https://images.discordapp.invalid/thumb.png",

@@ -19,9 +19,9 @@ expression: hidden.clone()
 ║  [image 1024x768 harbour.png]                                                                    ║
 ║  Jordan  09:15                                                                                   ║
 ║  https://example.invalid/page                                                                    █
-║  │ A page title                                                                                  █
-║  │ Two sentences of description, as a link unfurl carries. The                                   █
-║  │ second is there so the wrapping has something to do.                                          ║
+║  ▌ Example                                                                                       █
+║  ▌ A page title                                                                                  ║
+║  ▌ Two sentences of description, as a link unfurl carries. The second is there so                ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║

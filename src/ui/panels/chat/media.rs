@@ -426,11 +426,12 @@ pub fn paint(
             fallback(place, rect, buf, theme, &state);
             continue;
         };
-        // A moving picture is only ever moving where it is allowed to be: the
-        // marker over a video says the terminal will not play it, so it shows
-        // one frame however many it has.
-        let moves = !matches!(place.shape, Shape::Play)
-            && crate::ui::panels::chat::anim::delays_of(decoded).is_some();
+        // A picture with frames moves, whatever it was placed as. The poster
+        // of a video is one frame and gets the play marker; a gifv's "still"
+        // that turns out to be an animated WebP -- which is what Klipy hands
+        // Discord -- is the GIF itself, and a marker over it would say the
+        // terminal cannot play what it is playing.
+        let moves = crate::ui::panels::chat::anim::delays_of(decoded).is_some();
         let frame = if moves { anim.frame_of(&place.key) } else { 0 };
         let Some(img) = frame_at(decoded, frame) else {
             fallback(place, rect, buf, theme, &MediaState::Failed);
@@ -449,7 +450,7 @@ pub fn paint(
         if matches!(place.shape, Shape::Emoji { .. }) {
             out.emoji += 1;
         }
-        if matches!(place.shape, Shape::Play) {
+        if matches!(place.shape, Shape::Play) && !moves {
             overlay_play(rect, buf, theme);
         }
     }

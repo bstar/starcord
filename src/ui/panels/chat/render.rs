@@ -42,13 +42,16 @@ use crate::discord::model::{Attachment, Embed, EmbedKind, Message, PartialEmoji}
 use crate::discord::snowflake::{ChannelId, MessageId, RoleId, UserId};
 use crate::ui::panels::rgb;
 use crate::ui::theme::Theme;
+use starkit::theme::color::Rgb;
 
 /// The bar down the left of a code block.
 const CODE_BAR: &str = "\u{258f}";
 /// The bar down the left of a quote.
 const QUOTE_BAR: &str = "\u{258e}";
-/// The bar down the left of an embed card.
-const EMBED_BAR: &str = "\u{2502}";
+/// The bar down the left of an embed card: a half block, in the colour the
+/// embed names for itself or the theme's, so a card reads as a card and not
+/// as one more quoted line.
+const EMBED_BAR: &str = "\u{258c}";
 /// What a hidden spoiler is covered with.
 const SPOILER_FILL: char = '\u{2592}';
 /// The corner and arrow of a reply preview.
@@ -59,11 +62,18 @@ const REPLY_LEAD: &str = " \u{256d} \u{21a9} ";
 /// What marks a video or a gifv that this terminal will not play.
 const PLAY: &str = " \u{25b6} ";
 
-/// Columns an embed description is wrapped to, whatever the panel's width.
+/// Columns an embed card is wrapped to, whatever the panel's width.
 ///
 /// A card that ran the full width of a wide terminal would be a wall of
-/// somebody else's marketing beside two lines of conversation.
-const EMBED_COLS: u16 = 60;
+/// somebody else's marketing beside two lines of conversation; eighty is
+/// a page, and enough for a picture to be a picture.
+const EMBED_COLS: u16 = 80;
+
+/// Rows a card's side thumbnail may take. Discord draws these small and to
+/// the right of the words -- a site's logo, a video's poster -- and they are
+/// not what the card is for. The big picture on a card, and a GIF, get the
+/// same rows a photograph does.
+const THUMB_ROWS: u16 = 6;
 
 /// Columns of quoted text a reply preview carries.
 const REPLY_COLS: u16 = 60;
@@ -968,13 +978,36 @@ impl<'a> Writer<'a> {
     /// blank beside it, which is what this looked like before the box was
     /// measured in both directions.
     fn picture_box(&self, attachment: &Attachment, key: &MediaKey) -> (u16, u16) {
-        if !self.ctx.pictures || self.ctx.max_image_rows == 0 || !attachment.is_image() {
+        if !attachment.is_image() {
+            return (0, 0);
+        }
+        self.box_for(
+            (attachment.width, attachment.height),
+            key,
+            self.ctx.gutter(),
+            self.ctx.max_image_rows,
+        )
+    }
+
+    /// The cells for any picture, from a declared size or a measured one.
+    ///
+    /// `left` is where it starts, so the room is what is right of that;
+    /// `max_rows` is the cap, which is the setting for a photograph and
+    /// smaller for a card's side thumbnail.
+    fn box_for(
+        &self,
+        declared: (Option<u32>, Option<u32>),
+        key: &MediaKey,
+        left: u16,
+        max_rows: u16,
+    ) -> (u16, u16) {
+        if !self.ctx.pictures || max_rows == 0 {
             return (0, 0);
         }
         // What it says it is, or -- for the ones that say nothing, which is
         // most of what a bot posts -- what it turned out to be once the bytes
         // were here.
-        let declared = match (attachment.width, attachment.height) {
+        let declared = match declared {
             (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
             _ => None,
         };
@@ -984,7 +1017,7 @@ impl<'a> Writer<'a> {
         if w == 0 || h == 0 {
             return (0, 0);
         }
-        let room = self.width().saturating_sub(self.ctx.gutter()).max(1);
+        let room = self.width().saturating_sub(left).max(1);
         let aspect = if self.ctx.aspect > 0.0 {
             self.ctx.aspect
         } else {
@@ -994,8 +1027,7 @@ impl<'a> Writer<'a> {
         // keeps its own width, which is what stops a postage stamp being
         // blown up across a conversation.
         let wide = f32::from(room.min(w.min(u32::from(u16::MAX)) as u16));
-        let rows = ((wide * (h as f32 / w as f32) / aspect).ceil().max(1.0) as u16)
-            .min(self.ctx.max_image_rows);
+        let rows = ((wide * (h as f32 / w as f32) / aspect).ceil().max(1.0) as u16).min(max_rows);
         let cols = ((f32::from(rows) * aspect * (w as f32 / h as f32))
             .ceil()
             .max(1.0) as u16)
@@ -1037,51 +1069,17 @@ impl<'a> Writer<'a> {
     fn embed(&mut self, embed: &Embed) {
         let t = self.theme;
         let gutter = self.ctx.gutter();
-        let bar = Style::default().fg(rgb(t.chat.embed_bar));
-
-        // A video or an animated-GIF embed is a file this terminal will not
-        // play, so it is a chip that opens somewhere else rather than a card
-        // pretending otherwise.
-        if embed.is_playable() {
-            let what = if embed.kind == EmbedKind::Gifv {
-                "gif"
-            } else {
-                "video"
-            };
-            let title = embed
-                .title
-                .clone()
-                .or_else(|| embed.url.clone())
-                .unwrap_or_else(|| what.into());
-            if let Some(url) = embed.url.clone() {
-                self.out.attachments.push(AttachmentRef {
-                    row: self.row(),
-                    rows: 1,
-                    col: 0,
-                    cols: u16::MAX,
-                    url,
-                    filename: title.clone(),
-                    viewable: false,
-                    kind: ExternalKind::Link,
-                });
-            }
-            // The still is drawn with a play marker over it; the file itself
-            // is an mp4 and opens in whatever `[media] player` names.
-            if let Some(url) = embed
-                .still()
-                .or(embed.video.as_ref())
-                .and_then(thumbnail_url)
-            {
-                self.thumbnail(url, SlotKind::Gifv);
-            }
-            self.chip(gutter, &format!("[{what}{PLAY}{title}]"));
-            return;
-        }
-
-        let room = self
-            .width()
-            .saturating_sub(gutter + width_of(EMBED_BAR) + 1)
-            .clamp(1, EMBED_COLS);
+        // The embed's own colour when it names one -- a bot's card, a
+        // site's brand -- and the theme's when it does not.
+        let bar_fg = embed
+            .color
+            .map(|c| Rgb::new((c >> 16 & 0xff) as u8, (c >> 8 & 0xff) as u8, (c & 0xff) as u8))
+            .unwrap_or(t.chat.embed_bar);
+        let bar = Style::default().fg(rgb(bar_fg));
+        // Where the card's contents start: after the gutter, the bar and one
+        // space.
+        let inner = gutter + width_of(EMBED_BAR) + 1;
+        let room = self.width().saturating_sub(inner).clamp(1, EMBED_COLS);
 
         let card = |w: &mut Self, spans: Vec<Span<'static>>| {
             let mut row = vec![
@@ -1093,24 +1091,35 @@ impl<'a> Writer<'a> {
             w.row_of(row);
         };
 
-        if let Some(author) = &embed.author {
+        // The site or the service the card came from, over the title, as
+        // Discord's own cards carry it. An author line is the same slot for a
+        // bot's card.
+        let source = embed
+            .provider
+            .as_ref()
+            .and_then(|p| p.name.clone())
+            .or_else(|| embed.author.as_ref().map(|a| a.name.clone()))
+            .filter(|name| !name.trim().is_empty());
+        if let Some(name) = source {
             card(
                 self,
                 vec![Span::styled(
-                    cut(&author.name, room),
+                    cut(&name, room),
                     Style::default().fg(rgb(t.dim)),
                 )],
             );
         }
-        if let Some(title) = &embed.title {
+        // A gifv or a video carries its title on the chip under the picture,
+        // which is also the thing to click; a second copy above it is noise.
+        if let Some(title) = embed.title.as_ref().filter(|_| !embed.is_playable()) {
             let style = Style::default()
                 .fg(rgb(t.chat.link_fg))
-                .add_modifier(Modifier::UNDERLINED);
+                .add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
             if let Some(url) = &embed.url {
                 self.flush();
                 self.out.links.push(LinkSpan {
                     row: self.row(),
-                    col: gutter + width_of(EMBED_BAR) + 1,
+                    col: inner,
                     width: width_of(&cut(title, room)),
                     url: url.clone(),
                 });
@@ -1128,42 +1137,207 @@ impl<'a> Writer<'a> {
                 );
             }
         }
-        if let Some(url) = embed.still().and_then(thumbnail_url) {
-            self.thumbnail(url, SlotKind::Still);
+
+        // The picture. One of four things, in this order:
+        //
+        // - a GIF from Tenor or Giphy, drawn moving, the way the web client
+        //   draws it, from the GIF the service also serves beside its mp4;
+        // - a video, which this terminal will not play: its poster with a
+        //   play marker over it, and a click hands it to `[media] player`;
+        // - the card's big picture, or the picture itself when the link was
+        //   to one, at the rows a photograph gets;
+        // - a side thumbnail, smaller, because it is a logo or a poster and
+        //   not the point.
+        let big = embed.image.as_ref().or_else(|| {
+            (embed.kind == EmbedKind::Image)
+                .then_some(embed.thumbnail.as_ref())
+                .flatten()
+        });
+        if embed.is_playable() {
+            self.playable(embed, inner, bar);
+        } else if let Some(picture) = big {
+            if let Some(url) = thumbnail_url(picture) {
+                let key = MediaKey::EmbedImage { url };
+                self.card_picture(
+                    picture,
+                    key,
+                    SlotKind::Still,
+                    inner,
+                    self.ctx.max_image_rows,
+                    bar,
+                );
+            }
+        } else if let Some(thumb) = embed.thumbnail.as_ref() {
+            if let Some(url) = thumbnail_url(thumb) {
+                let key = MediaKey::EmbedImage { url };
+                self.card_picture(thumb, key, SlotKind::Still, inner, THUMB_ROWS, bar);
+            }
+        }
+
+        if let Some(footer) = &embed.footer {
+            if !footer.text.trim().is_empty() {
+                card(
+                    self,
+                    vec![Span::styled(
+                        cut(&footer.text, room),
+                        Style::default().fg(rgb(t.dim)),
+                    )],
+                );
+            }
         }
     }
 
-    /// Eight columns by four rows against the right edge, for the picture on a
-    /// card.
+    /// A gifv or a video on a card.
     ///
-    /// Right-aligned because a card is read left to right: the title and the
-    /// description are the part somebody asked for, and a thumbnail in front
-    /// of them pushes the words into a column half the width of the panel.
-    /// The rows are reserved whether or not the picture arrives, so the card
-    /// keeps its height.
-    fn thumbnail(&mut self, url: String, kind: SlotKind) {
-        const COLS: u16 = 8;
-        const ROWS: u16 = 4;
-        if !self.ctx.pictures || self.ctx.max_image_rows == 0 {
+    /// A GIF is drawn as one where the service serves one: Tenor and Giphy
+    /// both keep a real GIF beside the mp4 Discord hands over, and a terminal
+    /// can show that. When the GIF cannot be found, or would not fetch, the
+    /// still is drawn with a play marker instead, as a video always is. The
+    /// picture and the chip under it both open the mp4 in the player.
+    fn playable(&mut self, embed: &Embed, inner: u16, bar: Style) {
+        let what = if embed.kind == EmbedKind::Gifv {
+            "gif"
+        } else {
+            "video"
+        };
+        let title = embed
+            .title
+            .clone()
+            .or_else(|| embed.url.clone())
+            .unwrap_or_else(|| what.into());
+        let mp4 = embed.video.as_ref().and_then(thumbnail_url);
+        let open = |w: &mut Self, row: u16, rows: u16, col: u16, cols: u16| {
+            if let Some(url) = mp4.clone().or_else(|| embed.url.clone()) {
+                w.out.attachments.push(AttachmentRef {
+                    row,
+                    rows,
+                    col,
+                    cols,
+                    url,
+                    filename: title.clone(),
+                    viewable: false,
+                    kind: if mp4.is_some() {
+                        ExternalKind::Video
+                    } else {
+                        ExternalKind::Link
+                    },
+                });
+            }
+        };
+
+        let moving = (embed.kind == EmbedKind::Gifv)
+            .then(|| gif_url(embed))
+            .flatten()
+            .map(|url| MediaKey::Gif { url })
+            // A GIF that would not fetch is a still with a marker, not a
+            // hole; the message is measured again when the fetch settles.
+            .filter(|key| {
+                !matches!(
+                    self.ctx.media.map(|m| m.state(key)),
+                    Some(super::media::MediaState::Failed)
+                )
+            });
+        let size = embed.video.as_ref().or(embed.still());
+        let still = embed
+            .still()
+            .or(embed.video.as_ref())
+            .and_then(thumbnail_url)
+            .map(|url| MediaKey::EmbedImage { url });
+
+        let drawn = match (moving, still) {
+            (Some(key), _) => Some((key, SlotKind::Gif)),
+            (None, Some(key)) => Some((key, SlotKind::Gifv)),
+            (None, None) => None,
+        };
+        if let Some((key, kind)) = drawn {
+            let declared = size
+                .map(|m| (m.width, m.height))
+                .unwrap_or((None, None));
+            let (cols, rows) = self.box_for(declared, &key, inner, self.ctx.max_image_rows);
+            if rows > 0 {
+                self.flush();
+                let row = self.row();
+                open(self, row, rows, inner, cols);
+                self.out.images.push(ImageSlot {
+                    row,
+                    col: inner,
+                    cols,
+                    rows,
+                    key,
+                    kind,
+                    alt: title.clone(),
+                });
+                for _ in 0..rows {
+                    self.barred_placeholder(inner, cols, bar);
+                }
+            } else if self.ctx.pictures && self.ctx.max_image_rows > 0 {
+                self.out.measure.push(key);
+            }
+        }
+        self.flush();
+        let row = self.row();
+        open(self, row, 1, 0, u16::MAX);
+        let gutter = self.ctx.gutter();
+        let room = self.width().saturating_sub(inner).max(1);
+        self.row_of(vec![
+            Span::raw(" ".repeat(usize::from(gutter))),
+            Span::styled(EMBED_BAR, bar),
+            Span::raw(" "),
+            Span::styled(
+                cut(&format!("[{what}{PLAY}{title}]"), room),
+                Style::default().fg(rgb(self.theme.chat.system_fg)),
+            ),
+        ]);
+    }
+
+    /// A picture on a card, at up to `max_rows`, with the bar beside it.
+    fn card_picture(
+        &mut self,
+        media: &crate::discord::model::EmbedMedia,
+        key: MediaKey,
+        kind: SlotKind,
+        inner: u16,
+        max_rows: u16,
+        bar: Style,
+    ) {
+        let (cols, rows) = self.box_for((media.width, media.height), &key, inner, max_rows);
+        if rows == 0 {
+            // Nothing declared and nothing fetched yet: ask for the size, and
+            // this message is measured again when it is known.
+            if self.ctx.pictures && self.ctx.max_image_rows > 0 {
+                self.out.measure.push(key);
+            }
             return;
         }
-        let width = self.width();
-        if width < COLS + self.ctx.gutter() {
-            return;
-        }
+        self.flush();
         let row = self.row();
         self.out.images.push(ImageSlot {
             row,
-            col: width - COLS,
-            cols: COLS,
-            rows: ROWS,
-            key: MediaKey::EmbedImage { url },
+            col: inner,
+            cols,
+            rows,
+            key,
             kind,
             alt: String::new(),
         });
-        for _ in 0..ROWS {
-            self.placeholder_row(width - COLS, COLS);
+        for _ in 0..rows {
+            self.barred_placeholder(inner, cols, bar);
         }
+    }
+
+    /// A placeholder row with the card's bar down its left.
+    fn barred_placeholder(&mut self, inner: u16, cols: u16, bar: Style) {
+        let gutter = self.ctx.gutter();
+        let room = cols.min(self.width().saturating_sub(inner)).max(1);
+        self.row_of(vec![
+            Span::raw(" ".repeat(usize::from(gutter))),
+            Span::styled(EMBED_BAR, bar),
+            Span::raw(" "),
+            Span::styled(
+                "\u{2591}".repeat(usize::from(room)),
+                Style::default().fg(rgb(self.theme.chat.spoiler_bg)),
+            ),
+        ]);
     }
 
     fn reactions(&mut self, msg: &Message) {
@@ -1424,6 +1598,43 @@ fn is_animated(attachment: &Attachment) -> bool {
 /// proxy, and the proxy is the copy that is resized, cached and served over a
 /// connection this client already has; the original is a request to a host the
 /// message merely named.
+/// The real GIF behind a gifv embed, when the service keeps one.
+///
+/// Discord unfurls a GIF link into an mp4 and a still, because that is what
+/// the web plays. The services keep the same picture as a GIF at an address
+/// that follows from the mp4's:
+///
+/// - Tenor names the format in the last five characters of the media id:
+///   `AAAPo` is the mp4, `AAAAC` the GIF, and the extension follows.
+/// - Giphy keeps `giphy.gif` beside `giphy.mp4`, and Klipy `<id>.gif` beside
+///   `<id>.mp4`, under the same path. Anyone else is given the same chance:
+///   the address is a guess, and a guess that 404s is a still with a play
+///   marker, which is what the card would have drawn anyway.
+///
+/// A still that is already a `.gif`, or a `.webp` -- Klipy's stills are
+/// animated WebPs, the GIF in another coat -- is used as it is. A YouTube
+/// or a Vimeo embed is a video, not a gifv, and never comes here.
+pub fn gif_url(embed: &Embed) -> Option<String> {
+    if let Some(still) = embed.still().and_then(|m| m.url.clone()) {
+        let lower = still.to_ascii_lowercase();
+        if lower.ends_with(".gif") || lower.ends_with(".webp") {
+            return Some(still);
+        }
+    }
+    let video = embed.video.as_ref()?.url.clone()?;
+    let host = url::Url::parse(&video).ok()?.host_str()?.to_ascii_lowercase();
+    if !video.to_ascii_lowercase().ends_with(".mp4") {
+        return None;
+    }
+    let without = &video[..video.len() - 4];
+    if host == "tenor.com" || host.ends_with(".tenor.com") {
+        let (dir, name) = without.rsplit_once('/')?;
+        let id = dir.strip_suffix("AAAPo")?;
+        return Some(format!("{id}AAAAC/{name}.gif"));
+    }
+    Some(format!("{without}.gif"))
+}
+
 fn thumbnail_url(media: &crate::discord::model::EmbedMedia) -> Option<String> {
     media
         .proxy_url
@@ -1848,6 +2059,143 @@ mod tests {
         assert_eq!(rows_at(2.5, 40, 22), 8);
         // And the setting is a ceiling, whatever the arithmetic says.
         assert_eq!(rows_at(2.0, 4, 22), 4);
+    }
+
+    /// The GIF behind a gifv follows from the mp4 for the two services
+    /// Discord unfurls, and from nothing else.
+    #[test]
+    fn a_gifv_names_the_gif_the_service_keeps_beside_its_mp4() {
+        use crate::discord::model::EmbedMedia;
+        let gifv = |video: &str, still: &str| Embed {
+            kind: EmbedKind::Gifv,
+            video: Some(EmbedMedia {
+                url: Some(video.into()),
+                ..EmbedMedia::default()
+            }),
+            thumbnail: Some(EmbedMedia {
+                url: Some(still.into()),
+                ..EmbedMedia::default()
+            }),
+            ..Embed::default()
+        };
+        assert_eq!(
+            gif_url(&gifv(
+                "https://media.tenor.com/AbCdEfGhIjKAAAPo/cat-falls.mp4",
+                "https://media.tenor.com/AbCdEfGhIjKAAAAe/cat-falls.png"
+            ))
+            .as_deref(),
+            Some("https://media.tenor.com/AbCdEfGhIjKAAAAC/cat-falls.gif")
+        );
+        assert_eq!(
+            gif_url(&gifv(
+                "https://media2.giphy.com/media/abc123/giphy.mp4",
+                "https://media2.giphy.com/media/abc123/200.png"
+            ))
+            .as_deref(),
+            Some("https://media2.giphy.com/media/abc123/giphy.gif")
+        );
+        // A still that is already a GIF wins, whoever serves it.
+        assert_eq!(
+            gif_url(&gifv(
+                "https://media.tenor.invalid/x.mp4",
+                "https://media.tenor.invalid/x.gif"
+            ))
+            .as_deref(),
+            Some("https://media.tenor.invalid/x.gif")
+        );
+        // Klipy, and anyone else: the GIF beside the mp4, as a guess the
+        // fetch settles.
+        assert_eq!(
+            gif_url(&gifv(
+                "https://static.klipy.com/ii/h/d7/59/fck146.mp4",
+                "https://static.klipy.com/ii/h/d7/59/7cWsO7RN.png"
+            ))
+            .as_deref(),
+            Some("https://static.klipy.com/ii/h/d7/59/fck146.gif")
+        );
+        // Klipy's still is an animated WebP, and is taken as it is.
+        assert_eq!(
+            gif_url(&gifv(
+                "https://static.klipy.com/ii/h/d7/59/fck146.mp4",
+                "https://static.klipy.com/ii/h/d7/59/7cWsO7RN.webp"
+            ))
+            .as_deref(),
+            Some("https://static.klipy.com/ii/h/d7/59/7cWsO7RN.webp")
+        );
+        // Not an mp4: nothing to derive from.
+        assert_eq!(
+            gif_url(&gifv(
+                "https://www.youtube.invalid/embed/v",
+                "https://i.ytimg.invalid/v.jpg"
+            )),
+            None
+        );
+    }
+
+    /// A Tenor GIF is a moving picture on the card at the rows a photograph
+    /// gets, and the picture is the thing to click; a video is its poster
+    /// with a marker, opened by the same click.
+    #[test]
+    fn a_gifv_is_drawn_moving_and_a_video_as_its_poster() {
+        use crate::discord::model::EmbedMedia;
+        let t = theme("terminal");
+        let names = Names::default();
+        let revealed = Revealed::default();
+        let mut ctx = RenderCtx::new(&t, 60, &names, &revealed);
+        ctx.pictures = true;
+        ctx.max_image_rows = 12;
+        ctx.aspect = 2.0;
+
+        let media = |url: &str| {
+            Some(EmbedMedia {
+                url: Some(url.into()),
+                width: Some(498),
+                height: Some(280),
+                ..EmbedMedia::default()
+            })
+        };
+        let mut message = msg("https://tenor.com/view/cat-1");
+        message.embeds.push(Embed {
+            kind: EmbedKind::Gifv,
+            title: Some("a cat".into()),
+            url: Some("https://tenor.com/view/cat-1".into()),
+            video: media("https://media.tenor.com/AbCdEfGhIjKAAAPo/cat.mp4"),
+            thumbnail: media("https://media.tenor.com/AbCdEfGhIjKAAAAe/cat.png"),
+            ..Embed::default()
+        });
+        let out = render(&message, true, &ctx);
+        let slot = out.images.iter().find(|i| i.kind == SlotKind::Gif).expect("a moving slot");
+        assert_eq!(
+            slot.key,
+            MediaKey::Gif {
+                url: "https://media.tenor.com/AbCdEfGhIjKAAAAC/cat.gif".into()
+            }
+        );
+        assert!(slot.rows > 4, "a GIF gets a photograph's rows, not a thumbnail's");
+        let click = out
+            .attachments
+            .iter()
+            .find(|a| a.row == slot.row)
+            .expect("the picture is clickable");
+        assert_eq!(click.kind, ExternalKind::Video);
+        assert!(click.url.ends_with("cat.mp4"));
+
+        let mut message = msg("https://youtube.invalid/v");
+        message.embeds.push(Embed {
+            kind: EmbedKind::Video,
+            title: Some("a talk".into()),
+            video: media("https://youtube.invalid/embed/v"),
+            thumbnail: media("https://i.ytimg.invalid/v/hq.jpg"),
+            ..Embed::default()
+        });
+        let out = render(&message, true, &ctx);
+        let slot = out.images.iter().find(|i| i.kind == SlotKind::Gifv).expect("a poster");
+        assert_eq!(
+            slot.key,
+            MediaKey::EmbedImage {
+                url: "https://i.ytimg.invalid/v/hq.jpg".into()
+            }
+        );
     }
 
     /// Somebody with no avatar hash still gets the gutter, with their initials

@@ -12,26 +12,26 @@ expression: "render(&mut app, 100, 40)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #random · First Guild ═══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║▀▀▀▀ Jordan  11:01                                                                                ║
 ║▀▀▀▀ and one that moves                                                                           ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
 ║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
-║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 █
-║▀▀▀▀ Robin  11:02                                                                                 █
+║     ▀▀▀▀▀▀▀▀▀▀▀▀                                                                                 ║
+║▀▀▀▀ Robin  11:02                                                                                 ║
 ║▀▀▀▀ nice ▀▀ one                                                                                  █
 ║     [▀▀ 3]                                                                                       █
 ║▀▀▀▀ Jordan  11:03                                                                                █
 ║▀▀▀▀ https://example.invalid/page                                                                 █
-║     │ A page with a picture on it                                                                █
-║     │ The card's thumbnail is drawn against the right edge, so the                               █
-║     │ words keep the width they had.                                                             █
-║                                                                                         ▀▀▀▀▀▀▀▀ █
-║                                                                                         ▀▀▀▀▀▀▀▀ █
-║                                                                                         ▀▀▀▀▀▀▀▀ █
-║                                                                                         ▀▀▀▀▀▀▀▀ █
+║     ▌ A page with a picture on it                                                                █
+║     ▌ The card's thumbnail is drawn under the words, small, with the bar beside it.              █
+║     ▌ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                                           █
+║     ▌ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                                           █
+║     ▌ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                                           █
+║     ▌ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                                           █
+║     ▌ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                                           █
+║     ▌ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                                           █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║

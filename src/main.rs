@@ -863,7 +863,24 @@ fn print_message(handle: &Handle, message: &Message, indent: &str) {
         body.push_str(&format!(" [{}]", attachment.filename));
     }
     for embed in &message.embeds {
-        body.push_str(&format!(" <{}>", embed.kind.as_str()));
+        // A gifv or a video names its addresses, because which ones Discord
+        // hands over for a Tenor or a Giphy link -- and so whether the chat
+        // can find the GIF beside the mp4 -- is something only a live
+        // session can settle.
+        if embed.is_playable() {
+            let url = |m: Option<&crate::discord::model::EmbedMedia>| {
+                m.and_then(|m| m.url.as_deref()).unwrap_or("-").to_string()
+            };
+            body.push_str(&format!(
+                " <{} video={} still={} gif={}>",
+                embed.kind.as_str(),
+                url(embed.video.as_ref()),
+                url(embed.still()),
+                ui::panels::chat::render::gif_url(embed).unwrap_or_else(|| "-".into()),
+            ));
+        } else {
+            body.push_str(&format!(" <{}>", embed.kind.as_str()));
+        }
     }
 
     for (n, line) in body.lines().enumerate() {

@@ -12,16 +12,16 @@ expression: "render(&mut app, 100, 30)"
 ╚═════║Jo  2026-09-12 10:10  here is the thing I meant                                       ║═════╝
 ╔═ CON║Alex  2026-09-12 10:01  and the third, which makes a group of three                   ║═════╗
 ║     ║Alex  2026-09-12 10:00  and the second, half a minute later                           ║ings ║
-║  the║Alex  2026-09-12 10:00  the first thing anybody said                                  ║     ║
-║  [im║Alex  2026-09-11 16:42  the last of the older page                                    ║     ║
-║  Jor║Jo  2026-09-11 16:41  and the line under it                                           ║     ║
-║  htt║Jo  2026-09-11 16:40  older still, from the day before                                ║     ║
-║  │ A║                                                                                      ║     ║
-║  │ T║                                                                                      ║     ║
-║  │ s║                                                                                      ║     ║
-║▕ Ale║                                                                                      ║     █
-║▕ htt║                                                                                      ║     █
-║▕ [gi║                                                                                      ║     █
+║  Jor║Alex  2026-09-12 10:00  the first thing anybody said                                  ║     ║
+║  htt║Alex  2026-09-11 16:42  the last of the older page                                    ║     ║
+║  ▌ E║Jo  2026-09-11 16:41  and the line under it                                           ║     ║
+║  ▌ A║Jo  2026-09-11 16:40  older still, from the day before                                ║     ║
+║  ▌ T║                                                                                      ║     ║
+║  ▌ t║                                                                                      ║     ║
+║▕ Ale║                                                                                      ║     ║
+║▕ htt║                                                                                      ║     ║
+║▕ ▌ T║                                                                                      ║     █
+║▕ ▌ [║                                                                                      ║     █
 ╚═════║                                                                                      ║═════╝
 ╔═ COM║                                                                                      ║═════╗
 ║     ║                                                                                      ║ gif ║

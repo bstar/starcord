@@ -12,16 +12,16 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  the picture I took                                                                              ║
-║  [image 1024x768 harbour.png]                                                                    ║
-║  Jordan  09:15        ╔═ delete this message ════════════════════════════╗                       ║
-║  https://example.inval║here is the thing I meant                         ║                       ║
-║  │ A page title       ║                                                  ║                       ║
-║  │ Two sentences of de║this cannot be undone                             ║                       ║
-║  │ second is there so ║                                                  ║                       ║
-║▕ Alex  09:20          ╚════════════════════════════════════ y yes · n no ╝                       █
-║▕ https://tenor.invalid/view/a-cat-12345                                                          █
-║▕ [gif ▶ a cat, falling over]                                                                     █
+║  Jordan  09:15                                                                                   ║
+║  https://example.invalid/page                                                                    ║
+║  ▌ Example            ╔═ delete this message ════════════════════════════╗                       ║
+║  ▌ A page title       ║here is the thing I meant                         ║                       ║
+║  ▌ Two sentences of de║                                                  ║here so                ║
+║  ▌ the wrapping has so║this cannot be undone                             ║                       ║
+║▕ Alex  09:20          ║                                                  ║                       ║
+║▕ https://tenor.invalid╚════════════════════════════════════ y yes · n no ╝                       ║
+║▕ ▌ Tenor                                                                                         █
+║▕ ▌ [gif ▶ a cat, falling over]                                                                   █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
