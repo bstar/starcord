@@ -156,6 +156,7 @@ _everywhere_
 | chat     | wheel                 | scroll three rows |
 | chat     | click                 | select a message |
 | chat     | click a picture       | open it |
+| chat     | click a video         | play it |
 | chat     | double-click a file   | open it |
 | chat     | click a reaction      | add or remove yours |
 | chat     | click a link          | open it |

@@ -663,6 +663,11 @@ pub const MOUSE: &[MouseHelp] = &[
         group: "chat",
     },
     MouseHelp {
+        gesture: "click a video",
+        label: "play it",
+        group: "chat",
+    },
+    MouseHelp {
         gesture: "double-click a file",
         label: "open it",
         group: "chat",
