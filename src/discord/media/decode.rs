@@ -229,10 +229,7 @@ fn animated(bytes: &[u8], target: Target, format: ImageFormat) -> Result<Decodin
 
     // Every frame the same size, from the first: a GIF's frames can differ
     // in size on the wire, and an animation whose frames wobble is not one.
-    let (width, height) = frames
-        .first()
-        .map(|f| f.dimensions())
-        .unwrap_or((1, 1));
+    let (width, height) = frames.first().map(|f| f.dimensions()).unwrap_or((1, 1));
     let (mut w, mut h) = target.size_for(width, height);
     // Filling is bounded by the pixel budget across the whole animation,
     // so a long GIF blown up to its box cannot become a gigabyte of frames.
@@ -403,7 +400,10 @@ mod tests {
         let bytes = png_header(40_000, 40_000);
         assert_eq!(dimensions(&bytes).unwrap(), (40_000, 40_000));
         assert!(
-            matches!(decode(&bytes, 64, 64, false), Err(MediaError::TooLarge { .. })),
+            matches!(
+                decode(&bytes, 64, 64, false),
+                Err(MediaError::TooLarge { .. })
+            ),
             "a picture larger than the limit was not refused"
         );
 

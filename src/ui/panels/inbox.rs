@@ -178,7 +178,9 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                 }
                 // The dot keeps its own colour, as it does in the column: it
                 // is the one thing on the line that means something by it.
-                let dot = Style::default().fg(rgb(presence_colour(t, *presence))).bg(rgb(bg));
+                let dot = Style::default()
+                    .fg(rgb(presence_colour(t, *presence)))
+                    .bg(rgb(bg));
                 buf.set_string(body.x, y, presence_glyph(*presence).to_string(), dot);
                 let when = last.as_ref().map(|l| l.when.as_str()).unwrap_or("");
                 let name_width = width.saturating_sub(1 + when.len() as u16 + 1);
@@ -193,7 +195,9 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
                         body.x + width - when.len() as u16,
                         y,
                         when,
-                        Style::default().fg(rgb(if selected { t.row_selected_fg } else { t.dim })).bg(rgb(bg)),
+                        Style::default()
+                            .fg(rgb(if selected { t.row_selected_fg } else { t.dim }))
+                            .bg(rgb(bg)),
                     );
                 }
                 y += 1;
@@ -283,9 +287,8 @@ mod tests {
 
         let mut buf = Buffer::empty(body);
         render(body, &mut buf, &v);
-        let line = |y: u16| -> String {
-            (0..40).map(|x| buf[(x, y)].symbol().to_string()).collect()
-        };
+        let line =
+            |y: u16| -> String { (0..40).map(|x| buf[(x, y)].symbol().to_string()).collect() };
         assert_eq!(line(0).trim_end(), "WAITING");
         assert!(line(1).contains("person 1"));
         assert!(line(1).ends_with("09:41"), "{:?}", line(1));

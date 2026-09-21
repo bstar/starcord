@@ -199,7 +199,7 @@ fn rank(emoji: &Emoji, needle: &str) -> Option<Rank> {
     // A word boundary inside a shortcode counts: `smile` finds `:sweat_smile:`
     // the way it finds "smiling face".
     let starts_a_word = |text: &str| {
-        text.split(|c: char| c == ' ' || c == '_' || c == '-')
+        text.split([' ', '_', '-'])
             .any(|word| word.starts_with(needle))
     };
     if starts_a_word(codes) || starts_a_word(terms) {

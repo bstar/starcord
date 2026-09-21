@@ -808,7 +808,10 @@ mod tests {
         store.want_measure(&key(5));
         let asked = store.take_requests();
         assert_eq!(asked.len(), 1);
-        assert!(!fill_of(&asked[0]).2, "a measurement wants the picture as it is");
+        assert!(
+            !fill_of(&asked[0]).2,
+            "a measurement wants the picture as it is"
+        );
         store.arrived(key(5), Ok(still()));
 
         store.begin_frame();
@@ -820,7 +823,10 @@ mod tests {
 
         store.begin_frame();
         store.want(&key(5), 20, 6);
-        assert!(store.take_requests().is_empty(), "the same box asks nothing");
+        assert!(
+            store.take_requests().is_empty(),
+            "the same box asks nothing"
+        );
         store.want(&key(5), 30, 6);
         let asked = store.take_requests();
         assert_eq!(asked.len(), 1, "a wider box asks again");

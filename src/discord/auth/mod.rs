@@ -427,7 +427,11 @@ mod tests {
         let after = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
             .and_then(|entry| entry.get_password())
             .ok();
-        assert_eq!(before.is_some(), after.is_some(), "clear() reached the keyring");
+        assert_eq!(
+            before.is_some(),
+            after.is_some(),
+            "clear() reached the keyring"
+        );
     }
 
     #[test]

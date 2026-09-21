@@ -1073,7 +1073,13 @@ impl<'a> Writer<'a> {
         // site's brand -- and the theme's when it does not.
         let bar_fg = embed
             .color
-            .map(|c| Rgb::new((c >> 16 & 0xff) as u8, (c >> 8 & 0xff) as u8, (c & 0xff) as u8))
+            .map(|c| {
+                Rgb::new(
+                    (c >> 16 & 0xff) as u8,
+                    (c >> 8 & 0xff) as u8,
+                    (c & 0xff) as u8,
+                )
+            })
             .unwrap_or(t.chat.embed_bar);
         let bar = Style::default().fg(rgb(bar_fg));
         // Where the card's contents start: after the gutter, the bar and one
@@ -1250,9 +1256,7 @@ impl<'a> Writer<'a> {
             (None, None) => None,
         };
         if let Some((key, kind)) = drawn {
-            let declared = size
-                .map(|m| (m.width, m.height))
-                .unwrap_or((None, None));
+            let declared = size.map(|m| (m.width, m.height)).unwrap_or((None, None));
             let (cols, rows) = self.box_for(declared, &key, inner, self.ctx.max_image_rows);
             if rows > 0 {
                 self.flush();
@@ -1622,7 +1626,10 @@ pub fn gif_url(embed: &Embed) -> Option<String> {
         }
     }
     let video = embed.video.as_ref()?.url.clone()?;
-    let host = url::Url::parse(&video).ok()?.host_str()?.to_ascii_lowercase();
+    let host = url::Url::parse(&video)
+        .ok()?
+        .host_str()?
+        .to_ascii_lowercase();
     if !video.to_ascii_lowercase().ends_with(".mp4") {
         return None;
     }
@@ -2164,14 +2171,21 @@ mod tests {
             ..Embed::default()
         });
         let out = render(&message, true, &ctx);
-        let slot = out.images.iter().find(|i| i.kind == SlotKind::Gif).expect("a moving slot");
+        let slot = out
+            .images
+            .iter()
+            .find(|i| i.kind == SlotKind::Gif)
+            .expect("a moving slot");
         assert_eq!(
             slot.key,
             MediaKey::Gif {
                 url: "https://media.tenor.com/AbCdEfGhIjKAAAAC/cat.gif".into()
             }
         );
-        assert!(slot.rows > 4, "a GIF gets a photograph's rows, not a thumbnail's");
+        assert!(
+            slot.rows > 4,
+            "a GIF gets a photograph's rows, not a thumbnail's"
+        );
         let click = out
             .attachments
             .iter()
@@ -2189,7 +2203,11 @@ mod tests {
             ..Embed::default()
         });
         let out = render(&message, true, &ctx);
-        let slot = out.images.iter().find(|i| i.kind == SlotKind::Gifv).expect("a poster");
+        let slot = out
+            .images
+            .iter()
+            .find(|i| i.kind == SlotKind::Gifv)
+            .expect("a poster");
         assert_eq!(
             slot.key,
             MediaKey::EmbedImage {

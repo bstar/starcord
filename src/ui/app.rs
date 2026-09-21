@@ -2628,7 +2628,12 @@ impl App {
             ModuleId::Conversation if self.showing_inbox() => {
                 let v = self.inbox_view(false);
                 if let Some(index) = inbox::row_at(body, &v, y) {
-                    if self.view.inbox.get(index).is_some_and(inbox::Row::selectable) {
+                    if self
+                        .view
+                        .inbox
+                        .get(index)
+                        .is_some_and(inbox::Row::selectable)
+                    {
                         self.nav.inbox_cursor = index;
                         self.activate();
                     }
