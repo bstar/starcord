@@ -554,6 +554,160 @@ fn quitting_during_an_upload_asks_first() {
     assert!(confirm.body.contains("still being sent"), "{confirm:?}");
 }
 
+/// A session with nowhere of its own to draw, in the two ways it says so.
+#[test]
+fn a_session_with_no_display_of_its_own_says_so() {
+    let env = |pairs: &'static [(&'static str, &'static str)]| {
+        move |name: &str| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| (*value).to_string())
+        }
+    };
+
+    // An ssh session says so itself, display forwarded or not: the opener at
+    // that end reaches the far machine's desktop either way.
+    assert!(remote_session(env(&[(
+        "SSH_CONNECTION",
+        "10.0.0.2 55000 10.0.0.1 22"
+    )])));
+    assert!(remote_session(env(&[("SSH_TTY", "/dev/pts/3")])));
+    assert!(remote_session(env(&[
+        ("SSH_CONNECTION", "10.0.0.2 55000 10.0.0.1 22"),
+        ("DISPLAY", ":10.0"),
+    ])));
+
+    // A desktop session does not. On macOS neither variable exists and `open`
+    // always has somewhere to go, so the answer there is the same with none of
+    // them set.
+    assert!(!remote_session(env(&[("DISPLAY", ":0")])));
+    assert!(!remote_session(env(&[("WAYLAND_DISPLAY", "wayland-0")])));
+    assert_eq!(
+        remote_session(env(&[])),
+        cfg!(target_os = "linux"),
+        "a Linux session with no display at all has nowhere to draw; macOS has"
+    );
+
+    // Set and empty is not set: a shell that exports a variable it never
+    // filled in is every login script.
+    assert!(!remote_session(env(&[("SSH_TTY", ""), ("DISPLAY", ":0")])));
+}
+
+/// A click on a photograph opens the overlay or the desktop's own program,
+/// whichever `[media] click` asks for, and the overlay opens on the picture
+/// that was clicked rather than on the message's first.
+#[test]
+fn a_click_on_a_picture_opens_what_the_setting_says() {
+    use crate::config::Click;
+
+    let (core, mut idle) = fake::silent();
+    let mut a = App::new(
+        core,
+        Config::default(),
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        Graphics::disabled(),
+    );
+    a.login = None;
+    a.nav.channel = Some(ChannelId(1));
+    // Two photographs on one message, so "the one that was clicked" is a
+    // different answer from "the message's first".
+    let message: crate::discord::model::Message = serde_json::from_str(
+        r#"{
+            "id": "5",
+            "channel_id": "1",
+            "author": { "id": "9", "username": "sam" },
+            "attachments": [
+                {
+                    "id": "11",
+                    "filename": "first.png",
+                    "content_type": "image/png",
+                    "url": "https://cdn.invalid/first.png"
+                },
+                {
+                    "id": "12",
+                    "filename": "second.png",
+                    "content_type": "image/png",
+                    "url": "https://cdn.invalid/second.png"
+                }
+            ]
+        }"#,
+    )
+    .expect("the message parses");
+    {
+        let mut state = idle.state().write().unwrap();
+        let store = state.messages_mut(ChannelId(1));
+        store.set_open(true);
+        store.replace(vec![message], true);
+        state.touch();
+    }
+
+    // `viewer`: the overlay, on the second picture, whatever this session is.
+    a.cfg.media.click = Click::Viewer;
+    a.attachment_clicked(
+        MessageId(5),
+        "https://cdn.invalid/second.png".into(),
+        ExternalKind::Image,
+        false,
+    );
+    let viewer = a.over.viewer.as_ref().expect("the viewer opened");
+    assert_eq!(viewer.current().filename, "second.png");
+    assert_eq!(viewer.items.len(), 2, "it walks the channel from there");
+    a.over.close();
+
+    // `external`: the program the desktop opens pictures with, which is a
+    // command to the core and not an overlay.
+    a.cfg.media.click = Click::External;
+    a.remote = false;
+    a.attachment_clicked(
+        MessageId(5),
+        "https://cdn.invalid/second.png".into(),
+        ExternalKind::Image,
+        false,
+    );
+    assert!(a.over.viewer.is_none(), "it opened the overlay anyway");
+    assert!(
+        idle.sent().iter().any(|c| matches!(
+            c,
+            Command::OpenExternal { url, kind }
+                if url == "https://cdn.invalid/second.png" && *kind == ExternalKind::Image
+        )),
+        "nothing was handed to the desktop"
+    );
+
+    // `auto` is the overlay where there is nowhere of its own to draw.
+    a.cfg.media.click = Click::Auto;
+    a.remote = true;
+    a.attachment_clicked(
+        MessageId(5),
+        "https://cdn.invalid/first.png".into(),
+        ExternalKind::Image,
+        false,
+    );
+    assert_eq!(
+        a.over
+            .viewer
+            .as_ref()
+            .expect("the viewer opened")
+            .current()
+            .filename,
+        "first.png"
+    );
+    a.over.close();
+
+    // And a video there is still the player's, which has nowhere to draw
+    // either -- so it says so rather than starting something invisible.
+    a.attachment_clicked(
+        MessageId(5),
+        "https://cdn.invalid/clip.mp4".into(),
+        ExternalKind::Video,
+        false,
+    );
+    let note = a.note.as_ref().expect("it said something");
+    assert!(note.0.contains("no display here"), "{note:?}");
+}
+
 /// A settings change reaches the running program even when the file
 /// cannot be written, which is the case a read-only home directory is.
 #[test]

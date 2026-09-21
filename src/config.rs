@@ -203,10 +203,46 @@ impl Animate {
     }
 }
 
+/// What a click on a picture opens it in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Click {
+    /// The viewer in the window where this session has no display of its own,
+    /// and the desktop's opener where it has one. Over ssh the opener runs on
+    /// the machine at the far end, where there is nothing to draw on, so the
+    /// click did nothing at all and said nothing either.
+    #[default]
+    Auto,
+    /// Always the overlay.
+    Viewer,
+    /// Always the desktop's opener, or `[media] viewer`.
+    External,
+}
+
+impl Click {
+    pub fn name(self) -> &'static str {
+        match self {
+            Click::Auto => "auto",
+            Click::Viewer => "viewer",
+            Click::External => "external",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Click::Auto => Click::Viewer,
+            Click::Viewer => Click::External,
+            Click::External => Click::Auto,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Media {
     pub animate: Animate,
+    /// What a click on a photograph opens.
+    pub click: Click,
     /// How large the on-disk cache may grow before the oldest files are swept.
     pub cache_max_mib: u64,
     /// The largest attachment worth downloading. Twenty-five is what an
@@ -219,7 +255,8 @@ pub struct Media {
     /// with a space in it, not two arguments.
     pub player: Vec<String>,
     /// The same for a picture. Empty is the desktop's own opener, which is
-    /// what a click on a photograph should reach.
+    /// what a picture opened elsewhere reaches -- see `click`, and `o` in the
+    /// viewer.
     #[serde(default)]
     pub viewer: Vec<String>,
 }
@@ -228,6 +265,7 @@ impl Default for Media {
     fn default() -> Self {
         Self {
             animate: Animate::Focused,
+            click: Click::Auto,
             cache_max_mib: 512,
             max_attachment_mib: 25,
             save_dir: "~/Downloads".into(),
@@ -440,6 +478,12 @@ spoilers = "hidden"
 [media]
 # When an animated picture may move: always, focused, or never.
 animate = "focused"
+# What a click on a picture opens it in: "viewer" is the overlay in the window,
+# "external" is the program below, and "auto" -- the default -- is the overlay
+# where this session has no display of its own and the program below where it
+# has one. Over ssh the program runs at the far end, where there is nothing to
+# draw on, so a click there used to do nothing at all.
+click = "auto"
 # How large the media cache may grow, in mebibytes, before the oldest files
 # are swept.
 cache_max_mib = 512
@@ -450,10 +494,11 @@ save_dir = "~/Downloads"
 # Arguments, never a shell line. The file is appended to this list, and `--`
 # is what keeps a file called `-x` a file rather than an option.
 player = ["mpv", "--"]
-# What a click on a picture opens it with. Empty is the desktop's own opener
-# -- `open` on macOS, `xdg-open` elsewhere -- which hands the file to whatever
-# you already look at pictures with. Name a program the same way as `player`
-# to choose one instead.
+# What opens a picture elsewhere -- a click where `click` says so, and `o` in
+# the viewer wherever it is. Empty is the desktop's own opener -- `open` on
+# macOS, `xdg-open` elsewhere -- which hands the file to whatever you already
+# look at pictures with. Name a program the same way as `player` to choose one
+# instead.
 viewer = []
 
 [notify]

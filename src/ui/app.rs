@@ -82,7 +82,7 @@ use super::panels::{self, channels, chat, dms, guilds, inbox, members, rgb, Modu
 use super::status;
 use super::theme::Theme;
 use super::{clipboard, core_ext, layout, unread};
-use crate::config::Config;
+use crate::config::{Click, Config};
 use crate::discord::handle::{
     AuthEvent, Connection, EmojiRef, Event, ExternalKind, MessagesChange, Note, NoteLevel,
     SearchScope,
@@ -226,6 +226,9 @@ pub struct App {
     /// Whether anything was modal on the previous frame, so that the frame
     /// after one closes is a whole one.
     overlay_was_open: bool,
+    /// Whether this session has nowhere of its own to draw a picture -- see
+    /// [`remote_session`], asked once here rather than on every click.
+    remote: bool,
     quit: bool,
 }
 
@@ -277,6 +280,7 @@ impl App {
             pending_jump: None,
             pending_save: None,
             overlay_was_open: false,
+            remote: remote_session(|name| std::env::var(name).ok()),
             quit: false,
             core,
             cfg,
@@ -2232,6 +2236,7 @@ impl App {
             Setting::Timestamps => self.cfg.chat.timestamps = self.cfg.chat.timestamps.next(),
             Setting::Avatars => self.cfg.chat.show_avatars = !self.cfg.chat.show_avatars,
             Setting::Animate => self.cfg.media.animate = self.cfg.media.animate.next(),
+            Setting::Click => self.cfg.media.click = self.cfg.media.click.next(),
             Setting::ShowVoice => {
                 self.cfg.channels.show_voice = !self.cfg.channels.show_voice;
                 self.view.stale = true;
@@ -2708,17 +2713,7 @@ impl App {
                     }
                 });
             }
-            Hit::Attachment(id, url, kind) => {
-                self.chat.select(id);
-                // A photograph or a video opens on the click that lands on
-                // it: the viewer the desktop opens pictures with, or the
-                // player. A file is chosen on one click and opened on two, as
-                // before; opening one means downloading it.
-                if kind != ExternalKind::Link || double {
-                    self.core.send(Command::OpenExternal { url, kind });
-                    self.note("opening");
-                }
-            }
+            Hit::Attachment(id, url, kind) => self.attachment_clicked(id, url, kind, double),
             Hit::LoadOlder => {
                 if let Some(channel) = self.nav.channel {
                     self.core.send(Command::LoadOlder(channel));
@@ -2729,6 +2724,64 @@ impl App {
                 self.drag_scrollbar(y);
             }
         }
+    }
+
+    /// A click that landed on something attached to a message.
+    ///
+    /// A photograph or a video opens on the click that lands on it. A file is
+    /// chosen on one click and opened on two, as before; opening one means
+    /// downloading it.
+    ///
+    /// Which of the two things a photograph opens *in* is `[media] click`, and
+    /// on `auto` that is the overlay wherever this session has nowhere of its
+    /// own to draw. The desktop's opener is still one key away: `o` here and
+    /// `o` in the viewer both mean it whatever the session is, because a
+    /// forwarded display is a display and only the person at the keyboard
+    /// knows whether they have one.
+    fn attachment_clicked(
+        &mut self,
+        message: MessageId,
+        url: String,
+        kind: ExternalKind,
+        double: bool,
+    ) {
+        self.chat.select(message);
+        if kind == ExternalKind::Link && !double {
+            return;
+        }
+        if kind == ExternalKind::Image && self.click_opens_viewer() {
+            self.open_viewer_on(viewer::Open::Attachment { message, url });
+            return;
+        }
+        self.open_elsewhere(url, kind);
+    }
+
+    /// Whether a click on a picture opens the overlay rather than the
+    /// program the desktop shows pictures with.
+    fn click_opens_viewer(&self) -> bool {
+        match self.cfg.media.click {
+            Click::Viewer => true,
+            Click::External => false,
+            Click::Auto => self.remote,
+        }
+    }
+
+    /// Hand something to the program that shows it, or say why that is no use.
+    ///
+    /// A session with no display of its own spawns the opener at the far end,
+    /// where there is nothing to draw on: the click did nothing, and said
+    /// nothing about it either, which is how this looked like a broken client
+    /// rather than the wrong machine.
+    fn open_elsewhere(&mut self, url: String, kind: ExternalKind) {
+        if self.remote {
+            self.note_at(
+                "no display here \u{b7} y copies the link",
+                NoteLevel::Warning,
+            );
+            return;
+        }
+        self.core.send(Command::OpenExternal { url, kind });
+        self.note("opening");
     }
 
     fn word_click(&mut self, module: ModuleId, word: panels::Word) {
@@ -3300,6 +3353,26 @@ impl App {
             _ => (module.title().to_string(), None),
         }
     }
+}
+
+/// Whether this session has no display of its own.
+///
+/// Read once, at startup, because it cannot change under a running process:
+/// the environment a program was started with is the environment it keeps.
+///
+/// Two answers, in order. An ssh session says so itself, and says it whether
+/// or not a display is forwarded -- `xdg-open` at that end reaches the far
+/// machine's desktop either way, which is not the one the reader is sitting at.
+/// Otherwise, on Linux, a session with neither an X display nor a Wayland one
+/// has nothing for an opener to draw on at all: a bare tty, a container, a
+/// serial console. macOS has no such variable and needs none, since `open`
+/// there always has a session to reach.
+fn remote_session(env: impl Fn(&str) -> Option<String>) -> bool {
+    let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
+    if set("SSH_CONNECTION") || set("SSH_TTY") {
+        return true;
+    }
+    cfg!(target_os = "linux") && !set("DISPLAY") && !set("WAYLAND_DISPLAY")
 }
 
 /// The first link in a message, from its text or from what is attached.

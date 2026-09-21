@@ -60,11 +60,12 @@ written by the old version still loads.
 | Key | Does |
 | --- | --- |
 | `[media] animate` | when an animated picture may move: `always`, `focused` (default), `never`. At most four move at once, and only ones that are on screen; `alt+n` cycles it while running |
+| `[media] click` | what a click on a picture opens it in: `"viewer"` is the overlay in the window, `"external"` is `[media] viewer` or the desktop's own opener, and `"auto"` (default) is the overlay where this session has nowhere of its own to draw -- an ssh session, or a Linux one with neither `DISPLAY` nor `WAYLAND_DISPLAY` -- and the opener where it has. `o` in the viewer opens the picture elsewhere whatever this says, since a forwarded display is still a display |
 | `[media] cache_max_mib` | how large the on-disk media cache may grow before the oldest files are swept, in mebibytes. Default `512` |
 | `[media] max_attachment_mib` | the largest attachment worth downloading. Default `25`, which is what an account without Nitro may upload |
 | `[media] save_dir` | where the media viewer's `s` puts a file. `~` is expanded. Default `"~/Downloads"` |
 | `[media] player` | argv for playing a video, never a shell line. The video's URL is appended, or its path when it is already in the cache, so the player streams rather than waiting on a download. Default `["mpv", "--"]`, where `--` is what keeps a file called `-x` a file rather than an option |
-| `[media] viewer` | argv for showing a picture, the same way. Default `[]`, which is the desktop's own opener -- `open` on macOS, `xdg-open` elsewhere -- so a click on a photograph reaches whatever you already look at pictures with |
+| `[media] viewer` | argv for showing a picture, the same way. Default `[]`, which is the desktop's own opener -- `open` on macOS, `xdg-open` elsewhere -- so a picture opened elsewhere reaches whatever you already look at pictures with |
 
 `player` is a list because a file name with a space or a semicolon in it is
 somebody else's file name, and it reaches a program without ever reaching a

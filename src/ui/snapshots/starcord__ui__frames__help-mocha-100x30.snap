@@ -7,7 +7,7 @@ expression: "render(&mut app, 100, 30)"
 ║• First G║  navigation                         chat                                     ║         ║
 ╚═════════║  tab           next module          wheel                scroll three rows   ║═════════╝
 ╔═ CHANNEL║  shift+tab     previous module      click                select a message    ║═════════╗
-║         ║  alt+1         the servers          click a picture      open it             ║settings ║
+║         ║  alt+1         the servers          click a picture      view it, or open it ║settings ║
 ║# rules  ║  alt+2         the channels         click a video        play it             ║         ║
 ║▾ TEXT CH║  alt+3         the conversation     click, in the inbox  open that one       ║         ║
 ║  # gener║  alt+4 / i     write a message      double-click a file  open it             ║         ║

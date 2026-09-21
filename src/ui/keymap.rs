@@ -666,7 +666,7 @@ pub const MOUSE: &[MouseHelp] = &[
     },
     MouseHelp {
         gesture: "click a picture",
-        label: "open it",
+        label: "view it, or open it",
         group: "chat",
     },
     MouseHelp {

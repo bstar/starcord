@@ -7,6 +7,20 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- **A click on a picture opens it where there is a screen** (`[media]
+  click`). The desktop's opener runs on the machine STAR/CORD is running on,
+  so over ssh a click handed a photograph to a machine with no display and
+  nothing happened, and nothing said why. `auto`, the default, opens the
+  viewer in the window instead wherever this session has nowhere of its own
+  to draw -- an ssh session, or a Linux one with neither `DISPLAY` nor
+  `WAYLAND_DISPLAY` -- and the desktop's opener wherever it has. `viewer`
+  and `external` say so outright. The viewer opens on the picture that was
+  clicked, not on its message's first, and `o` in it still opens the
+  current one elsewhere whatever the setting says, since only the person at
+  the keyboard knows whether a forwarded display is worth reaching for. A
+  video or a file with nowhere to open says `no display here` on the status
+  line rather than starting something invisible. The session is read once,
+  at startup, since it cannot change under a running process.
 - **The viewer grows a picture to the window.** `Resize::Fit` never
   upsizes, so a picture smaller than the overlay -- most of what a
   conversation carries -- sat in the middle of it at whatever size it

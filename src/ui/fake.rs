@@ -357,6 +357,19 @@ impl Idle {
         &self.state
     }
 
+    /// Every command waiting, taken off the channel.
+    ///
+    /// For a test that asserts what a key or a click asked the core to do,
+    /// rather than what the core made of it -- [`Idle::pump`] is the other
+    /// half, and answers them instead.
+    pub fn sent(&mut self) -> Vec<Command> {
+        let mut out = Vec::new();
+        while let Ok(command) = self.commands.try_recv() {
+            out.push(command);
+        }
+        out
+    }
+
     /// Answer every command waiting, as far as a file can. Returns how many.
     ///
     /// The same [`answer`] the replay thread uses, so a test and a run see the

@@ -156,7 +156,7 @@ _everywhere_
 |---|---|---|
 | chat     | wheel                 | scroll three rows |
 | chat     | click                 | select a message |
-| chat     | click a picture       | open it |
+| chat     | click a picture       | view it, or open it |
 | chat     | click a video         | play it |
 | chat     | click, in the inbox   | open that one |
 | chat     | double-click a file   | open it |
