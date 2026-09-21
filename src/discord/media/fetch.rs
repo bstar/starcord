@@ -242,9 +242,9 @@ pub async fn fetch_one(
 
     match want {
         Want::Bytes => Ok(Arc::new(Decoded::Bytes(Arc::new(bytes)))),
-        Want::Decoded { max_w, max_h } => {
+        Want::Decoded { max_w, max_h, fill } => {
             let described = key.describe();
-            let Decoding { decoded, note } = decode_off_thread(bytes, max_w, max_h).await?;
+            let Decoding { decoded, note } = decode_off_thread(bytes, max_w, max_h, fill).await?;
             if let Some(note) = note {
                 tracing::debug!("{described}: {note}");
                 context.events.send(Event::Note(Note::info(note)));
@@ -259,8 +259,13 @@ pub async fn fetch_one(
 /// A 4000-pixel JPEG takes tens of milliseconds, which on the runtime's two
 /// worker threads is tens of milliseconds during which no gateway frame is
 /// read.
-async fn decode_off_thread(bytes: Vec<u8>, max_w: u32, max_h: u32) -> Result<Decoding, MediaError> {
-    match tokio::task::spawn_blocking(move || decode::decode(&bytes, max_w, max_h)).await {
+async fn decode_off_thread(
+    bytes: Vec<u8>,
+    max_w: u32,
+    max_h: u32,
+    fill: bool,
+) -> Result<Decoding, MediaError> {
+    match tokio::task::spawn_blocking(move || decode::decode(&bytes, max_w, max_h, fill)).await {
         Ok(result) => result,
         Err(e) => Err(MediaError::Decode(format!("the decoder stopped: {e}"))),
     }
@@ -534,6 +539,7 @@ mod tests {
             want: Want::Decoded {
                 max_w: 32,
                 max_h: 32,
+                fill: false,
             },
             priority,
             generation,

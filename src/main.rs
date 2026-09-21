@@ -349,13 +349,14 @@ fn probe_media(url: &str) -> Result<()> {
 
         match &*decoded {
             discord::handle::Decoded::Bytes(raw) => println!("{} bytes, not decoded", raw.len()),
-            discord::handle::Decoded::Still(image) => {
+            discord::handle::Decoded::Still { image, .. } => {
                 println!("a still picture, {}x{}", image.width(), image.height())
             }
             discord::handle::Decoded::Animated {
                 frames,
                 delays,
                 looped,
+                ..
             } => {
                 let (w, h) = frames
                     .first()

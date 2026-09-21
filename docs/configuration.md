@@ -50,7 +50,7 @@ written by the old version still loads.
 | `[chat] show_avatars` | draw avatars beside the first message of a block. Default `true` |
 | `[chat] timestamps` | `off`, `short` (`14:32`, the default) or `full` (`2026-09-13 14:32`) |
 | `[chat] group_window_secs` | how far apart two messages from one person can be and still be drawn as one block. Default `420` |
-| `[chat] max_image_rows` | rows an inline picture may take. The rows are worked out from the size the picture says it is and the shape of a terminal cell, then held to this; `0` draws a chip with the file name instead. Default `12` |
+| `[chat] max_image_rows` | rows an inline picture may take. The rows are worked out from the size the picture says it is and the shape of a terminal cell, then held to this, and the pixels are scaled to fill the box, so a picture is as big as its rows allow; `0` draws a chip with the file name instead. Default `16` |
 | `[chat] emoji_images` | draw custom emoji as pictures rather than as `:name:`. Default `true` |
 | `[chat] show_embeds` | draw link previews. Default `true` |
 | `[chat] spoilers` | `"hidden"` (default) covers a spoiler until it is asked for; `"shown"` never covers one |
@@ -63,7 +63,7 @@ written by the old version still loads.
 | `[media] cache_max_mib` | how large the on-disk media cache may grow before the oldest files are swept, in mebibytes. Default `512` |
 | `[media] max_attachment_mib` | the largest attachment worth downloading. Default `25`, which is what an account without Nitro may upload |
 | `[media] save_dir` | where the media viewer's `s` puts a file. `~` is expanded. Default `"~/Downloads"` |
-| `[media] player` | argv for playing a video, never a shell line. The path is appended. Default `["mpv", "--"]`, where `--` is what keeps a file called `-x` a file rather than an option |
+| `[media] player` | argv for playing a video, never a shell line. The video's URL is appended, or its path when it is already in the cache, so the player streams rather than waiting on a download. Default `["mpv", "--"]`, where `--` is what keeps a file called `-x` a file rather than an option |
 | `[media] viewer` | argv for showing a picture, the same way. Default `[]`, which is the desktop's own opener -- `open` on macOS, `xdg-open` elsewhere -- so a click on a photograph reaches whatever you already look at pictures with |
 
 `player` is a list because a file name with a space or a semicolon in it is

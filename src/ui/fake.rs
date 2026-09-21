@@ -239,8 +239,8 @@ impl Media {
             .ok_or_else(|| MediaError::Unsupported("the fixture has no such picture".into()))?;
         match want {
             Want::Bytes => Ok(Arc::new(Decoded::Bytes(bytes))),
-            Want::Decoded { max_w, max_h } => {
-                Ok(Arc::new(decode::decode(&bytes, max_w, max_h)?.decoded))
+            Want::Decoded { max_w, max_h, fill } => {
+                Ok(Arc::new(decode::decode(&bytes, max_w, max_h, fill)?.decoded))
             }
         }
     }

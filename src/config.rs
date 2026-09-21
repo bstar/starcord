@@ -165,7 +165,7 @@ impl Default for Chat {
             show_avatars: true,
             timestamps: Timestamps::Short,
             group_window_secs: 420,
-            max_image_rows: 12,
+            max_image_rows: 16,
             emoji_images: true,
             show_embeds: true,
             spoilers: Spoilers::Hidden,
@@ -431,7 +431,7 @@ timestamps = "short"
 # one block, in seconds.
 group_window_secs = 420
 # Rows an inline picture may take. 0 draws a chip with the file name instead.
-max_image_rows = 12
+max_image_rows = 16
 emoji_images = true
 show_embeds = true
 # "hidden" covers a spoiler until it is asked for; "shown" never covers one.

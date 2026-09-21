@@ -7,6 +7,36 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- **A picture fills its rows.** The message list reserves rows from a
+  picture's shape and then drew the pixels it was given without enlarging
+  them, so a picture smaller than its box -- most GIFs, anything under a
+  few hundred pixels -- sat in a corner of it with placeholder around the
+  rest. The decode is now scaled to the box it was asked for, up as well as
+  down, and a picture that was measured before it was placed is asked for
+  again at the slot's size. An animation fills as far as the pixel budget
+  across its frames allows. The media viewer's label and "actual size" use
+  the size on the wire, which they did not before either. `max_image_rows`
+  defaults to sixteen.
+- **Link cards are cards.** A half-block bar in the colour the embed names
+  for itself, the site or service over the title, the title in bold, the
+  words wrapped to eighty columns rather than sixty, and the picture drawn
+  at the rows a photograph gets -- a card's big picture, or the picture
+  itself when the link was to one -- with the small side thumbnail under
+  the words at a few rows. A video's poster carries the play marker and
+  opens in the player.
+- **GIFs move.** A GIF link, which Discord unfurls into an mp4 and a still,
+  is drawn as the GIF the service keeps beside them -- Tenor's by its
+  format code, Giphy's and Klipy's by name -- animated in the terminal at
+  the rows a picture gets, and a click on it opens the mp4 in `[media]
+  player`. Klipy, which is what the picker posts now, hands Discord an
+  animated WebP as the "still", and that is drawn moving too rather than
+  frozen under a play marker. Where no GIF can be fetched the still stands
+  in with the marker, as before. `probe --channel` prints a gifv's
+  addresses, which is how this was found out.
+- **A click on a video plays it.** One click, like a picture, rather than
+  two like a file, and the player is handed the video's URL so it starts
+  streaming at once instead of after a download that the attachment cap
+  could refuse. A video already in the cache is played from there.
 - **Back and forward.** `‹` and `›` on the top module, and `alt+left` /
   `alt+right`, walk the conversations in the order they were opened, the way
   a browser's arrows do; a fresh move forgets what was ahead, and a
@@ -26,6 +56,24 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- **The test suite signed you out.** `TokenStore::clear` forgot the token in
+  both stores whatever the preference said, and one unit test cleared a
+  `file` store over a temporary directory -- which deleted the real entry
+  from the system keyring. Every `cargo test`, and so every build, meant
+  scanning the code again. A store now clears only what it could read:
+  `auto` both, `file` and `keyring` their own, `none` nothing. A test holds
+  the line.
+- **The emoji picker finds a feeling, not only a shortcode.** `laugh` used
+  to find `:laughing:` and nothing else, because the query was matched
+  against one shortcode per emoji. It now searches every shortcode, the
+  Unicode name and a short list of the words people actually type, so
+  `laugh` brings up `:joy:`, `:rofl:`, `:laughing:` and `:sweat_smile:`,
+  and `thumbs` finds `:+1:`. Results are ranked -- a shortcode typed in full
+  first, then ones starting with the query, then words of a name -- and
+  the grid's cap is applied after ranking rather than before, which used to
+  drop good matches in favour of whatever came first in Unicode order.
+- **A click on a picture did nothing on Linux.** `xdg-open` rejects `--`,
+  and the viewer runs detached with its stderr closed, so nothing said so.
 - **A copied picture pasted with the terminal's own paste is attached.** A
   terminal hands `cmd+v` on as the clipboard's text flavour, and a copied
   picture or file has one -- on macOS the file's name with the extension

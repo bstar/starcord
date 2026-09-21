@@ -107,14 +107,27 @@ pub struct MediaStore {
     frame: u64,
     requests: Vec<MediaRequest>,
     cancels: Vec<MediaKey>,
-    /// The largest decode ever asked for, per picture.
+    /// The largest decode ever asked for, per picture, and whether it was
+    /// asked to fill its box.
     ///
     /// A picture is first fetched at the size of the slot that placed it, and
     /// the media viewer wants it very much larger. Without this the viewer
     /// would draw the thumbnail the message list fetched, blown up; with a
     /// plain "ask again" it would ask on every frame for ever, because a
-    /// picture that is genuinely smaller than the box never grows.
-    asked: HashMap<MediaKey, (u32, u32)>,
+    /// picture that is genuinely smaller than the box never grows. The flag
+    /// is for a picture that was measured before it was placed: the
+    /// measurement fetched it at its own size, and the slot wants it at the
+    /// slot's.
+    asked: HashMap<MediaKey, Asked>,
+}
+
+/// What has been asked of the core for one picture so far: the largest
+/// box, and the box it was last asked to fill, if any.
+#[derive(Debug, Clone, Copy, Default)]
+struct Asked {
+    w: u32,
+    h: u32,
+    filled: Option<(u32, u32)>,
 }
 
 impl MediaStore {
@@ -144,14 +157,12 @@ impl MediaStore {
     /// bytes arrive; this is what the second measurement reads, and it is the
     /// reason a `MediaStore` is threaded into the render context rather than
     /// only into the drawing pass.
+    ///
+    /// The size on the wire, not the size of the pixels held here: those are
+    /// scaled to the box that asked for them, and a box measured from its
+    /// own answer would grow on every measurement.
     pub fn size(&self, key: &MediaKey) -> Option<(u32, u32)> {
-        let decoded = self.decoded(key)?;
-        let img = match &*decoded {
-            Decoded::Still(img) => img.clone(),
-            Decoded::Animated { frames, .. } => frames.first()?.clone(),
-            Decoded::Bytes(_) => return None,
-        };
-        Some((img.width(), img.height()))
+        self.decoded(key)?.natural()
     }
 
     /// Ask for this picture again, larger, if it has only been fetched small.
@@ -163,12 +174,18 @@ impl MediaStore {
             u32::from(cols).max(1) * PX_PER_COL,
             u32::from(rows).max(1) * PX_PER_ROW,
         );
-        let asked = self.asked.get(key).copied().unwrap_or((0, 0));
-        if want.0 <= asked.0 && want.1 <= asked.1 {
+        let asked = self.asked.get(key).copied().unwrap_or_default();
+        if want.0 <= asked.w && want.1 <= asked.h {
             return;
         }
-        self.asked
-            .insert(key.clone(), (want.0.max(asked.0), want.1.max(asked.1)));
+        self.asked.insert(
+            key.clone(),
+            Asked {
+                w: want.0.max(asked.w),
+                h: want.1.max(asked.h),
+                ..asked
+            },
+        );
         let frame = self.frame;
         if let Some(entry) = self.entries.get_mut(key) {
             entry.seen = frame;
@@ -181,6 +198,7 @@ impl MediaStore {
             want: Want::Decoded {
                 max_w: want.0,
                 max_h: want.1,
+                fill: false,
             },
             priority: MediaPriority::Visible,
             generation: self.generation,
@@ -203,14 +221,23 @@ impl MediaStore {
         entry.seen = frame;
         if matches!(entry.state, MediaState::Missing) {
             entry.state = MediaState::Loading;
+            let (max_w, max_h) = (64 * PX_PER_COL, 32 * PX_PER_ROW);
             self.requests.push(MediaRequest {
                 key: key.clone(),
                 want: Want::Decoded {
-                    max_w: 64 * PX_PER_COL,
-                    max_h: 32 * PX_PER_ROW,
+                    max_w,
+                    max_h,
+                    fill: false,
                 },
                 priority: MediaPriority::Prefetch,
                 generation: self.generation,
+            });
+            // Recorded as not filled, so the slot that places it once it is
+            // measured asks for it again at the slot's own size.
+            self.asked.entry(key.clone()).or_insert(Asked {
+                w: max_w,
+                h: max_h,
+                filled: None,
             });
         }
     }
@@ -269,28 +296,58 @@ impl MediaStore {
     /// asked for: the state goes to `Loading` the moment the request is
     /// recorded, which is what stops a picture being fetched thirty times a
     /// second while it downloads.
+    /// The pixels for a slot of this many cells, asking for them if need be.
+    ///
+    /// Asked to fill the slot, so the picture is the size of the box the
+    /// renderer reserved for it. A picture already here that was only ever
+    /// measured, or that was fetched for a smaller box than this one -- the
+    /// panel widened, the setting went up -- is asked for again at the new
+    /// size, and what is here is drawn until the new pixels arrive.
     fn want(&mut self, key: &MediaKey, cols: u16, rows: u16) -> MediaState {
         let frame = self.frame;
+        let (max_w, max_h) = (
+            u32::from(cols).max(1) * PX_PER_COL,
+            u32::from(rows).max(1) * PX_PER_ROW,
+        );
         let entry = self.entries.entry(key.clone()).or_insert(Entry {
             state: MediaState::Missing,
             seen: frame,
         });
         entry.seen = frame;
-        if matches!(entry.state, MediaState::Missing) {
-            entry.state = MediaState::Loading;
-            let (max_w, max_h) = (
-                u32::from(cols).max(1) * PX_PER_COL,
-                u32::from(rows).max(1) * PX_PER_ROW,
-            );
+        let asked = self.asked.get(key).copied();
+        let ask = match (&entry.state, asked) {
+            (MediaState::Missing, _) => {
+                entry.state = MediaState::Loading;
+                true
+            }
+            // Here, and the record of what was asked says it was less than
+            // this slot: measured rather than placed, or placed smaller.
+            (MediaState::Ready(_), Some(asked)) => match asked.filled {
+                None => true,
+                Some((w, h)) => max_w > w || max_h > h,
+            },
+            _ => false,
+        };
+        let asked = asked.unwrap_or_default();
+        if ask {
             self.requests.push(MediaRequest {
                 key: key.clone(),
-                want: Want::Decoded { max_w, max_h },
+                want: Want::Decoded {
+                    max_w,
+                    max_h,
+                    fill: true,
+                },
                 priority: MediaPriority::Visible,
                 generation: self.generation,
             });
-            let asked = self.asked.entry(key.clone()).or_insert((0, 0));
-            *asked = (asked.0.max(max_w), asked.1.max(max_h));
-            return MediaState::Loading;
+            self.asked.insert(
+                key.clone(),
+                Asked {
+                    w: max_w.max(asked.w),
+                    h: max_h.max(asked.h),
+                    filled: Some((max_w, max_h)),
+                },
+            );
         }
         entry.state.clone()
     }
@@ -582,7 +639,7 @@ fn overlay_play(rect: Rect, buf: &mut Buffer, theme: &Theme) {
 /// rather than disappearing.
 fn frame_at(decoded: &Decoded, frame: usize) -> Option<&Arc<image::RgbaImage>> {
     match decoded {
-        Decoded::Still(img) => Some(img),
+        Decoded::Still { image, .. } => Some(image),
         Decoded::Animated { frames, .. } => {
             if frames.is_empty() {
                 None
@@ -631,7 +688,10 @@ mod tests {
     }
 
     fn still() -> Arc<Decoded> {
-        Arc::new(Decoded::Still(Arc::new(image::RgbaImage::new(8, 8))))
+        Arc::new(Decoded::Still {
+            image: Arc::new(image::RgbaImage::new(8, 8)),
+            natural: (8, 8),
+        })
     }
 
     fn place(key: MediaKey, rect: Rect, clip: Rect) -> Placement {
@@ -731,6 +791,40 @@ mod tests {
         // And it is askable again, because nothing arrived.
         store.begin_frame();
         assert!(matches!(store.want(&key(3), 10, 4), MediaState::Loading));
+    }
+
+    /// A slot asks for pixels that fill it. A picture that was measured
+    /// first arrived at its own size, and the slot that then places it asks
+    /// again, at the slot's; one that was placed is asked again only when
+    /// its box grows.
+    #[test]
+    fn a_slot_asks_for_its_box_and_a_measured_picture_is_asked_again() {
+        let fill_of = |r: &MediaRequest| match r.want {
+            Want::Decoded { max_w, max_h, fill } => (max_w, max_h, fill),
+            Want::Bytes => panic!("bytes"),
+        };
+        let mut store = MediaStore::new();
+        store.begin_frame();
+        store.want_measure(&key(5));
+        let asked = store.take_requests();
+        assert_eq!(asked.len(), 1);
+        assert!(!fill_of(&asked[0]).2, "a measurement wants the picture as it is");
+        store.arrived(key(5), Ok(still()));
+
+        store.begin_frame();
+        assert!(matches!(store.want(&key(5), 20, 6), MediaState::Ready(_)));
+        let asked = store.take_requests();
+        assert_eq!(asked.len(), 1, "placed after a measurement: asked again");
+        assert_eq!(fill_of(&asked[0]), (20 * PX_PER_COL, 6 * PX_PER_ROW, true));
+        store.arrived(key(5), Ok(still()));
+
+        store.begin_frame();
+        store.want(&key(5), 20, 6);
+        assert!(store.take_requests().is_empty(), "the same box asks nothing");
+        store.want(&key(5), 30, 6);
+        let asked = store.take_requests();
+        assert_eq!(asked.len(), 1, "a wider box asks again");
+        assert_eq!(fill_of(&asked[0]), (30 * PX_PER_COL, 6 * PX_PER_ROW, true));
     }
 
     /// A picture that did arrive is kept when it scrolls off: the pixels are

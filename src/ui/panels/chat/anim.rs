@@ -296,7 +296,10 @@ mod tests {
 
     #[test]
     fn the_helper_only_answers_for_something_that_moves() {
-        let still = Decoded::Still(std::sync::Arc::new(image::RgbaImage::new(2, 2)));
+        let still = Decoded::Still {
+            image: std::sync::Arc::new(image::RgbaImage::new(2, 2)),
+            natural: (2, 2),
+        };
         assert!(delays_of(&still).is_none());
         let moving = Decoded::Animated {
             frames: vec![
@@ -305,6 +308,7 @@ mod tests {
             ],
             delays: vec![Duration::from_millis(60); 2],
             looped: true,
+            natural: (2, 2),
         };
         assert_eq!(delays_of(&moving).map(|d| d.len()), Some(2));
     }

@@ -202,8 +202,12 @@ fn clamp_size(size: u16) -> u16 {
 pub enum Want {
     /// The bytes, undecoded. What a save-to-disk or an external player needs.
     Bytes,
-    /// Pixels, no larger than this.
-    Decoded { max_w: u32, max_h: u32 },
+    /// Pixels for a box this big. `fill` scales a smaller picture up to the
+    /// box as well as a larger one down, which is what a slot in the message
+    /// list wants: the rows are reserved from the picture's shape, and a
+    /// picture that fills a third of them leaves the rest as placeholder. The
+    /// media viewer and a measurement want the picture no larger than it is.
+    Decoded { max_w: u32, max_h: u32, fill: bool },
 }
 
 /// What a fetch is for, which decides the order it is served in.
@@ -233,7 +237,11 @@ impl MediaRequest {
     pub fn visible(key: MediaKey, max_w: u32, max_h: u32, generation: u64) -> Self {
         Self {
             key,
-            want: Want::Decoded { max_w, max_h },
+            want: Want::Decoded {
+                max_w,
+                max_h,
+                fill: true,
+            },
             priority: MediaPriority::Visible,
             generation,
         }
@@ -249,13 +257,20 @@ impl MediaRequest {
 pub enum Decoded {
     /// Undecoded bytes, for [`Want::Bytes`].
     Bytes(Arc<Vec<u8>>),
-    Still(Arc<image::RgbaImage>),
+    Still {
+        image: Arc<image::RgbaImage>,
+        /// The size on the wire. The pixels are scaled to the box they were
+        /// asked for, which may be larger than the picture; the viewer's
+        /// "actual size" and its label are this.
+        natural: (u32, u32),
+    },
     Animated {
         frames: Vec<Arc<image::RgbaImage>>,
         /// One per frame, already floored to something a terminal can keep up
         /// with.
         delays: Vec<Duration>,
         looped: bool,
+        natural: (u32, u32),
     },
 }
 
@@ -263,7 +278,9 @@ impl std::fmt::Debug for Decoded {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Decoded::Bytes(bytes) => write!(f, "Bytes({} bytes)", bytes.len()),
-            Decoded::Still(image) => write!(f, "Still({}x{})", image.width(), image.height()),
+            Decoded::Still { image, .. } => {
+                write!(f, "Still({}x{})", image.width(), image.height())
+            }
             Decoded::Animated { frames, looped, .. } => {
                 let (w, h) = frames
                     .first()
@@ -286,15 +303,23 @@ impl Decoded {
     pub fn dimensions(&self) -> Option<(u32, u32)> {
         match self {
             Decoded::Bytes(_) => None,
-            Decoded::Still(image) => Some((image.width(), image.height())),
+            Decoded::Still { image, .. } => Some((image.width(), image.height())),
             Decoded::Animated { frames, .. } => frames.first().map(|f| (f.width(), f.height())),
+        }
+    }
+
+    /// The size the picture is on the wire, before it was scaled to a box.
+    pub fn natural(&self) -> Option<(u32, u32)> {
+        match self {
+            Decoded::Bytes(_) => None,
+            Decoded::Still { natural, .. } | Decoded::Animated { natural, .. } => Some(*natural),
         }
     }
 
     pub fn frame_count(&self) -> usize {
         match self {
             Decoded::Bytes(_) => 0,
-            Decoded::Still(_) => 1,
+            Decoded::Still { .. } => 1,
             Decoded::Animated { frames, .. } => frames.len(),
         }
     }
@@ -536,7 +561,13 @@ mod tests {
     #[test]
     fn debugging_a_picture_does_not_print_its_pixels() {
         let image = Arc::new(image::RgbaImage::new(64, 32));
-        let printed = format!("{:?}", Decoded::Still(Arc::clone(&image)));
+        let printed = format!(
+            "{:?}",
+            Decoded::Still {
+                image: Arc::clone(&image),
+                natural: (3, 2),
+            }
+        );
         assert_eq!(printed, "Still(64x32)");
         assert!(printed.len() < 64, "{printed}");
 
@@ -544,6 +575,7 @@ mod tests {
             frames: vec![image],
             delays: vec![Duration::from_millis(100)],
             looped: true,
+            natural: (3, 2),
         };
         assert_eq!(animated.frame_count(), 1);
         assert_eq!(animated.dimensions(), Some((64, 32)));

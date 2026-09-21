@@ -67,7 +67,14 @@ pub struct Decoding {
 ///
 /// A zero in either bound means "do not resize", which is what a save-to-disk
 /// or an external viewer wants.
-pub fn decode(bytes: &[u8], max_w: u32, max_h: u32) -> Result<Decoding, MediaError> {
+/// `max_w` by `max_h` is the box the pixels are for; zero means no box.
+/// A larger picture is scaled down to fit it. `fill` scales a smaller one up
+/// to it as well -- the message list reserves rows from the picture's shape
+/// and draws the pixels it is given without enlarging them, so a picture
+/// smaller than its box would sit in a corner of it. An animation fills as
+/// far as [`MAX_ANIMATION_PIXELS`] allows across all its frames, which for a
+/// short GIF is all the way and for a long one is somewhat less.
+pub fn decode(bytes: &[u8], max_w: u32, max_h: u32, fill: bool) -> Result<Decoding, MediaError> {
     let format = image::guess_format(bytes).map_err(|e| {
         MediaError::Unsupported(format!("the format is not one this client reads ({e})"))
     })?;
@@ -75,18 +82,46 @@ pub fn decode(bytes: &[u8], max_w: u32, max_h: u32) -> Result<Decoding, MediaErr
     let (width, height) = dimensions(bytes)?;
     check(width, height)?;
 
+    let target = Target { max_w, max_h, fill };
     match format {
-        ImageFormat::Gif => animated(bytes, max_w, max_h, format),
+        ImageFormat::Gif => animated(bytes, target, format),
         ImageFormat::WebP => {
             let decoder = image::codecs::webp::WebPDecoder::new(Cursor::new(bytes))
                 .map_err(|e| MediaError::Decode(e.to_string()))?;
             if decoder.has_animation() {
-                animated(bytes, max_w, max_h, format)
+                animated(bytes, target, format)
             } else {
-                still(bytes, max_w, max_h)
+                still(bytes, target)
             }
         }
-        _ => still(bytes, max_w, max_h),
+        _ => still(bytes, target),
+    }
+}
+
+/// The box a decode is for.
+#[derive(Debug, Clone, Copy)]
+struct Target {
+    max_w: u32,
+    max_h: u32,
+    fill: bool,
+}
+
+impl Target {
+    /// The size a `width` by `height` picture becomes: scaled to fit the box,
+    /// down always, up only when filling. No box means no scaling.
+    fn size_for(self, width: u32, height: u32) -> (u32, u32) {
+        if self.max_w == 0 || self.max_h == 0 || width == 0 || height == 0 {
+            return (width, height);
+        }
+        if !self.fill && width <= self.max_w && height <= self.max_h {
+            return (width, height);
+        }
+        let scale = f64::from(self.max_w) / f64::from(width);
+        let scale = scale.min(f64::from(self.max_h) / f64::from(height));
+        (
+            ((f64::from(width) * scale).round() as u32).max(1),
+            ((f64::from(height) * scale).round() as u32).max(1),
+        )
     }
 }
 
@@ -128,7 +163,7 @@ fn limits() -> image::Limits {
     limits
 }
 
-fn still(bytes: &[u8], max_w: u32, max_h: u32) -> Result<Decoding, MediaError> {
+fn still(bytes: &[u8], target: Target) -> Result<Decoding, MediaError> {
     let mut reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| MediaError::Decode(e.to_string()))?;
@@ -136,19 +171,20 @@ fn still(bytes: &[u8], max_w: u32, max_h: u32) -> Result<Decoding, MediaError> {
     let image = reader
         .decode()
         .map_err(|e| MediaError::Decode(e.to_string()))?;
-    let image = fit(image.into_rgba8(), max_w, max_h);
+    let image = image.into_rgba8();
+    let natural = image.dimensions();
+    let (w, h) = target.size_for(image.width(), image.height());
+    let image = scale_to(image, w, h);
     Ok(Decoding {
-        decoded: Decoded::Still(Arc::new(image)),
+        decoded: Decoded::Still {
+            image: Arc::new(image),
+            natural,
+        },
         note: None,
     })
 }
 
-fn animated(
-    bytes: &[u8],
-    max_w: u32,
-    max_h: u32,
-    format: ImageFormat,
-) -> Result<Decoding, MediaError> {
+fn animated(bytes: &[u8], target: Target, format: ImageFormat) -> Result<Decoding, MediaError> {
     let frames = match format {
         ImageFormat::Gif => {
             let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(bytes))
@@ -176,18 +212,44 @@ fn animated(
     // picture is a worse answer than an animation and a much better one than a
     // client that has eaten a gigabyte of memory.
     if truncated {
-        let first = fit(frames.remove(0), max_w, max_h);
+        let first = frames.remove(0);
+        let natural = first.dimensions();
+        let (w, h) = target.size_for(first.width(), first.height());
+        let first = scale_to(first, w, h);
         return Ok(Decoding {
-            decoded: Decoded::Still(Arc::new(first)),
+            decoded: Decoded::Still {
+                image: Arc::new(first),
+                natural,
+            },
             note: Some(format!(
                 "an animation longer than {MAX_FRAMES} frames is shown as its first frame"
             )),
         });
     }
 
+    // Every frame the same size, from the first: a GIF's frames can differ
+    // in size on the wire, and an animation whose frames wobble is not one.
+    let (width, height) = frames
+        .first()
+        .map(|f| f.dimensions())
+        .unwrap_or((1, 1));
+    let (mut w, mut h) = target.size_for(width, height);
+    // Filling is bounded by the pixel budget across the whole animation,
+    // so a long GIF blown up to its box cannot become a gigabyte of frames.
+    // It fills as far as the budget goes instead.
+    if target.fill {
+        let count = frames.len() as u64;
+        let budget = MAX_ANIMATION_PIXELS / count.max(1);
+        let pixels = u64::from(w) * u64::from(h);
+        if pixels > budget {
+            let shrink = (budget as f64 / pixels as f64).sqrt();
+            w = ((f64::from(w) * shrink).floor() as u32).max(1);
+            h = ((f64::from(h) * shrink).floor() as u32).max(1);
+        }
+    }
     let frames: Vec<Arc<RgbaImage>> = frames
         .into_iter()
-        .map(|frame| Arc::new(fit(frame, max_w, max_h)))
+        .map(|frame| Arc::new(scale_to(frame, w, h)))
         .collect();
     delays.truncate(frames.len());
 
@@ -195,6 +257,7 @@ fn animated(
         decoded: Decoded::Animated {
             frames,
             delays,
+            natural: (width, height),
             // Neither the GIF nor the WebP decoder exposes the loop count, and
             // an animation nobody meant to repeat is vanishingly rare beside
             // one that was. The UI's animation policy decides how often it
@@ -244,23 +307,15 @@ fn collect(frames: image::Frames<'_>) -> Result<Collected, MediaError> {
     })
 }
 
-/// Scale down to fit, never up.
+/// Resize to exactly this, or hand it back when it already is.
 ///
 /// `Triangle` rather than the sharper filters: the result is going into cells a
 /// few pixels across, where the difference is invisible and the cost is not.
-fn fit(image: RgbaImage, max_w: u32, max_h: u32) -> RgbaImage {
-    if max_w == 0 || max_h == 0 {
+fn scale_to(image: RgbaImage, width: u32, height: u32) -> RgbaImage {
+    if image.dimensions() == (width, height) {
         return image;
     }
-    let (width, height) = image.dimensions();
-    if width <= max_w && height <= max_h {
-        return image;
-    }
-    let scale = f64::from(max_w) / f64::from(width);
-    let scale = scale.min(f64::from(max_h) / f64::from(height));
-    let target_w = ((f64::from(width) * scale).round() as u32).max(1);
-    let target_h = ((f64::from(height) * scale).round() as u32).max(1);
-    image::imageops::resize(&image, target_w, target_h, FilterType::Triangle)
+    image::imageops::resize(&image, width, height, FilterType::Triangle)
 }
 
 #[cfg(test)]
@@ -301,7 +356,7 @@ mod tests {
 
     #[test]
     fn a_still_picture_decodes_to_its_own_size() {
-        let decoding = decode(&png(40, 20), 0, 0).unwrap();
+        let decoding = decode(&png(40, 20), 0, 0, false).unwrap();
         assert_eq!(decoding.decoded.dimensions(), Some((40, 20)));
         assert_eq!(decoding.decoded.frame_count(), 1);
         assert!(decoding.note.is_none());
@@ -309,16 +364,37 @@ mod tests {
 
     #[test]
     fn a_picture_larger_than_the_bounds_is_scaled_and_keeps_its_shape() {
-        let decoding = decode(&png(400, 200), 100, 100).unwrap();
+        let decoding = decode(&png(400, 200), 100, 100, false).unwrap();
         assert_eq!(
             decoding.decoded.dimensions(),
             Some((100, 50)),
             "the aspect ratio has to survive"
         );
 
-        // Never scaled up.
-        let small = decode(&png(10, 10), 100, 100).unwrap();
+        // Never scaled up, unless asked to fill the box.
+        let small = decode(&png(10, 10), 100, 100, false).unwrap();
         assert_eq!(small.decoded.dimensions(), Some((10, 10)));
+        let filled = decode(&png(10, 5), 100, 100, true).unwrap();
+        assert_eq!(
+            filled.decoded.dimensions(),
+            Some((100, 50)),
+            "filling scales up to the box, and keeps the shape"
+        );
+    }
+
+    /// A long animation fills its box only as far as the pixel budget lets
+    /// it, so filling cannot turn a GIF into a gigabyte of frames.
+    #[test]
+    fn filling_an_animation_stays_inside_the_pixel_budget() {
+        let frames = 200;
+        let decoding = decode(&gif(frames, 8, 8, 100), 4000, 4000, true).unwrap();
+        let (w, h) = decoding.decoded.dimensions().unwrap();
+        assert!(w > 8, "it did grow");
+        assert!(
+            u64::from(w) * u64::from(h) * frames as u64 <= MAX_ANIMATION_PIXELS,
+            "{w}x{h} over {frames} frames is past the budget"
+        );
+        assert_eq!(decoding.decoded.frame_count(), frames);
     }
 
     /// The whole reason the header is read separately.
@@ -327,7 +403,7 @@ mod tests {
         let bytes = png_header(40_000, 40_000);
         assert_eq!(dimensions(&bytes).unwrap(), (40_000, 40_000));
         assert!(
-            matches!(decode(&bytes, 64, 64), Err(MediaError::TooLarge { .. })),
+            matches!(decode(&bytes, 64, 64, false), Err(MediaError::TooLarge { .. })),
             "a picture larger than the limit was not refused"
         );
 
@@ -335,19 +411,20 @@ mod tests {
         // at four bytes a pixel is 256 MiB.
         let wide = png_header(8000, 8000);
         assert!(matches!(
-            decode(&wide, 64, 64),
+            decode(&wide, 64, 64, false),
             Err(MediaError::TooLarge { .. })
         ));
     }
 
     #[test]
     fn a_gif_decodes_to_frames_with_delays() {
-        let decoding = decode(&gif(4, 16, 16, 100), 0, 0).unwrap();
+        let decoding = decode(&gif(4, 16, 16, 100), 0, 0, false).unwrap();
         match &decoding.decoded {
             Decoded::Animated {
                 frames,
                 delays,
                 looped,
+                ..
             } => {
                 assert_eq!(frames.len(), 4);
                 assert_eq!(delays.len(), 4);
@@ -364,7 +441,7 @@ mod tests {
     /// redrawing the screen a thousand times a second.
     #[test]
     fn a_frame_delay_has_a_floor() {
-        let decoding = decode(&gif(3, 8, 8, 0), 0, 0).unwrap();
+        let decoding = decode(&gif(3, 8, 8, 0), 0, 0, false).unwrap();
         match &decoding.decoded {
             Decoded::Animated { delays, .. } => {
                 assert!(delays.iter().all(|d| *d >= MIN_DELAY), "{delays:?}");
@@ -379,9 +456,9 @@ mod tests {
     fn an_animation_past_the_cap_becomes_its_first_frame() {
         // Fifty million pixels is the other cap; this crosses the frame count.
         let bytes = gif(MAX_FRAMES + 5, 4, 4, 40);
-        let decoding = decode(&bytes, 0, 0).unwrap();
+        let decoding = decode(&bytes, 0, 0, false).unwrap();
         assert!(
-            matches!(decoding.decoded, Decoded::Still(_)),
+            matches!(decoding.decoded, Decoded::Still { .. }),
             "{:?}",
             decoding.decoded
         );
@@ -399,14 +476,14 @@ mod tests {
             &b"GIF89a"[..],
             &[0xff; 512][..],
         ] {
-            let result = decode(bytes, 64, 64);
+            let result = decode(bytes, 64, 64, false);
             assert!(result.is_err(), "{bytes:?} decoded to something");
         }
 
         // A real header followed by nothing.
         let mut truncated = png(8, 8);
         truncated.truncate(30);
-        assert!(decode(&truncated, 64, 64).is_err());
+        assert!(decode(&truncated, 64, 64, false).is_err());
     }
 
     /// The bound the whole module is built around: bytes from a stranger may
@@ -416,7 +493,7 @@ mod tests {
         use proptest::prelude::*;
 
         proptest!(ProptestConfig::with_cases(128), |(bytes in proptest::collection::vec(any::<u8>(), 0..4096))| {
-            let _ = decode(&bytes, 32, 32);
+            let _ = decode(&bytes, 32, 32, false);
             let _ = dimensions(&bytes);
         });
     }
@@ -429,8 +506,8 @@ mod tests {
         let whole = png(24, 18);
         let animation = gif(3, 8, 8, 60);
         proptest!(ProptestConfig::with_cases(64), |(cut in 0usize..200)| {
-            let _ = decode(&whole[..cut.min(whole.len())], 16, 16);
-            let _ = decode(&animation[..cut.min(animation.len())], 16, 16);
+            let _ = decode(&whole[..cut.min(whole.len())], 16, 16, false);
+            let _ = decode(&animation[..cut.min(animation.len())], 16, 16, false);
         });
     }
 
