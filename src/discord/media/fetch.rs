@@ -22,7 +22,7 @@
 //! keeps asking is a client in a loop.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::ffi::OsString;
 use std::sync::Arc;
 
 use tokio::sync::{mpsc, Semaphore};
@@ -354,11 +354,17 @@ fn media_error(error: HttpError, cap: u64) -> MediaError {
 
 /// Hand something to a program that can show it.
 ///
-/// A plain link goes to whatever the desktop opens links with. A picture or a
-/// video is downloaded into the cache first and the viewer or the player is
-/// given the **path**, as `argv` — never a shell command line. A filename that
-/// came off a stranger's computer can contain a space, a quote or a semicolon,
-/// and the only way that is safe is for it never to be parsed by anything.
+/// A plain link goes to whatever the desktop opens links with. A picture is
+/// downloaded into the cache first and the viewer is given the **path**, as
+/// `argv` — never a shell command line. A filename that came off a stranger's
+/// computer can contain a space, a quote or a semicolon, and the only way that
+/// is safe is for it never to be parsed by anything.
+///
+/// A video goes to the player as its **URL**, unless it is already in the
+/// cache. A player streams; a picture viewer does not. Waiting for a whole
+/// video to download with nothing on screen, and then refusing it because it
+/// is larger than the attachment cap, is a worse answer than the one mpv
+/// gives in under a second.
 ///
 /// A picture goes to the desktop's own opener unless a viewer is configured:
 /// `open` on macOS and `xdg-open` elsewhere hand a file to whatever the person
@@ -379,6 +385,26 @@ async fn open_external(context: &Context, url: &str, kind: ExternalKind) {
         )));
         return;
     };
+
+    if kind == ExternalKind::Video {
+        let player = context.config.player.clone();
+        if player.is_empty() {
+            open_in_browser(context, url.to_string()).await;
+            return;
+        }
+        let target: OsString = match context.cache.find(&parsed) {
+            Some(path) => path.into_os_string(),
+            None => OsString::from(parsed.as_str()),
+        };
+        match play(&player, &target).await {
+            Ok(()) => {}
+            Err(e) => context.events.send(Event::Note(Note::warning(
+                "open-external",
+                format!("{} could not be started: {e}", player[0]),
+            ))),
+        }
+        return;
+    }
 
     // The same caps as everything else: an external player does not make a
     // half-gigabyte download reasonable.
@@ -422,7 +448,7 @@ async fn open_external(context: &Context, url: &str, kind: ExternalKind) {
         return;
     }
 
-    match play(&program, &path).await {
+    match play(&program, path.as_os_str()).await {
         Ok(()) => {}
         Err(e) => context.events.send(Event::Note(Note::warning(
             "open-external",
@@ -449,11 +475,12 @@ fn default_opener() -> Vec<String> {
     }
 }
 
-/// Launch the configured player with the file appended to its argv.
-async fn play(player: &[String], path: &std::path::Path) -> std::io::Result<()> {
+/// Launch the configured program with the file, or the URL, appended to its
+/// argv.
+async fn play(player: &[String], target: &std::ffi::OsStr) -> std::io::Result<()> {
     let program = player[0].clone();
     let args: Vec<String> = player[1..].to_vec();
-    let path: PathBuf = path.to_path_buf();
+    let path: OsString = target.to_os_string();
 
     tokio::task::spawn_blocking(move || {
         let mut command = std::process::Command::new(&program);

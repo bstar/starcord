@@ -2495,10 +2495,11 @@ impl App {
             }
             Hit::Attachment(id, url, kind) => {
                 self.chat.select(id);
-                // A photograph opens on the click that lands on it, in the
-                // viewer the desktop opens pictures with. A file or a video is
-                // chosen on one click and opened on two, as before.
-                if kind == ExternalKind::Image || double {
+                // A photograph or a video opens on the click that lands on
+                // it: the viewer the desktop opens pictures with, or the
+                // player. A file is chosen on one click and opened on two, as
+                // before; opening one means downloading it.
+                if kind != ExternalKind::Link || double {
                     self.core.send(Command::OpenExternal { url, kind });
                     self.note("opening");
                 }
