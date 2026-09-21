@@ -282,6 +282,17 @@ fn the_fixture_conversation() {
     insta::assert_snapshot!("chat-mocha-100x30", render(&mut app, 100, 30));
 }
 
+/// The inbox, in the conversation module once the conversation is put away:
+/// the unread group DM with its last message under it, and the read one
+/// under "the rest". The fixture core answers the peek from its page.
+#[test]
+fn the_inbox() {
+    let (mut app, _idle) = in_general("terminal");
+    app.handle(Action::Inbox);
+    app.tick();
+    insta::assert_snapshot!("inbox-terminal-100x30", render(&mut app, 100, 30));
+}
+
 /// The top of the same conversation, where the day divider, the group of
 /// three, the system line and the code block are.
 #[test]

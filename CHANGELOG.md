@@ -7,6 +7,14 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- **An inbox.** The conversation module, while nothing is open and on
+  `alt+i`, lists what is waiting: every unread direct message, newest
+  first, with its last message under the name -- who, when and what, with
+  `you:` in front when the last word was the reader's own, so a
+  conversation waiting on the other person reads as one -- and the read
+  ones below under "the rest". The last message of an unread conversation
+  is fetched with a new `Peek` command that opens nothing and marks nothing
+  read. `j`/`k`, Enter and a click work as they do in the column's lists.
 - **A picture fills its rows.** The message list reserves rows from a
   picture's shape and then drew the pixels it was given without enlarging
   them, so a picture smaller than its box -- most GIFs, anything under a

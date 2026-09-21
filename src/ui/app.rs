@@ -78,7 +78,7 @@ use super::overlays::settings::Setting;
 use super::overlays::{self, Overlays};
 use super::panels::chat::{ChatState, Hit};
 use super::panels::composer::{self, Composer, Sources};
-use super::panels::{self, channels, chat, dms, guilds, members, rgb, ModuleId, COLUMN};
+use super::panels::{self, channels, chat, dms, guilds, inbox, members, rgb, ModuleId, COLUMN};
 use super::status;
 use super::theme::Theme;
 use super::{clipboard, core_ext, layout, unread};
@@ -129,6 +129,12 @@ pub struct Nav {
     pub dm_scroll: usize,
     pub member_cursor: usize,
     pub member_scroll: usize,
+    /// The inbox, drawn in the conversation module while nothing is open.
+    pub inbox_cursor: usize,
+    pub inbox_scroll: usize,
+    /// Conversations the inbox has asked the core to peek at, so it asks
+    /// once per conversation rather than once per frame.
+    pub peeked: HashSet<ChannelId>,
     pub collapsed: HashSet<ChannelId>,
     /// Where you have been: the conversations opened before this one, most
     /// recent last, and the ones stepped back out of, for `›`. A fresh move
@@ -155,6 +161,9 @@ pub struct ViewData {
     /// What the second module shows at home: the conversations, then the
     /// friends who have not started one, each under a heading.
     pub messages: Vec<dms::Row>,
+    /// What is waiting, with its last message: the conversation module's
+    /// contents while nothing is open.
+    pub inbox: Vec<inbox::Row>,
     pub members: Option<Vec<members::Row>>,
     /// `#general · Some Guild`.
     pub location: String,
@@ -774,6 +783,7 @@ impl App {
             }
         }));
         messages.extend(dms::group_friends(core_ext::friends(&state)));
+        let (inbox, peek) = Self::inbox_rows(&state, &self.tz, &self.nav.peeked, unread_of);
         let member_rows = self
             .nav
             .guild
@@ -819,6 +829,7 @@ impl App {
             guilds: rail,
             channels,
             messages,
+            inbox,
             members: member_rows,
             location,
             unread,
@@ -826,7 +837,163 @@ impl App {
             sources,
         };
         drop(state);
+        for channel in peek {
+            self.nav.peeked.insert(channel);
+            self.core.send(Command::Peek(channel));
+        }
         self.clamp_cursors();
+    }
+
+    /// The inbox: unread conversations first, newest first, then the rest,
+    /// each with its last message where the core holds one. Also which
+    /// unread conversations to peek at, because their last message is not
+    /// here yet: asked once each, and again only if they come back unread
+    /// with nothing held, which is a fresh conversation.
+    fn inbox_rows(
+        state: &crate::discord::state::State,
+        tz: &jiff::tz::TimeZone,
+        peeked: &HashSet<ChannelId>,
+        unread_of: impl Fn(ChannelId) -> crate::discord::state::Unread,
+    ) -> (Vec<inbox::Row>, Vec<ChannelId>) {
+        let mut waiting = Vec::new();
+        let mut rest = Vec::new();
+        let mut peek = Vec::new();
+        let me = state.me().map(|u| u.id);
+        for c in state.dms_ordered() {
+            let (title, presence, members) = core_ext::dm_row(state, c.id);
+            let unread = unread_of(c.id);
+            let last = state
+                .messages(c.id)
+                .and_then(|store| store.newest().cloned())
+                .map(|m| {
+                    // "you:" when the last word was the reader's -- then the
+                    // conversation is waiting on them, not on the reader --
+                    // and, in a pair, nothing when it was the other person's:
+                    // the name is on the line above.
+                    let author = if Some(m.author.id) == me {
+                        "you".to_string()
+                    } else if members.is_none() {
+                        String::new()
+                    } else {
+                        m.author_name().to_string()
+                    };
+                    let mut text = crate::discord::markdown::plain_text(&m.content);
+                    for user in &m.mentions {
+                        let name = format!("@{}", user.display_name());
+                        text = text
+                            .replace(&format!("<@{}>", user.id), &name)
+                            .replace(&format!("<@!{}>", user.id), &name);
+                    }
+                    if text.trim().is_empty() {
+                        text = match m.attachments.first() {
+                            Some(a) => format!("[{}]", a.filename),
+                            None if !m.embeds.is_empty() => "[link]".into(),
+                            None => String::new(),
+                        };
+                    }
+                    inbox::Last {
+                        author,
+                        when: crate::ui::panels::chat::when(&m, tz),
+                        text: text.split_whitespace().collect::<Vec<_>>().join(" "),
+                    }
+                });
+            if unread.notable() && last.is_none() && !peeked.contains(&c.id) {
+                peek.push(c.id);
+            }
+            let row = inbox::Row::Conversation {
+                id: c.id,
+                title,
+                presence,
+                unread: unread.unread,
+                mentions: unread.mentions,
+                muted: unread.muted,
+                members,
+                last,
+            };
+            if unread.notable() {
+                waiting.push(row);
+            } else {
+                rest.push(row);
+            }
+        }
+        let mut rows = Vec::with_capacity(waiting.len() + rest.len() + 2);
+        rows.push(inbox::Row::Section {
+            label: match waiting.len() {
+                0 => "nothing waiting".into(),
+                n => format!("waiting \u{2014} {n}"),
+            },
+        });
+        rows.extend(waiting);
+        if !rest.is_empty() {
+            rows.push(inbox::Row::Section {
+                label: "the rest".into(),
+            });
+            rows.extend(rest);
+        }
+        (rows, peek)
+    }
+
+    /// Whether the conversation module is showing the inbox rather than a
+    /// conversation: nothing is open.
+    fn showing_inbox(&self) -> bool {
+        self.nav.channel.is_none()
+    }
+
+    /// `alt+i`: put the open conversation away and show what is waiting.
+    fn show_inbox(&mut self) {
+        if let Some(previous) = self.nav.channel.take() {
+            self.nav.back.push(previous);
+            if self.nav.back.len() > HISTORY {
+                self.nav.back.remove(0);
+            }
+            self.nav.forward.clear();
+            self.save_channel_state(previous);
+            self.core.send(Command::CloseChannel(previous));
+            self.chat.close();
+            self.composer.close();
+            self.core.send(Command::SetFocus {
+                channel: None,
+                terminal_focused: self.terminal_focused,
+            });
+        }
+        self.nav.guild = None;
+        self.view.stale = true;
+        self.focus_module(ModuleId::Conversation);
+    }
+
+    fn inbox_view(&self, focused: bool) -> inbox::View<'_> {
+        inbox::View {
+            theme: &self.look.theme,
+            rows: &self.view.inbox,
+            cursor: self.nav.inbox_cursor,
+            scroll: self.nav.inbox_scroll,
+            focused,
+        }
+    }
+
+    fn move_inbox_cursor(&mut self, delta: isize) {
+        let rows = &self.view.inbox;
+        if rows.is_empty() {
+            return;
+        }
+        let height = self.body_height(ModuleId::Conversation);
+        let mut next = self.nav.inbox_cursor as isize;
+        let step = delta.signum();
+        for _ in 0..delta.abs() {
+            let mut candidate = next + step;
+            while (0..rows.len() as isize).contains(&candidate)
+                && !rows[candidate as usize].selectable()
+            {
+                candidate += step;
+            }
+            if !(0..rows.len() as isize).contains(&candidate) {
+                break;
+            }
+            next = candidate;
+        }
+        let next = next.clamp(0, rows.len() as isize - 1) as usize;
+        self.nav.inbox_cursor = next;
+        self.nav.inbox_scroll = inbox::clamp_scroll(rows, next, self.nav.inbox_scroll, height);
     }
 
     /// What the composer's popups offer: everybody who has said something in
@@ -879,6 +1046,13 @@ impl App {
         cap(&mut self.nav.channel_cursor, channels);
         cap(&mut self.nav.dm_cursor, dms);
         cap(&mut self.nav.member_cursor, members);
+        cap(&mut self.nav.inbox_cursor, self.view.inbox.len());
+        // The first selectable row, so the cursor is never left on a heading.
+        if let Some(first) = self.view.inbox.iter().position(inbox::Row::selectable) {
+            if self.nav.inbox_cursor < first {
+                self.nav.inbox_cursor = first;
+            }
+        }
     }
 
     /// Reopen the channel the last session was in.
@@ -1116,7 +1290,11 @@ impl App {
     fn move_cursor(&mut self, delta: isize) {
         let focus = self.layout.focus();
         if focus == ModuleId::Conversation {
-            self.chat.move_cursor(delta);
+            if self.showing_inbox() {
+                self.move_inbox_cursor(delta);
+            } else {
+                self.chat.move_cursor(delta);
+            }
             return;
         }
         let height = usize::from(self.body_height(focus));
@@ -1182,6 +1360,13 @@ impl App {
                 None => {}
             },
             ModuleId::Members => self.note("opening a conversation with a member is not here yet"),
+            ModuleId::Conversation if self.showing_inbox() => {
+                if let Some(inbox::Row::Conversation { id, .. }) =
+                    self.view.inbox.get(self.nav.inbox_cursor).cloned()
+                {
+                    self.open_channel(id);
+                }
+            }
             _ => {}
         }
     }
@@ -1457,6 +1642,7 @@ impl App {
             Action::Activate => self.activate(),
             Action::Back => self.back(),
             Action::HistoryBack => self.history_back(),
+            Action::Inbox => self.show_inbox(),
             Action::HistoryForward => self.history_forward(),
 
             Action::FocusNext => self.step_focus(1),
@@ -1870,7 +2056,11 @@ impl App {
     fn page(&mut self, direction: isize) {
         if self.layout.focus() == ModuleId::Conversation {
             let h = i32::from(self.body_height(ModuleId::Conversation)).max(1);
-            self.chat.scroll(h * direction as i32);
+            if self.showing_inbox() {
+                self.move_inbox_cursor((h / 2).max(1) as isize * direction);
+            } else {
+                self.chat.scroll(h * direction as i32);
+            }
             return;
         }
         let h = self.body_height(self.layout.focus()) as isize;
@@ -2435,6 +2625,15 @@ impl App {
                     }
                 }
             }
+            ModuleId::Conversation if self.showing_inbox() => {
+                let v = self.inbox_view(false);
+                if let Some(index) = inbox::row_at(body, &v, y) {
+                    if self.view.inbox.get(index).is_some_and(inbox::Row::selectable) {
+                        self.nav.inbox_cursor = index;
+                        self.activate();
+                    }
+                }
+            }
             ModuleId::Conversation => self.chat_click(x, y, double),
             ModuleId::Compose => {
                 if let Some(index) = self.composer.chip_at(x, y) {
@@ -2892,6 +3091,9 @@ impl App {
                 }
                 ModuleId::Channels => channels::render(body, buf, &self.channels_view(focused)),
                 ModuleId::Members => members::render(body, buf, &self.members_view(focused)),
+                ModuleId::Conversation if self.showing_inbox() => {
+                    inbox::render(body, buf, &self.inbox_view(focused));
+                }
                 ModuleId::Conversation => {
                     let params = chat::Params {
                         theme: &self.look.theme,
@@ -3061,6 +3263,20 @@ impl App {
                 },
                 None => (module.title().to_string(), None),
             },
+            ModuleId::Conversation if self.showing_inbox() => {
+                let waiting = self
+                    .view
+                    .inbox
+                    .iter()
+                    .filter(|r| matches!(r, inbox::Row::Conversation { unread: true, .. }))
+                    .count();
+                let detail = match waiting {
+                    0 => "nothing waiting".to_string(),
+                    1 => "1 waiting".to_string(),
+                    n => format!("{n} waiting"),
+                };
+                ("inbox".into(), Some(detail))
+            }
             ModuleId::Conversation => {
                 let location = chat::title(&self.view.location);
                 (module.title().to_string(), Some(location))

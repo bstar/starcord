@@ -11,6 +11,7 @@ pub mod chat;
 pub mod composer;
 pub mod dms;
 pub mod guilds;
+pub mod inbox;
 pub mod members;
 
 use std::borrow::Cow;

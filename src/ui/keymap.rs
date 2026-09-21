@@ -76,6 +76,7 @@ pub enum Action {
 
     // Getting somewhere.
     HistoryBack,
+    Inbox,
     HistoryForward,
     NextGuild,
     PrevGuild,
@@ -324,6 +325,12 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::HistoryForward,
         keys: "alt+right",
         label: "forward again",
+        group: "navigation",
+    },
+    Binding {
+        action: Action::Inbox,
+        keys: "alt+i",
+        label: "the inbox",
         group: "navigation",
     },
     Binding {
@@ -665,6 +672,11 @@ pub const MOUSE: &[MouseHelp] = &[
     MouseHelp {
         gesture: "click a video",
         label: "play it",
+        group: "chat",
+    },
+    MouseHelp {
+        gesture: "click, in the inbox",
+        label: "open that one",
         group: "chat",
     },
     MouseHelp {

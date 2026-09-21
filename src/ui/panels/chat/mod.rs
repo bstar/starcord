@@ -36,6 +36,21 @@ pub mod layout;
 pub mod media;
 pub mod render;
 
+/// `09:41`, or the date as well when it was not today: the time on an inbox
+/// row, in the reader's own zone.
+pub fn when(msg: &crate::discord::model::Message, tz: &jiff::tz::TimeZone) -> String {
+    let Some(at) = msg.timestamp else {
+        return String::new();
+    };
+    let zoned = at.to_zoned(tz.clone());
+    let today = jiff::Timestamp::now().to_zoned(tz.clone()).date();
+    if zoned.date() == today {
+        zoned.strftime("%H:%M").to_string()
+    } else {
+        zoned.strftime("%b %-d %H:%M").to_string()
+    }
+}
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -373,6 +388,22 @@ impl ChatState {
             // honest place to be.
             self.list.to_end();
         }
+    }
+
+    /// Put the conversation away: what `open` does on the way to another
+    /// one, without the other one. The inbox is drawn in its place.
+    pub fn close(&mut self) {
+        self.remember();
+        self.channel = None;
+        self.media.viewport_moved();
+        self.messages.clear();
+        self.rows.clear();
+        self.heights.clear();
+        self.rendered.clear();
+        self.cursor = 0;
+        self.follow_end = true;
+        self.asked_older = false;
+        self.list = VirtualList::new();
     }
 
     fn remember(&mut self) {

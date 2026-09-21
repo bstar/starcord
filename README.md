@@ -53,6 +53,10 @@ keyring. [Signing in](docs/auth.md) has both routes in full, and
 - **Servers, channels, DMs and threads.** Categories fold, unread and mention
   counts sit beside the names, muted channels stay quiet, and the member list
   loads the part of a server you are looking at.
+- **An inbox.** With nothing open, or on `alt+i`, the conversation module
+  lists what is waiting: every unread direct message with its last line
+  under the name -- who, when, and what they said, or `you:` when the last
+  word was yours -- and the rest below it. Enter or a click opens one.
 - **Pictures, in the terminal.** Attachments, avatars, custom emoji, link
   cards and animated GIFs -- a Tenor or Giphy link moves, the way it does on
   the web -- are drawn as real pixels in kitty, WezTerm, Ghostty and foot,

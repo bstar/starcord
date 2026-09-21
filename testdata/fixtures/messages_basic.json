@@ -21,7 +21,11 @@
   "`#random` (200000000000000012) is the picture channel: an inline image,",
   "an animated one, a custom emoji inline and on a reaction, and a link card",
   "with a thumbnail. Its files are the ones in `testdata/media/`, which the",
-  "replay hands back for `FetchMedia`."
+  "replay hands back for `FetchMedia`.",
+  "",
+  "`400000000000000001` and `400000000000000003` are the two DMs the session",
+  "fixture leaves unread, and `400000000000000002` the group it has read: one",
+  "page each, which is what the inbox peeks at and shows under the name."
  ],
  "channels": {
   "200000000000000011": {
@@ -436,6 +440,101 @@
     }
    ],
    "older": []
+  },
+  "400000000000000002": {
+   "older": [],
+   "messages": [
+    {
+     "id": "500000000000000020",
+     "channel_id": "400000000000000002",
+     "type": 0,
+     "content": "are we still on for tonight? bring the **good** cable",
+     "timestamp": "2026-09-13T09:41:00.000000+00:00",
+     "author": {
+      "id": "100000000000000003",
+      "username": "jordan",
+      "global_name": "Jordan",
+      "discriminator": "0",
+      "avatar": "jordanface"
+     },
+     "attachments": [],
+     "embeds": [],
+     "reactions": [],
+     "mentions": []
+    }
+   ]
+  },
+  "400000000000000001": {
+   "older": [],
+   "messages": [
+    {
+     "id": "500000000000000009",
+     "channel_id": "400000000000000001",
+     "type": 0,
+     "content": "the harbour one, from the pier",
+     "timestamp": "2026-09-13T08:58:00.000000+00:00",
+     "author": {
+      "id": "100000000000000002",
+      "username": "alex",
+      "global_name": "Alex",
+      "discriminator": "0",
+      "avatar": "alexface"
+     },
+     "attachments": [],
+     "embeds": [],
+     "reactions": [],
+     "mentions": []
+    },
+    {
+     "id": "500000000000000010",
+     "channel_id": "400000000000000001",
+     "type": 0,
+     "content": "<@100000000000000001> did you see it? still waiting on your pick",
+     "timestamp": "2026-09-13T09:02:00.000000+00:00",
+     "author": {
+      "id": "100000000000000002",
+      "username": "alex",
+      "global_name": "Alex",
+      "discriminator": "0",
+      "avatar": "alexface"
+     },
+     "attachments": [],
+     "embeds": [],
+     "reactions": [],
+     "mentions": [
+      {
+       "id": "100000000000000001",
+       "username": "sam",
+       "global_name": "Sam",
+       "discriminator": "0",
+       "avatar": null
+      }
+     ]
+    }
+   ]
+  },
+  "400000000000000003": {
+   "older": [],
+   "messages": [
+    {
+     "id": "500000000000000030",
+     "channel_id": "400000000000000003",
+     "type": 0,
+     "content": "are you around this week? I have the *thing* we talked about",
+     "timestamp": "2026-09-12T21:15:00.000000+00:00",
+     "author": {
+      "id": "100000000000000005",
+      "username": "wren",
+      "global_name": "Wren of the Long Display Name",
+      "discriminator": "0",
+      "avatar": "wrenface"
+     },
+     "attachments": [],
+     "embeds": [],
+     "reactions": [],
+     "mentions": []
+    }
+   ]
   }
  }
 }

@@ -369,6 +369,20 @@ impl Composer {
         self.input.set_text(draft);
     }
 
+    /// Put the draft away with no conversation to write in.
+    pub fn close(&mut self) {
+        if let Some(previous) = self.channel.take() {
+            let text = self.input.take();
+            if text.trim().is_empty() {
+                self.drafts.remove(&previous);
+            } else {
+                self.drafts.insert(previous, text);
+            }
+        }
+        self.mode = Mode::Normal;
+        self.complete = None;
+    }
+
     /// Take the text to send, leaving the field and the draft empty.
     pub fn take(&mut self) -> String {
         self.complete = None;

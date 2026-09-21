@@ -427,6 +427,10 @@ impl Core {
                 tokio::spawn(async move { ops::open::open_channel(&ops, channel).await });
             }
             Command::CloseChannel(channel) => ops::open::close_channel(&self.ops, channel),
+            Command::Peek(channel) => {
+                let ops = self.ops.clone();
+                tokio::spawn(async move { ops::open::peek(&ops, channel).await });
+            }
             Command::LoadOlder(channel) => {
                 let ops = self.ops.clone();
                 tokio::spawn(async move { ops::open::load_older(&ops, channel).await });

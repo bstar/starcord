@@ -41,6 +41,7 @@ _everywhere_
 | `alt+down`     | next unread |
 | `alt+left`     | where you were |
 | `alt+right`    | forward again |
+| `alt+i`        | the inbox |
 | `ctrl+k`       | jump to anything |
 | `ctrl+f / /`   | search here |
 | `alt+f`        | search the server |
@@ -157,6 +158,7 @@ _everywhere_
 | chat     | click                 | select a message |
 | chat     | click a picture       | open it |
 | chat     | click a video         | play it |
+| chat     | click, in the inbox   | open that one |
 | chat     | double-click a file   | open it |
 | chat     | click a reaction      | add or remove yours |
 | chat     | click a link          | open it |

@@ -201,6 +201,10 @@ pub enum Command {
 
     OpenChannel(ChannelId),
     CloseChannel(ChannelId),
+    /// Fetch the newest page of a channel without opening it: no
+    /// subscription, no spinner, nothing marked read. The inbox asks this of
+    /// every unread conversation so it can show what is waiting.
+    Peek(ChannelId),
     LoadOlder(ChannelId),
     LoadNewer(ChannelId),
     JumpTo {
@@ -308,6 +312,7 @@ impl Command {
             Command::SetFocus { .. } => "SetFocus",
             Command::OpenChannel(_) => "OpenChannel",
             Command::CloseChannel(_) => "CloseChannel",
+            Command::Peek(_) => "Peek",
             Command::LoadOlder(_) => "LoadOlder",
             Command::LoadNewer(_) => "LoadNewer",
             Command::JumpTo { .. } => "JumpTo",

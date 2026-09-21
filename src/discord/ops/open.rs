@@ -88,6 +88,36 @@ pub async fn open_channel(ops: &Ops, channel: ChannelId) {
     }
 }
 
+/// `Command::Peek`: the newest page of a channel that is not being opened.
+///
+/// What the inbox needs to say what is waiting in a conversation before the
+/// reader goes there: the last message, who from, and when. Nothing else
+/// `open_channel` does happens -- no member subscription, no spinner, and
+/// the channel is not marked open, so nothing marks it read. A page already
+/// held is left alone; the store only ever fills from the newest end, so
+/// what it holds is the answer.
+pub async fn peek(ops: &Ops, channel: ChannelId) {
+    let held = {
+        let state = ops.state();
+        state.messages(channel).is_some_and(|s| !s.is_empty())
+    };
+    if held {
+        return;
+    }
+    match ops
+        .rest(api::messages(&ops.http, channel, History::Latest))
+        .await
+    {
+        Ok(messages) => {
+            ops.state_mut()
+                .messages_mut(channel)
+                .replace(messages, true);
+            ops.emit(Event::Messages(channel, MessagesChange::Replaced));
+        }
+        Err(e) => tracing::debug!("could not peek at {channel}: {e}"),
+    }
+}
+
 /// `Command::CloseChannel`.
 pub fn close_channel(ops: &Ops, channel: ChannelId) {
     ops.state_mut().messages_mut(channel).set_open(false);

@@ -737,6 +737,23 @@ fn answer(
             sink.send(Event::Messages(channel, MessagesChange::Loading(false)));
             sink.send(Event::Messages(channel, MessagesChange::Replaced));
         }
+        // The newest page, for the inbox's preview, without opening.
+        Command::Peek(channel) => {
+            let held = {
+                let guard = state.read().unwrap_or_else(|e| e.into_inner());
+                guard.messages(channel).is_some_and(|s| !s.is_empty())
+            };
+            if !held {
+                if let Some(page) = conversations.page(channel) {
+                    let mut guard = state.write().unwrap_or_else(|e| e.into_inner());
+                    guard
+                        .messages_mut(channel)
+                        .replace(page.messages.clone(), true);
+                    guard.touch();
+                }
+                sink.send(Event::Messages(channel, MessagesChange::Replaced));
+            }
+        }
         Command::LoadOlder(channel) => {
             sink.send(Event::Messages(channel, MessagesChange::Loading(true)));
             let mut added = 0usize;

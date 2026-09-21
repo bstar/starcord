@@ -13,15 +13,15 @@ expression: "render(&mut app, 100, 30)"
 ║                                                                                         settings ║
 ║choose a channel                                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
-╔═ CONVERSATION — chat ════════════════════════════════════════════════════════════════════════════╗
+╔═ INBOX — 2 waiting ══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║                                                                                                  ║
-║                                                                                                  ║
-║                                                                                                  ║
-║                                         choose a channel                                         ║
-║                                                                                                  ║
-║                                                                                                  ║
-║                                                                                                  ║
+║WAITING — 2                                                                                       ║
+║○ Wren of the Long Display Name                                                       Sep 12 21:15║
+║  are you around this week? I have the thing we talked about                                      ║
+║● Alex (1)                                                                            Sep 13 09:02║
+║  @Sam did you see it? still waiting on your pick                                                 ║
+║THE REST                                                                                          ║
+║○ Alex, Jordan [3]                                                                    Sep 13 09:41║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
