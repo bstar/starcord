@@ -406,7 +406,6 @@ impl LoginScreen {
             ))
             .style(Style::default().bg(rgb(t.panel_bg)))
             .render(panel, buf);
-        starkit::chrome::frame::render_corners(panel, buf, t, true);
 
         let inner = Rect {
             x: panel.x + 2,

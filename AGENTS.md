@@ -30,9 +30,9 @@ in the same commit.
 
 The shared foundation — paths, logging, private file writes, themes, the dock
 layout engine, text entry, wrapping, terminal images — lives in `starkit`, the
-crate STAR/AMP uses too. It is a git dependency pinned to a tag, and the flake
-takes it from the revision `Cargo.lock` names through
-`cargoLock.allowBuiltinFetchGit`.
+crate STAR/AMP uses too. It is a git dependency pinned to a revision -- a tag
+where there is one to point at -- and the flake takes it from the revision
+`Cargo.lock` names through `cargoLock.allowBuiltinFetchGit`.
 
 It is also the one copy of `ratatui`, `crossterm`, `ratatui-image` and `image`
 in the tree. Everything under `src/ui/` reaches them through `starkit::`, and

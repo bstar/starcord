@@ -99,8 +99,8 @@ nix shell nixpkgs#librsvg -c rsvg-convert -w 256 -h 256 \
 
 Its own commit, "Take STAR/KIT 0.Y", and nothing else in it:
 
-1. Change the `tag` and the `version` requirement on the `starkit` dependency
-   in `Cargo.toml`.
+1. Change the `rev` (or the `tag`, where the version was tagged) and the
+   `version` requirement on the `starkit` dependency in `Cargo.toml`.
 2. `cargo update -p starkit` so `Cargo.lock` records the new revision.
 3. Run the checks above. STAR/KIT's own CI has a job that builds both of its
    consumers against the tip of the library, so a break should have been caught

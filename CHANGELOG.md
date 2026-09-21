@@ -107,6 +107,13 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- **STAR/KIT 0.3, and one border colour.** The shared frame no longer lifts
+  the four corners to a different weight; every panel and every overlay is
+  one border colour all the way round. The overlays take the library's own
+  shape with it: an uppercased title behind the `═ ` lead, and the hint on
+  the bottom border rather than in the title, so the help list says
+  "more below" down there and the right-click menu says `enter do it`
+  instead of the settings list's `enter change` it used to inherit.
 - **The titles are STAR/AMP's.** The top of the column says
   `═ S T A R / C O R D ` in the titlebar colour, letter-spaced with the slash
   spaced along with the rest, exactly as STAR/AMP's player says its name, and
@@ -115,10 +122,7 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   are: `═ CHANNELS — First Guild `, capitals, an em dash before what it is
   about, no trailing rule, in the header colour at one weight whether focused
   or not -- focus is the border's to say. The login box carries the same
-  heading on its border instead of as a line inside it. The titles are drawn
-  before the corner gradient, as STAR/AMP draws them, so the gradient runs
-  through the title's leading `═` instead of stopping at the corner cell --
-  the one cell that made the two frames look like different frames.
+  heading on its border instead of as a line inside it.
 - **Every request looks like the browser's.** A cookie jar on the API client,
   so the pair `discord.com/app` sets comes back; the `X-Fingerprint` from
   `/experiments`; `Origin` and `Referer`; and an `os_version` on macOS, where

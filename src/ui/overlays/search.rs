@@ -368,7 +368,6 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
         .style(Style::default().bg(rgb(t.panel_bg)));
     let inner = block.inner(r);
     block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
     if inner.width < 4 || inner.height < 2 {
         return;
     }

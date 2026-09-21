@@ -269,7 +269,6 @@ pub fn render(
         .style(Style::default().bg(rgb(t.panel_bg)));
     let inner = block.inner(r);
     block.render(r, buf);
-    starkit::chrome::frame::render_corners(r, buf, t, true);
     if inner.width == 0 || inner.height == 0 {
         return Vec::new();
     }

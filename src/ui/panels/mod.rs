@@ -230,13 +230,6 @@ pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
     // treatment -- `TITLE_LEAD` and `TITLE_TRAIL` are `\u{2550}`, the double
     // horizontal -- so a single-line frame put a heavier seam on a lighter
     // edge and the title read as pasted on.
-    //
-    // The titles go on the block, and the block is drawn *before* the
-    // corners, which is the order STAR/AMP draws in and the one that matters:
-    // `render_corners` recolours every box-drawing cell in its run, and the
-    // title's leading `═` is one. Drawn afterwards, the title kept its own
-    // colour on that cell and the gradient stopped dead at the corner; drawn
-    // first, the gradient runs through it, and the corner reads as one thing.
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
@@ -251,10 +244,6 @@ pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
         );
     }
     block.render(area, buf);
-
-    if area.width >= 2 && area.height >= 2 {
-        starkit::chrome::frame::render_corners(area, buf, t, f.focused);
-    }
 
     header::render(area, f.words, buf, t);
     header::body(area)

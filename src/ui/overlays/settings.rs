@@ -192,6 +192,7 @@ impl Settings {
             rows: &rows,
             cursor: self.cursor,
             scroll: self.scroll,
+            footer: "enter change \u{b7} esc close",
         }
         .render(area, buf);
     }

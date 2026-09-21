@@ -143,6 +143,9 @@ impl Menu {
             rows: &rows,
             cursor: self.cursor,
             scroll: self.scroll,
+            // The rows here are things to do, not values to step, so the hint
+            // is the verb this list answers to rather than the widget's own.
+            footer: "enter do it \u{b7} esc close",
         }
         .render(area, buf);
     }
