@@ -33,8 +33,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      # First, and cheap: the version lives in Cargo.toml, Cargo.lock and the
-      # PKGBUILD, and only the first of those is generated from anything.
+      # First, and cheap: Cargo.toml and Cargo.lock must agree.
       - run: ./scripts/check-version.sh
       - run: cargo fmt --check
       # dead_code is allowed rather than denied: the Discord core lands

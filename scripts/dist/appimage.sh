@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The AppImage. Run inside the same old-glibc container as portable.sh.
+# The AppImage. Build in Debian Bullseye to retain the supported glibc floor.
 #
 # What it carries is, today, nothing: this binary links the C runtime and
 # libgcc and that is the whole of its NEEDED list, so the library walk below
@@ -37,6 +37,7 @@ bin="${CARGO_TARGET_DIR:-target}/release/starcord"
 scripts/dist/glibc-floor.sh "$bin"
 
 work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 appdir=$work/AppDir
 install -Dm755 "$bin"                         "$appdir/usr/bin/starcord"
 install -Dm644 packaging/starcord.desktop     "$appdir/starcord.desktop"

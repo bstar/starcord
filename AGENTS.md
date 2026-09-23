@@ -226,3 +226,11 @@ gets a proptest as well as table tests — the inflater, the model
 deserialisers, the markdown parser. `cargo test` must pass on a machine that
 has never logged in; anything needing an account is gated on
 `STARCORD_TEST_TOKEN`.
+
+## Release targets
+
+Release Linux through Nix and AppImage, and macOS through the native Apple
+Silicon archive (Nix remains available there too). Do not restore Debian, Arch
+or standalone Linux tarball build jobs. `scripts/build-dist.sh` accepts only
+`nix`, `appimage` and `macos`; branch release dispatches build artifacts without
+publishing, while version tags create a draft release.

@@ -29,64 +29,27 @@ jobs:
   nix:
     needs: guard
     uses: ./.github/workflows/nix.yml
-  debian:
+  macos:
     needs: guard
-    uses: ./.github/workflows/debian.yml
-  arch:
-    needs: guard
-    uses: ./.github/workflows/arch.yml
-
-  source:
-    needs: guard
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-      # What the PKGBUILD downloads and checksums, built reproducibly from the
-      # tag rather than taken from GitHub's unstable /archive/ endpoint.
-      - run: ./scripts/dist/source.sh
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Build the Apple Silicon package
+        run: ./scripts/dist/macos.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: starcord-source
-          path: dist/*.tar.gz
-
-  # Both of these build in bullseye for its glibc 2.31, which is the floor the
-  # documentation promises. A current runner's 2.39 would exclude Ubuntu 22.04
-  # and RHEL 9, which is a smaller audience than the .deb already serves.
-  tarball:
-    needs: guard
-    runs-on: ubuntu-latest
-    container: debian:bullseye-slim
-    steps:
-      # Bullseye left LTS in August 2026 and its security suite was removed
-      # from the mirrors, while the image itself was built with two years of
-      # those security updates installed, so neither deb.debian.org nor
-      # archive.debian.org can satisfy the versions already on it. Debian's
-      # snapshot service holds both suites exactly as they were on the last
-      # day of LTS, so apt is pointed there and told not to reject a Release
-      # file that is no longer re-signed. What this container is for is its
-      # glibc 2.31, so a frozen package set is the right thing here.
-      - run: |
-          printf 'deb http://snapshot.debian.org/archive/debian/20260830T000000Z bullseye main\ndeb http://snapshot.debian.org/archive/debian-security/20260830T000000Z bullseye-security main\n' > /etc/apt/sources.list
-          printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99bullseye-eol
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # A slim container defaults to `sh -e`; these scripts need bash.
-      - name: Build the portable tarball
-        shell: bash
-        run: ./scripts/dist/portable.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: starcord-tarball
-          path: dist/*.tar.gz
+          name: starcord-macos
+          path: dist/*-aarch64-apple-darwin.tar.gz
+          if-no-files-found: error
 
   appimage:
     needs: guard
     runs-on: ubuntu-latest
     container: debian:bullseye-slim
     steps:
-      # Same frozen-snapshot setup as the tarball job above.
+      # Frozen Bullseye repositories keep the AppImage on its older glibc floor.
       - run: |
           printf 'deb http://snapshot.debian.org/archive/debian/20260830T000000Z bullseye main\ndeb http://snapshot.debian.org/archive/debian-security/20260830T000000Z bullseye-security main\n' > /etc/apt/sources.list
           printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99bullseye-eol
@@ -99,6 +62,7 @@ jobs:
         with:
           name: starcord-appimage
           path: dist/*.AppImage
+          if-no-files-found: error
 
   # The one claim the AppImage makes is "download it and run it, on whatever
   # you have". Nothing is installed in these containers, deliberately: if the
@@ -155,11 +119,9 @@ jobs:
           ./"$app" --version
 
   publish:
-    # Deliberately not `nix`. It builds no release artifact, so gating the
-    # upload on it only means the assets sit unpublished behind the slowest
-    # job in the graph. It still runs, and still turns the badge red if it
-    # breaks; it just does not hold the release hostage.
-    needs: [ci, debian, arch, source, tarball, verify-appimage, verify-appimage-fuse]
+    # A branch dispatch builds artifacts for review; only tags create releases.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [ci, nix, macos, verify-appimage, verify-appimage-fuse]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -170,12 +132,11 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: staging
-      # The Arch package is built and tested but not released: see arch.yml.
       - name: Collect what actually ships
         run: |
           mkdir -p dist
-          find staging -name '*.deb' -o -name '*.AppImage' -o -name '*.tar.gz' \
-            | grep -v starcord-arch | xargs -I{} cp {} dist/
+          cp staging/starcord-appimage/*.AppImage dist/
+          cp staging/starcord-macos/*-aarch64-apple-darwin.tar.gz dist/
           # Hashes taken here, over the bytes that are about to be uploaded,
           # rather than trusting what each job thought it produced.
           cd dist && sha256sum -- * | sort -k2 > SHA256SUMS

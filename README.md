@@ -2,8 +2,6 @@
 
 [![ci](https://github.com/bstar/starcord/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bstar/starcord/actions/workflows/ci.yml)
 [![nix](https://github.com/bstar/starcord/actions/workflows/nix.yml/badge.svg?branch=main)](https://github.com/bstar/starcord/actions/workflows/nix.yml)
-[![debian](https://github.com/bstar/starcord/actions/workflows/debian.yml/badge.svg?branch=main)](https://github.com/bstar/starcord/actions/workflows/debian.yml)
-[![arch](https://github.com/bstar/starcord/actions/workflows/arch.yml/badge.svg?branch=main)](https://github.com/bstar/starcord/actions/workflows/arch.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A terminal client for Discord that feels like Winamp. Real-time chat with your
@@ -18,10 +16,8 @@ Discord's own app.
 
 ## Get it
 
-Packages for Linux are on the
-[releases page](https://github.com/bstar/starcord/releases/latest): an AppImage
-that needs nothing installed, a `.deb` for Debian and Ubuntu, a portable
-tarball, and the source the Arch `PKGBUILD` builds.
+Linux releases use Nix and AppImage. Apple Silicon macOS builds are available
+on the [releases page](https://github.com/bstar/starcord/releases/latest).
 
 ```sh
 nix run github:bstar/starcord        # Nix, on Linux or Apple Silicon macOS

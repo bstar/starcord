@@ -76,24 +76,11 @@ with why a human would have pressed a key for it.
 
 ## Packaging
 
-`options=(!lto)` in `packaging/PKGBUILD` must stay. makepkg turns LTO on by
-default, which leaves the C and assembly that `ring` and `blake3` compile as
-bitcode that rustc's linker cannot read, and their symbols come back undefined.
-The release profile does its own LTO regardless. There is a CI job whose whole
-purpose is to catch this coming back.
-
-`scripts/build-dist.sh` builds every release artifact locally, in containers.
-It has to be containers: cargo-deb's `$auto` dependency resolution reads a dpkg
-database, makepkg is not packaged for most systems, and a binary built on NixOS
-asks for a loader no other distribution has.
-
-The icon is `packaging/starcord.svg`, and `packaging/starcord.png` is that file
-at 256x256. If you change one, regenerate the other:
-
-```sh
-nix shell nixpkgs#librsvg -c rsvg-convert -w 256 -h 256 \
-  -o packaging/starcord.png packaging/starcord.svg
-```
+Release targets are Linux Nix, Linux AppImage (x86_64), and a native macOS
+Apple Silicon archive. `scripts/build-dist.sh nix` builds the Nix package;
+`./scripts/build-dist.sh appimage` uses Docker or Podman with an isolated
+old-glibc build directory; `./scripts/build-dist.sh macos` runs on a Mac.
+Debian, Arch and standalone Linux tarballs are no longer release targets.
 
 ## Taking a new STAR/KIT
 
@@ -126,18 +113,15 @@ taken the new tag.
 
 ## Releasing
 
-1. Bump `version` in `Cargo.toml` and `pkgver` in `packaging/PKGBUILD`, and
-   reset `pkgrel=1`.
-2. `cargo update -w` so `Cargo.lock` follows. The Arch build uses `--frozen`,
-   so a stale lockfile fails it with an error that points at the lockfile
-   rather than at the bump.
-3. `./scripts/check-version.sh`
-4. Add the release to `CHANGELOG.md`.
-5. Tag `vX.Y.Z` and push it. The release workflow builds everything, starts the
-   AppImage on eight distributions, and opens a draft release with the assets,
-   their checksums and build provenance attached.
-6. Read the draft, replace the generated notes with the changelog entry, and
-   publish it.
+1. Bump `version` in `Cargo.toml` and refresh `Cargo.lock` through the Nix
+   devshell; run `./scripts/check-version.sh` there too.
+2. Add the release to `CHANGELOG.md` and run the checks above.
+3. Commit, tag `vX.Y.Z`, and push. The release workflow validates Nix, builds
+   the AppImage and macOS archive, and verifies the AppImage across distributions.
+4. Review the draft release with its checksums and provenance before publishing.
+
+A manual dispatch on `main` creates downloadable workflow artifacts without a
+release or a tag. A tag dispatch creates the same draft as a tag push.
 
 ## Commit messages
 

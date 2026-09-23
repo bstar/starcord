@@ -1,14 +1,5 @@
 #!/usr/bin/env bash
-# The version exists in more than one file and nothing generates it.
-#
-# flake.nix and the workflows read it from Cargo.toml, so they cannot drift.
-# Cargo.lock and packaging/PKGBUILD can: the lockfile is cargo's to write, and
-# the PKGBUILD is a standalone file that AUR users fetch on its own, with no
-# Cargo.toml beside it to read. This asserts they agree.
-#
-# Cargo.lock is in the list for a reason that is not obvious: PKGBUILD builds
-# with --frozen, so a Cargo.toml bump without `cargo update -w` fails the Arch
-# build with an error that points at the lockfile rather than at the bump.
+# Cargo.toml is authoritative. Check its lockfile copy and any release tag.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -24,7 +15,6 @@ expect() { # name actual
 
 expect Cargo.lock \
   "$(awk '/^name = "starcord"$/{getline; gsub(/version = "|"/,""); print; exit}' Cargo.lock)"
-expect packaging/PKGBUILD "$(sed -n 's/^pkgver=//p' packaging/PKGBUILD)"
 
 grep -q 'cargoToml.package.version' flake.nix || {
   echo "flake.nix hard-codes a version; it should read Cargo.toml" >&2

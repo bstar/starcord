@@ -8,9 +8,7 @@ route that matches your machine.
 | --- | --- | --- |
 | [Nix](#nix-and-nixos) | NixOS, or Nix on Linux or macOS | Nix with flakes |
 | [AppImage](#appimage) | any desktop Linux | nothing |
-| [`.deb`](#debian-and-ubuntu) | Debian 12, Debian 13, Ubuntu 24.04 | nothing else; dependencies are declared |
-| [Portable tarball](#portable-tarball) | distributions without a package | nothing |
-| [Arch](#arch) | Arch and derivatives | `makepkg` |
+| [macOS](#macos) | Apple Silicon | release archive or Nix |
 | [From source](#from-source) | anything else | a Rust toolchain |
 
 "Nothing" in that table is meant literally, and it is worth saying out loud
@@ -70,47 +68,14 @@ chmod +x starcord-*-x86_64.AppImage
 Each release's AppImage is started on eight distributions in CI before the
 release is drafted, so "it runs on yours" is tested rather than hoped for.
 
-## Debian and Ubuntu
 
-A `.deb` per Debian generation is attached to each release. They differ only in
-the glibc version they ask for.
 
-| Package | Release |
-| --- | --- |
-| `starcord_0.0.2-1.bookworm_amd64.deb` | Debian 12 |
-| `starcord_0.0.2-1.trixie_amd64.deb` | Debian 13 |
-| `starcord_0.0.2-1.ubuntu24.04_amd64.deb` | Ubuntu 24.04 |
-
-Or build your own:
-
-```sh
-cargo install cargo-deb && cargo deb
-```
-
-The Debian and Arch packages are both built and then installed from clean
-containers in CI, so the dependency lists are the ones that actually work
-rather than the ones that ought to.
-
-## Portable tarball
-
-For distributions without a package:
-
-```sh
-tar xf starcord-*-x86_64-linux-gnu.tar.gz
-cd starcord-* && ./starcord
-```
-
-Built against glibc 2.31, so it runs on Debian 11 and later, Ubuntu 20.04 and
-later, and RHEL 9 and later. The floor is asserted by the build rather than
-claimed.
-
-## Arch
-
-```sh
-cd packaging && makepkg -si
-```
 
 ## macOS
+
+Download `starcord-<version>-aarch64-apple-darwin.tar.gz` from the releases page,
+extract it, and run the enclosed `starcord` executable. The archive is unsigned.
+
 
 Apple Silicon. With Nix:
 

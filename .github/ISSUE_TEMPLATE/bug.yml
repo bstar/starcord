@@ -19,7 +19,7 @@ body:
     id: install
     attributes:
       label: How did you install it
-      options: [Nix, .deb, Arch, AppImage, portable tarball, from source]
+      options: [Nix, AppImage, macOS archive, from source]
     validations:
       required: true
   - type: input

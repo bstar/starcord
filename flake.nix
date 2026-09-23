@@ -100,7 +100,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # One version, read rather than repeated. scripts/check-version.sh
-        # asserts the copies that cannot be derived (Cargo.lock, PKGBUILD).
+        # asserts the copies that cannot be derived (Cargo.lock).
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
 
         # There are no buildInputs and no nativeBuildInputs, which is worth
@@ -194,9 +194,7 @@
             # advisory and will have one allowed git source, and the check that
             # each list still has exactly what it should is this command.
             cargo-deny
-          ])
-          # Only ever used to build a .deb, which only happens on Linux.
-          ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.cargo-deb;
+          ]);
 
           shellHook = ''
             echo "STAR/CORD devshell · rustc $(rustc --version | cut -d' ' -f2)"
