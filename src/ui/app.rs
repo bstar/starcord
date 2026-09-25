@@ -2340,8 +2340,18 @@ impl App {
         if !self.composer.has_something_to_send() {
             return;
         }
+        let content = match self.composer.outgoing_text() {
+            Ok(text) => text,
+            Err(_) => {
+                self.note(format!(
+                    "a message may be at most {} characters",
+                    composer::MAX_CHARS
+                ));
+                return;
+            }
+        };
         let attachments = self.composer.take_attachments();
-        let content = self.composer.take();
+        self.composer.take();
         self.core.send(Command::SendMessage {
             channel,
             content,
@@ -2361,11 +2371,21 @@ impl App {
         let Some(channel) = self.nav.channel else {
             return;
         };
-        let content = self.composer.take();
+        let content = match self.composer.outgoing_text() {
+            Ok(text) => text,
+            Err(_) => {
+                self.note(format!(
+                    "a message may be at most {} characters",
+                    composer::MAX_CHARS
+                ));
+                return;
+            }
+        };
         if content.trim().is_empty() {
             self.note("an empty edit would be a delete");
             return;
         }
+        self.composer.take();
         self.core.send(Command::EditMessage {
             channel,
             message,
@@ -2585,7 +2605,7 @@ impl App {
             self.word_click(module, word);
             return;
         }
-        let body = starkit::chrome::header::body(rect);
+        let body = panels::body(rect);
 
         // A folded list is one row that says where you are. Clicking anywhere
         // in it means "show me the rest", which is the same thing focusing it

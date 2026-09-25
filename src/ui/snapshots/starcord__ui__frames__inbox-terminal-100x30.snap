@@ -4,31 +4,31 @@ expression: "render(&mut app, 100, 30)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
 ║                                                                                   ‹  ›  settings ║
-║• Home (1)                                                                                        ║
+║ • Home (1)                                                                                       ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MESSAGES ═══════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║choose a conversation                                                                             ║
+║ choose a conversation                                                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ INBOX — 2 waiting ══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║WAITING — 2                                                                                       ║
-║○ Wren of the Long Display Name                                                       Sep 12 21:15║
-║  are you around this week? I have the thing we talked about                                      ║
-║● Alex (1)                                                                            Sep 13 09:02║
-║  @Sam did you see it? still waiting on your pick                                                 ║
-║THE REST                                                                                          ║
-║○ Alex, Jordan [3]                                                                    Sep 13 09:41║
-║  Jordan: are we still on for tonight? bring the good cable                                       ║
+║ WAITING — 2                                                                                      ║
+║ ○ Wren of the Long Display Name                                                     Sep 12 21:15 ║
+║   are you around this week? I have the thing we talked about                                     ║
+║ ● Alex (1)                                                                          Sep 13 09:02 ║
+║   @Sam did you see it? still waiting on your pick                                                ║
+║ THE REST                                                                                         ║
+║ ○ Alex, Jordan [3]                                                                  Sep 13 09:41 ║
+║   Jordan: are we still on for tonight? bring the good cable                                      ║
 ║                                                                                                  ║
 ║                                                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
-║open a channel to write in it                                                                     ║
+║ open a channel to write in it                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MEMBERS ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║not loaded                                                                                        ║
+║ not loaded                                                                                       ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ? help                                                            chat  7 unread · @3  ▲ online  off

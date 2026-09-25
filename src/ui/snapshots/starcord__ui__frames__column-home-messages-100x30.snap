@@ -4,31 +4,31 @@ expression: "render(&mut app, 100, 30)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
 ║                                                                                   ‹  ›  settings ║
-║• Home (1)                                                                                        ║
+║ • Home (1)                                                                                       ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MESSAGES ═══════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║CONVERSATIONS                                                                                     ║
-║○ Wren of the Long Display Name                                                                   ║
-║○ Alex, Jordan [3]                                                                                ║
-║● Alex (1)                                                                                        ║
-║ONLINE                                                                                            ║
-║● Alex                                                                                            ║
-║IDLE                                                                                              ║
-║◑ Jordan                                                                                          ║
+║ CONVERSATIONS                                                                                    ║
+║ ○ Wren of the Long Display Name                                                                  ║
+║ ○ Alex, Jordan [3]                                                                               ║
+║ ● Alex (1)                                                                                       ║
+║ ONLINE                                                                                           ║
+║ ● Alex                                                                                           ║
+║ IDLE                                                                                             ║
+║ ◑ Jordan                                                                                         ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ INBOX — 2 waiting ══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║WAITING — 2                                                                                       ║
-║○ Wren of the Long Display Name                                                       Sep 12 21:15║
-║  are you around this week? I have the thing we talked about                                      ║
+║ WAITING — 2                                                                                      ║
+║ ○ Wren of the Long Display Name                                                     Sep 12 21:15 ║
+║   are you around this week? I have the thing we talked about                                     ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
-║open a channel to write in it                                                                     ║
+║ open a channel to write in it                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MEMBERS ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║not loaded                                                                                        ║
+║ not loaded                                                                                       ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ? help                                                            chat  7 unread · @3  ▲ online  off

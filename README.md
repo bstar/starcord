@@ -58,8 +58,9 @@ keyring. [Signing in](docs/auth.md) has both routes in full, and
   the web -- are drawn as real pixels in kitty, WezTerm, Ghostty and foot,
   and as half-blocks where there is no graphics protocol.
 - **Emoji, reactions, GIFs and attachments.** Type `:name:` and complete it;
-  react with a key; search the GIF picker and post what it finds; attach a file
-  by path, or paste an image straight out of the clipboard.
+  use `/shrug`, `/tableflip` or `/unflip` for text emotes; react with a key;
+  search the GIF picker and post what it finds; attach a file by path, or paste
+  an image straight out of the clipboard.
 - **Notifications.** A bell and a line in the status bar for a mention or a DM,
   and a desktop notification when you ask for one.
 - **Search.** A channel or a whole server, and jumping to a result opens the

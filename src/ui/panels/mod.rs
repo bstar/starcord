@@ -17,12 +17,10 @@ pub mod members;
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
-use starkit::chrome::header;
+use starkit::chrome::{frame as chrome_frame, header};
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::Style;
 
 use super::keymap::Module;
 use super::theme::Theme;
@@ -174,79 +172,46 @@ pub struct Frame<'a> {
     pub words: &'a [Word],
 }
 
-/// Draw a module's border, corners, title and header row, and hand back what is
-/// left for its contents.
+/// Draw a module with STAR/KIT's shared frame and hand back its body.
 ///
-/// Every module starts with this and nothing else knows how one is framed, so a
-/// change to the chrome is a change in one place. The body rect comes from
-/// [`header::body`], which is also what the mouse tests against.
+/// The module supplies its title and words; STAR/KIT owns every border cell
+/// and its colour. Content gets one blank column on either side.
 pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
-    let t = f.theme;
-    let border = if f.focused {
-        t.border_focused
-    } else {
-        t.border
-    };
-    // The title as STAR/AMP draws one: one border character in from the
-    // corner, the name in capitals, a space, and the border again. The colour
-    // is the header's, at the same weight focused or not -- focus is carried
-    // by the border, and a title that changed weight with it said the same
-    // thing twice.
-    let (title, style) = if f.heading {
-        (
-            format!("{}{HEADING} ", starkit::chrome::frame::TITLE_LEAD),
-            Style::default()
-                .fg(rgb(t.titlebar_active_fg))
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        let name = f.name.to_uppercase();
-        let text = match f.detail {
-            Some(detail) => format!(
-                "{}{name} \u{2014} {detail} ",
-                starkit::chrome::frame::TITLE_LEAD
-            ),
-            None => format!("{}{name} ", starkit::chrome::frame::TITLE_LEAD),
-        };
-        (text, Style::default().fg(rgb(t.header_fg)))
-    };
-    // All of it or none of it. A clipped title is a word cut off mid-way that
-    // reads as a fault rather than as a label: `= CHANNELS — Some Long Serv`
-    // is not the name of anything.
-    let room = area.width.saturating_sub(2);
-    let left = if width_of(&title) <= room {
-        width_of(&title)
-    } else {
-        0
-    };
-    // Under the heading, the module's own name at the right end of the
-    // border, dim, the way the player keeps ` bit-perfect ═` there.
-    let right = f
-        .heading
-        .then(|| format!(" {}{}", f.name, starkit::chrome::frame::TITLE_TRAIL))
-        .filter(|right| left + 1 + width_of(right) <= room);
+    let body = chrome_frame::frame(
+        area,
+        buf,
+        &chrome_frame::Frame {
+            theme: f.theme,
+            focused: f.focused,
+            title: if f.heading { HEADING } else { f.name },
+            detail: f.detail,
+            heading: f.heading,
+            badge: f.heading.then_some(chrome_frame::Badge {
+                text: f.name,
+                tone: chrome_frame::Tone::Dim,
+            }),
+            footer: None,
+            words: f.words,
+        },
+    );
+    pad_body(body)
+}
 
-    // Double, as every STAR/AMP panel is drawn. The two share a title
-    // treatment -- `TITLE_LEAD` and `TITLE_TRAIL` are `\u{2550}`, the double
-    // horizontal -- so a single-line frame put a heavier seam on a lighter
-    // edge and the title read as pasted on.
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(rgb(border)))
-        .style(Style::default().bg(rgb(t.panel_bg)));
-    if left > 0 {
-        block = block.title(Span::styled(title, style));
-    }
-    if let Some(right) = right {
-        block = block.title_top(
-            Line::from(Span::styled(right, Style::default().fg(rgb(t.dim)))).right_aligned(),
-        );
-    }
-    block.render(area, buf);
+/// Leave one blank cell between module content and each side of its frame.
+/// The header and border keep their full width.
+pub fn body(area: Rect) -> Rect {
+    pad_body(header::body(area))
+}
 
-    header::render(area, f.words, buf, t);
-    header::body(area)
+fn pad_body(body: Rect) -> Rect {
+    if body.width < 3 {
+        return body;
+    }
+    Rect {
+        x: body.x + 1,
+        width: body.width - 2,
+        ..body
+    }
 }
 
 /// A ratatui colour from a theme one. Every module wants it; it is here so that
@@ -422,6 +387,41 @@ mod tests {
         assert_eq!(at(6, 4), "\u{2550}", "the bottom edge is not double");
         assert_eq!(at(0, 2), "\u{2551}", "the left edge is not double");
         assert_eq!(at(11, 2), "\u{2551}", "the right edge is not double");
+    }
+
+    #[test]
+    fn border_glyphs_match_the_frame_color_even_beside_titles() {
+        let theme = crate::ui::theme::tests_support::theme("cosmic");
+        let area = Rect::new(0, 0, 40, 5);
+        assert_ne!(theme.border_focused, theme.accent);
+        for (focused, expected) in [(false, theme.border), (true, theme.border_focused)] {
+            let mut buf = Buffer::empty(area);
+            frame(
+                area,
+                &mut buf,
+                &Frame {
+                    theme: &theme,
+                    focused,
+                    name: "servers",
+                    detail: None,
+                    heading: true,
+                    words: &[],
+                },
+            );
+            for y in 0..area.height {
+                for x in 0..area.width {
+                    let cell = &buf[(x, y)];
+                    if cell
+                        .symbol()
+                        .chars()
+                        .next()
+                        .is_some_and(|c| ('\u{2500}'..='\u{257f}').contains(&c))
+                    {
+                        assert_eq!(cell.style().fg, Some(rgb(expected)), "cell {x},{y}");
+                    }
+                }
+            }
+        }
     }
 
     /// A folded list draws its summary at the top left of its body, cut to fit

@@ -4,31 +4,31 @@ expression: "render(&mut app, 100, 30)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
 ║         ╔═ KEYS ═══════════════════════════════════════════════════════════════════════╗settings ║
-║• First G║  navigation                         chat                                     ║         ║
+║ • First ║  navigation                         chat                                     ║         ║
 ╚═════════║  tab           next module          wheel                scroll three rows   ║═════════╝
 ╔═ CHANNEL║  shift+tab     previous module      click                select a message    ║═════════╗
 ║         ║  alt+1         the servers          click a picture      view it, or open it ║settings ║
-║# rules  ║  alt+2         the channels         click a video        play it             ║         ║
-║▾ TEXT CH║  alt+3         the conversation     click, in the inbox  open that one       ║         ║
-║  # gener║  alt+4 / i     write a message      double-click a file  open it             ║         ║
-║  > about║  alt+5         the members          click a reaction     add or remove yours ║         ║
-║  # rando║  up / k        up one               click a link         open it             ║         ║
-║  ! annou║  down / j      down one             click the ↩ line     go to the quoted    ║         ║
-║▾ ARCHIVE║  shift+up/K    up ten               click ↓ n new        jump to the newest  ║         ║
-║  # old-d║  shift+down/J  down ten             right-click          what can be done    ║         ║
+║ # rules ║  alt+2         the channels         click a video        play it             ║         ║
+║ ▾ TEXT C║  alt+3         the conversation     click, in the inbox  open that one       ║         ║
+║   # gene║  alt+4 / i     write a message      double-click a file  open it             ║         ║
+║   > abou║  alt+5         the members          click a reaction     add or remove yours ║         ║
+║   # rand║  up / k        up one               click a link         open it             ║         ║
+║   ! anno║  down / j      down one             click the ↩ line     go to the quoted    ║         ║
+║ ▾ ARCHIV║  shift+up/K    up ten               click ↓ n new        jump to the newest  ║         ║
+║   # old-║  shift+down/J  down ten             right-click          what can be done    ║         ║
 ╚═════════║  pgup          page up              drag the scrollbar   scroll to anywhere  ║═════════╝
 ╔═ INBOX —║  pgdn          page down            lists                                    ║═════════╗
 ║         ║  home / gg     to the top           click, wheel         choose one          ║settings ║
-║WAITING —║  end / G       to the bottom        double-click         open a channel      ║         ║
-║○ Wren of║  enter         open                 click a category     fold or unfold it   ║ 12 21:15║
-║  are you║  esc           back, or mark read   composer                                 ║         ║
+║ WAITING ║  end / G       to the bottom        double-click         open a channel      ║         ║
+║ ○ Wren o║  enter         open                 click a category     fold or unfold it   ║12 21:15 ║
+║   are yo║  esc           back, or mark read   composer                                 ║         ║
 ╚═════════║  [             previous server      click                place the caret     ║═════════╝
 ╔═ COMPOSE║  ]             next server          click a chip's ×     drop the attachment ║═════════╗
 ║         ║  alt+up        previous unread      modules                                  ║oji  gif ║
-║open a ch║  alt+down      next unread          click a folded list  open it             ║         ║
+║ open a c║  alt+down      next unread          click a folded list  open it             ║         ║
 ╚═════════║  alt+left      where you were       click a header word  what the word says  ║═════════╝
 ╔═ MEMBERS║  alt+right     forward again        status                                   ║═════════╗
 ║         ║  alt+i         the inbox            click ? help         open this list      ║settings ║
-║2 online ║  ctrl+k        jump to anything     click the channel    jump to anything    ║         ║
+║ 2 online║  ctrl+k        jump to anything     click the channel    jump to anything    ║         ║
 ╚═════════╚══════════════════════════════════════════════════════ more below · esc close ╝═════════╝
 ? help                                                            chat  7 unread · @3  ▲ online  off

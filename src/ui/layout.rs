@@ -251,9 +251,10 @@ impl LayoutState {
 /// The composer has to say how tall it wants to be before `regions` can decide
 /// anything, and how tall it is depends on how wide it is. Every module is the
 /// full width of the area, so that answer needs no layout: it is the terminal
-/// with the padding taken off.
+/// with the outer padding and two side-padding columns taken off. The composer
+/// takes off the frame's two border columns in `rows`.
 pub fn content_width(full: Rect, pad: (u16, u16)) -> u16 {
-    inset(full, pad).width
+    inset(full, pad).width.saturating_sub(2)
 }
 
 /// Shrink a rect by the configured padding, never past nothing.
@@ -363,7 +364,7 @@ mod tests {
             .cloned()
             .expect("60x21 left");
         assert_eq!(r.area, Rect::new(2, 1, 60, 21));
-        assert_eq!(content_width(Rect::new(0, 0, 64, 23), (2, 1)), 60);
+        assert_eq!(content_width(Rect::new(0, 0, 64, 23), (2, 1)), 58);
 
         let mut s = state();
         assert!(

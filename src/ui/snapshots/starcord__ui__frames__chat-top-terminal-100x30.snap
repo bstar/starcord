@@ -4,31 +4,31 @@ expression: "render(&mut app, 100, 30)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
 ║                                                                                   ‹  ›  settings ║
-║• First Guild (2)                                                                                 ║
+║ • First Guild (2)                                                                                ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CHANNELS — First Guild ═════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║# general (2)                                                                                     ║
+║ # general (2)                                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║↑ older messages                                                                                  █
-║────────────────────────────────── Saturday, 12 September 2026 ───────────────────────────────────█
-║▕ Alex  10:00                                                                                     ║
-║▕ the first thing anybody said                                                                    ║
-║  and the second, half a minute later                                                             ║
-║  and the third, which makes a group of three                                                     ║
-║  Robin joined                                                                                    ║
-║  Jordan  10:10                                                                                   ║
-║  here is the thing I meant                                                                       ║
-║  ▏ rust                                                                                          ║
+║ ↑ older messages                                                                                 █
+║ ───────────────────────────────── Saturday, 12 September 2026 ────────────────────────────────── █
+║ ▕ Alex  10:00                                                                                    ║
+║ ▕ the first thing anybody said                                                                   ║
+║   and the second, half a minute later                                                            ║
+║   and the third, which makes a group of three                                                    ║
+║   Robin joined                                                                                   ║
+║   Jordan  10:10                                                                                  ║
+║   here is the thing I meant                                                                      ║
+║   ▏ rust                                                                                         ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
-║message #general · First Guild                                                                    ║
+║ message #general · First Guild                                                                   ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MEMBERS ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║2 online · 1 idle · 1 offline                                                                     ║
+║ 2 online · 1 idle · 1 offline                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ? help  #general · First Guild                           chat  ↓ 5 new  7 unread · @3  ▲ online  off

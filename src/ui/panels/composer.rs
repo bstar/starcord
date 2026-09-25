@@ -28,6 +28,7 @@
 //! learnable; three keys that each mean "back" in one particular state are
 //! not.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -58,6 +59,41 @@ const MAX_SUGGESTIONS: usize = 6;
 /// that is refused after it has been typed is a message somebody has to
 /// retype.
 pub const MAX_CHARS: usize = 2000;
+
+/// Expand Discord's text-emote commands at the start of a message.
+///
+/// The shrug needs Markdown escapes in the sent text so that Discord and our
+/// renderer both show its backslash and underscores literally.
+fn expand_text_emote(text: &str) -> Cow<'_, str> {
+    const SHRUG: &str = r"¯\\\_(ツ)\_/¯";
+    const TABLEFLIP: &str = "(╯°□°）╯︵ ┻━┻";
+    const UNFLIP: &str = "┬─┬ ノ( ゜-゜ノ)";
+
+    for (command, emote) in [
+        ("/shrug", SHRUG),
+        ("/tableflip", TABLEFLIP),
+        ("/unflip", UNFLIP),
+    ] {
+        let Some(prefix) = text.get(..command.len()) else {
+            continue;
+        };
+        if !prefix.eq_ignore_ascii_case(command) {
+            continue;
+        }
+        let rest = &text[command.len()..];
+        if !rest.is_empty() && !rest.chars().next().is_some_and(char::is_whitespace) {
+            continue;
+        }
+        let message = rest.trim();
+        return if message.is_empty() {
+            Cow::Borrowed(emote)
+        } else {
+            Cow::Owned(format!("{message} {emote}"))
+        };
+    }
+
+    Cow::Borrowed(text)
+}
 
 /// What the composer is doing with what is typed into it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -258,6 +294,17 @@ impl Composer {
 
     pub fn text(&self) -> &str {
         self.input.text()
+    }
+
+    /// Text ready for a send or edit, while leaving the draft untouched.
+    pub fn outgoing_text(&self) -> Result<String, usize> {
+        let text = expand_text_emote(self.text());
+        let chars = text.chars().count();
+        if chars > MAX_CHARS {
+            Err(chars)
+        } else {
+            Ok(text.into_owned())
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -897,6 +944,31 @@ fn candidates(kind: Completing, query: &str, sources: &Sources) -> Vec<Candidate
 mod tests {
     use super::*;
     use crate::ui::theme::tests_support::theme;
+
+    #[test]
+    fn text_emote_commands_expand_before_sending() {
+        let shrug = r"¯\\\_(ツ)\_/¯";
+        assert_eq!(expand_text_emote("/shrug"), shrug);
+        assert_eq!(expand_text_emote("/SHRUG okay"), format!("okay {shrug}"));
+        assert_eq!(crate::discord::markdown::plain_text(shrug), r"¯\_(ツ)_/¯");
+        assert_eq!(
+            expand_text_emote("/tableflip not again"),
+            "not again (╯°□°）╯︵ ┻━┻"
+        );
+        assert_eq!(expand_text_emote("/unflip"), "┬─┬ ノ( ゜-゜ノ)");
+        for literal in ["/shrugging", "/shrug!", "type /shrug", "/unknown"] {
+            assert_eq!(expand_text_emote(literal), literal);
+        }
+    }
+
+    #[test]
+    fn expanded_text_is_checked_without_discarding_the_draft() {
+        let mut c = Composer::new();
+        let draft = format!("/shrug {}", "x".repeat(MAX_CHARS - "/shrug ".len()));
+        c.input.set_text(draft.clone());
+        assert!(matches!(c.outgoing_text(), Err(n) if n > MAX_CHARS));
+        assert_eq!(c.text(), draft);
+    }
 
     fn cfg() -> Compose {
         Compose::default()

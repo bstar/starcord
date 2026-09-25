@@ -4,31 +4,31 @@ expression: "render(&mut app, 100, 30)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
 ║                                                                                   ‹  ›  settings ║
-║• First Guild (2)                                                                                 ║
+║ • First Guild (2)                                                                                ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CHANNELS — First Guild ═════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║# general (2)                                                                                     ║
+║ # general (2)                                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  Jordan  09:15        ╔═ MESSAGE ════════════════════════════════════════╗                       ║
-║  https://example.inval║what can be done                                  ║                       ║
-║  ▌ Example            ║ reply  r                                         ║                       ║
-║  ▌ A page title       ║ reply, no ping  R                                ║                       ║
-║  ▌ Two sentences of de║ react  +                                         ║here so                ║
-║  ▌ the wrapping has so║ copy the text  y                                 ║                       ║
-║  Alex  09:20          ║ open elsewhere  o                                ║                       ║
-║  https://tenor.invalid║ copy a link  ctrl+y                              ║                       ║
-║  ▌ Tenor              ║                                                  ║                       █
-║  ▌ [gif ▶ a cat, falli╚═════════════════════════ enter do it · esc close ╝                       █
+║   Jordan  09:15       ╔═ MESSAGE ════════════════════════════════════════╗                       ║
+║   https://example.inva║what can be done                                  ║                       ║
+║   ▌ Example           ║ reply  r                                         ║                       ║
+║   ▌ A page title      ║ reply, no ping  R                                ║                       ║
+║   ▌ Two sentences of d║ react  +                                         ║there so               ║
+║   ▌ the wrapping has s║ copy the text  y                                 ║                       ║
+║   Alex  09:20         ║ open elsewhere  o                                ║                       ║
+║   https://tenor.invali║ copy a link  ctrl+y                              ║                       ║
+║   ▌ Tenor             ║                                                  ║                       █
+║   ▌ [gif ▶ a cat, fall╚═════════════════════════ enter do it · esc close ╝                       █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
-║message #general · First Guild                                                                    ║
+║ message #general · First Guild                                                                   ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MEMBERS ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║2 online · 1 idle · 1 offline                                                                     ║
+║ 2 online · 1 idle · 1 offline                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ? help  #general · First Guild                                    chat  7 unread · @3  ▲ online  off

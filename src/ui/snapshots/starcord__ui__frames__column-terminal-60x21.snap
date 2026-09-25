@@ -4,22 +4,22 @@ expression: "render(&mut app, 60, 21)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════ servers ═╗
 ║                                           ‹  ›  settings ║
-║• First Guild (2)                                         ║
+║ • First Guild (2)                                        ║
 ╚══════════════════════════════════════════════════════════╝
 ╔═ CHANNELS — First Guild ═════════════════════════════════╗
 ║                                                 settings ║
-║# rules                                                   ║
+║ # rules                                                  ║
 ╚══════════════════════════════════════════════════════════╝
 ╔═ INBOX — 2 waiting ══════════════════════════════════════╗
 ║                                   search  pins  settings ║
-║WAITING — 2                                               ║
+║ WAITING — 2                                              ║
 ╚══════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════╗
 ║                                       attach  emoji  gif ║
-║open a channel to write in it                             ║
+║ open a channel to write in it                            ║
 ╚══════════════════════════════════════════════════════════╝
 ╔═ MEMBERS ════════════════════════════════════════════════╗
 ║                                                 settings ║
-║2 online · 1 idle · 1 offline                             ║
+║ 2 online · 1 idle · 1 offline                            ║
 ╚══════════════════════════════════════════════════════════╝
 ? help                    chat  7 unread · @3  ▲ online  off

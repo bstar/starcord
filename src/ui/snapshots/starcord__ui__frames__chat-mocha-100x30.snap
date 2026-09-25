@@ -4,24 +4,24 @@ expression: "render(&mut app, 100, 30)"
 ---
 ╔═ S T A R / C O R D ════════════════════════════════════════════════════════════════════ servers ═╗
 ║                                                                                   ‹  ›  settings ║
-║• First Guild (2)                                                                                 ║
+║ • First Guild (2)                                                                                ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CHANNELS — First Guild ═════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║# general (2)                                                                                     ║
+║ # general (2)                                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ CONVERSATION — #general · First Guild ══════════════════════════════════════════════════════════╗
 ║                                                                           search  pins  settings ║
-║  Jordan  09:15                                                                                   ║
-║  https://example.invalid/page                                                                    ║
-║  ▌ Example                                                                                       ║
-║  ▌ A page title                                                                                  ║
-║  ▌ Two sentences of description, as a link unfurl carries. The second is there so                ║
-║  ▌ the wrapping has something to do.                                                             ║
-║  Alex  09:20                                                                                     ║
-║  https://tenor.invalid/view/a-cat-12345                                                          ║
-║  ▌ Tenor                                                                                         █
-║  ▌ [gif ▶ a cat, falling over]                                                                   █
+║   Jordan  09:15                                                                                  ║
+║   https://example.invalid/page                                                                   ║
+║   ▌ Example                                                                                      ║
+║   ▌ A page title                                                                                 ║
+║   ▌ Two sentences of description, as a link unfurl carries. The second is there so               ║
+║   ▌ the wrapping has something to do.                                                            ║
+║   Alex  09:20                                                                                    ║
+║   https://tenor.invalid/view/a-cat-12345                                                         ║
+║   ▌ Tenor                                                                                        █
+║   ▌ [gif ▶ a cat, falling over]                                                                  █
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ COMPOSE ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               attach  emoji  gif ║
@@ -29,6 +29,6 @@ expression: "render(&mut app, 100, 30)"
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ╔═ MEMBERS ════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                         settings ║
-║2 online · 1 idle · 1 offline                                                                     ║
+║ 2 online · 1 idle · 1 offline                                                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ? help  #general · First Guild                                 compose  7 unread · @3  ▲ online  off

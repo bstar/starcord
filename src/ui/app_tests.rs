@@ -418,6 +418,53 @@ fn letters_reach_the_composer_and_alt_keys_do_not() {
     assert_eq!(a.composer.text(), "delete", "and did not type an m");
 }
 
+#[test]
+fn text_emotes_reach_the_core_as_renderable_text() {
+    let (core, mut idle) = fake::silent();
+    let mut a = App::new(
+        core,
+        Config::default(),
+        PathBuf::from("/nonexistent/config.toml"),
+        None,
+        Graphics::disabled(),
+    );
+    a.nav.channel = Some(CHANNEL);
+    a.composer.open(CHANNEL);
+    idle.sent();
+
+    a.composer.input.set_text("/shrug fine");
+    a.send();
+    let sent = idle.sent();
+    let content = sent.iter().find_map(|command| match command {
+        Command::SendMessage { content, .. } => Some(content.as_str()),
+        _ => None,
+    });
+    assert_eq!(
+        crate::discord::markdown::plain_text(content.expect("a message was sent")),
+        r"fine ¯\_(ツ)_/¯"
+    );
+
+    a.composer.edit(MessageId(7), "/tableflip no".into());
+    a.save_edit(MessageId(7));
+    let sent = idle.sent();
+    assert!(sent.iter().any(|command| matches!(
+        command,
+        Command::EditMessage { content, .. } if content == "no (╯°□°）╯︵ ┻━┻"
+    )));
+
+    let draft = format!(
+        "/shrug {}",
+        "x".repeat(composer::MAX_CHARS - "/shrug ".len())
+    );
+    a.composer.input.set_text(draft.clone());
+    a.send();
+    assert_eq!(a.composer.text(), draft);
+    assert!(!idle
+        .sent()
+        .iter()
+        .any(|command| matches!(command, Command::SendMessage { .. })));
+}
+
 /// The escape chain: cancel what is being written, then walk back up the
 /// column one module at a time, then fold and come back to the composer.
 #[test]
