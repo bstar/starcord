@@ -61,8 +61,8 @@ starkit = { path = "../starkit" }
 `.gitignore` already covers it, and it has to be taken away again before
 anything is committed: with the patch in place `cargo` rewrites the `starkit`
 entry in `Cargo.lock` to the path, and a lock file with no git source in it is
-one the flake cannot build. Every public `starkit` item has two consumers; check
-STAR/AMP before changing a signature.
+one the flake cannot build. Every public `starkit` item has four consumers; check
+STAR/AMP, STAR/FOLD and STAR/WIRE before changing a signature.
 
 ## Nothing under src/discord/ draws
 
