@@ -35,7 +35,7 @@ categories = ["command-line-utilities"]
 # The `version` is not redundant with the revision: cargo-deny counts a
 # dependency with no version requirement as a wildcard and `wildcards = "deny"`
 # refuses it, whether or not the source is a git URL pinned to a commit.
-starkit = { git = "https://github.com/bstar/starkit", rev = "ff7ae1a1a220daaad893ce29b90be874cc8c72ac", version = "0.3", default-features = false, features = [
+starkit = { git = "https://github.com/bstar/starkit", tag = "v0.6.1", version = "0.6", default-features = false, features = [
     "image",
     "gif",
     "net",
