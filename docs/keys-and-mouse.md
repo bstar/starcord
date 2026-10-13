@@ -133,9 +133,9 @@ _everywhere_
 
 | key | what it does |
 |---|---|
-| `t`            | next theme |
-| `T`            | previous theme |
-| `alt+t`        | timestamps |
+| `alt+t`        | next theme |
+| `alt+shift+t`  | previous theme |
+| `alt+u`        | timestamps |
 | `alt+v`        | avatars |
 | `alt+n`        | animate GIFs |
 

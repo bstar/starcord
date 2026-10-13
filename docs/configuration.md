@@ -121,7 +121,7 @@ is a client that stops returning results on the day that happens.
 `~/.config/stylix/palette.json`, so whatever base16 scheme the rest of the
 desktop is set to, the client matches it.
 
-Sixteen themes ship built in, and `t` and `T` cycle them live:
+Sixteen themes ship built in, and `alt+t` and `alt+shift+t` cycle them live:
 
 `winamp-classic` · `cosmic` · `catppuccin-mocha` · `catppuccin-latte` ·
 `gruvbox-dark` · `nord` · `tokyo-night` · `dracula` · `rose-pine` ·

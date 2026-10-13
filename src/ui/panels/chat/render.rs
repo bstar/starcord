@@ -1039,10 +1039,7 @@ impl<'a> Writer<'a> {
         let room = cols.min(self.width().saturating_sub(gutter)).max(1);
         self.row_of(vec![
             Span::raw(" ".repeat(usize::from(gutter))),
-            Span::styled(
-                "\u{2591}".repeat(usize::from(room)),
-                Style::default().fg(rgb(self.theme.chat.spoiler_bg)),
-            ),
+            Span::raw(" ".repeat(usize::from(room))),
         ]);
     }
 
@@ -1337,10 +1334,7 @@ impl<'a> Writer<'a> {
             Span::raw(" ".repeat(usize::from(gutter))),
             Span::styled(EMBED_BAR, bar),
             Span::raw(" "),
-            Span::styled(
-                "\u{2591}".repeat(usize::from(room)),
-                Style::default().fg(rgb(self.theme.chat.spoiler_bg)),
-            ),
+            Span::raw(" ".repeat(usize::from(room))),
         ]);
     }
 
@@ -2019,6 +2013,10 @@ mod tests {
         assert!(
             with.images[0].rows <= 12,
             "[chat] max_image_rows was not honoured"
+        );
+        assert!(
+            text_of(&with).iter().all(|row| !row.contains('\u{2591}')),
+            "unused image cells should show the panel background"
         );
 
         // And none at all when the setting says zero.

@@ -596,19 +596,19 @@ pub const BINDINGS: &[Binding] = &[
     // -- appearance --------------------------------------------------------
     Binding {
         action: Action::NextTheme,
-        keys: "t",
+        keys: "alt+t",
         label: "next theme",
         group: "appearance",
     },
     Binding {
         action: Action::PrevTheme,
-        keys: "T",
+        keys: "alt+shift+t",
         label: "previous theme",
         group: "appearance",
     },
     Binding {
         action: Action::ToggleTimestamps,
-        keys: "alt+t",
+        keys: "alt+u",
         label: "timestamps",
         group: "appearance",
     },
@@ -1253,6 +1253,27 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn theme_shortcuts_require_alt_and_timestamps_keep_a_binding() {
+        assert_eq!(resolve(plain('t')), None);
+        assert_eq!(resolve(plain('T')), None);
+        assert_eq!(
+            resolve(with(KeyCode::Char('t'), KeyModifiers::ALT)),
+            Some(Action::NextTheme)
+        );
+        assert_eq!(
+            resolve(with(
+                KeyCode::Char('t'),
+                KeyModifiers::ALT | KeyModifiers::SHIFT
+            )),
+            Some(Action::PrevTheme)
+        );
+        assert_eq!(
+            resolve(with(KeyCode::Char('u'), KeyModifiers::ALT)),
+            Some(Action::ToggleTimestamps)
+        );
     }
 
     /// Every global `alt+…` reaches the dispatcher while somebody is typing.
