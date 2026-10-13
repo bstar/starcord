@@ -2981,9 +2981,7 @@ impl App {
 
     /// `tab` and `shift+tab`, over the column and round.
     fn step_focus(&mut self, delta: isize) {
-        let at = self.layout.focus().index() as isize;
-        let next = (at + delta).rem_euclid(COLUMN.len() as isize) as usize;
-        self.focus_module(COLUMN[next]);
+        self.focus_module(self.layout.focus_target(delta > 0));
     }
 
     /// Body rows the open list would like, which is how many rows it has.

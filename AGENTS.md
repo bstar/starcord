@@ -64,6 +64,13 @@ entry in `Cargo.lock` to the path, and a lock file with no git source in it is
 one the flake cannot build. Every public `starkit` item has four consumers; check
 STAR/AMP, STAR/FOLD and STAR/WIRE before changing a signature.
 
+## Shared panes
+
+`ui/layout.rs` supplies application sizing/opening policy to KIT's `panes`
+engine. Solved rectangles drive rendering, hit testing and focus. User collapse
+and viewport fallback have separate reasons. Keep the core model independent
+of presentation and preserve the application's accordion/reader behavior.
+
 ## Nothing under src/discord/ draws
 
 No `ratatui`, no `crossterm`, no `crate::ui` anywhere under `src/discord/`.

@@ -19,10 +19,9 @@
 //! ```
 //!
 //! Every module is always there, in the order you drill through them, and the
-//! arithmetic below is the whole of it: a plain top-down stack, no tree and no
-//! `Layout`. There is nothing to hide, nothing to drag and nothing to write
-//! back to `config.toml`, which is three states the window used to have and
-//! does not any more.
+//! application supplies accordion and composer preferences; KIT's shared
+//! pane tree allocates the stack, records collapse reasons and supplies the
+//! same rectangles to painting, hit testing and focus.
 //!
 //! ## The accordion
 //!
@@ -42,6 +41,7 @@
 //! its minimum throughout.
 
 use starkit::chrome::header;
+use starkit::panes::{self, Focus, Node, Size, Visibility};
 use starkit::ratatui::layout::Rect;
 
 use super::panels::{ModuleId, COLUMN};
@@ -84,6 +84,7 @@ pub struct Regions {
     /// One rect per module, indexed by [`ModuleId::index`], in [`COLUMN`]
     /// order. Every one of them is the full width of the area.
     modules: [Rect; 5],
+    pub panes: panes::Layout<ModuleId>,
     pub status: Rect,
 }
 
@@ -94,17 +95,14 @@ impl Regions {
 
     /// Which module a cell is in.
     pub fn hit(&self, x: u16, y: u16) -> Option<ModuleId> {
-        COLUMN.into_iter().find(|m| {
-            let r = self.rect_of(*m);
-            x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-        })
+        self.panes.hit(x, y)
     }
 }
 
 /// Which module has the keyboard, which list is open, and what the pointer is
 /// dragging.
 pub struct LayoutState {
-    focus: ModuleId,
+    focus: Focus<ModuleId>,
     /// The one list that is expanded, if any. The accordion is this field
     /// being an `Option` rather than a set: there is no state in which two
     /// lists are open, so there is no code that has to close the other one.
@@ -118,7 +116,7 @@ pub struct LayoutState {
 impl LayoutState {
     pub fn new(list_rows: u16) -> Self {
         Self {
-            focus: ModuleId::Servers,
+            focus: Focus::new(Some(ModuleId::Servers)),
             expanded: Some(ModuleId::Servers),
             list_rows,
             drag: None,
@@ -157,50 +155,60 @@ impl LayoutState {
             ..area
         };
 
-        // Three folded lists is the floor everything else is measured from.
-        // `room` is what is left once the conversation has its minimum, and
-        // the floor above is what guarantees it is at least four.
-        let folded = 3 * COLLAPSED_ROWS;
-        let room = body.height - folded - CHAT_MIN_ROWS;
-        let compose = composer_rows.clamp(COMPOSER_MIN_ROWS, room.max(COMPOSER_MIN_ROWS));
-        // The open list takes what it asked for, up to `[ui] list_rows` and up
-        // to what the composer left. One row of it is already in the folded
-        // height, so this is only the extra.
-        let extra = match self.expanded {
-            Some(_) => (wanted.clamp(1, self.list_rows.max(1)) - 1).min(room - compose),
-            None => 0,
+        let compose = composer_rows.max(COMPOSER_MIN_ROWS);
+        let list_extra = if self.expanded.is_some() {
+            wanted.clamp(1, self.list_rows.max(1)) - 1
+        } else {
+            0
         };
-        let conversation = body.height - folded - compose - extra;
-
-        let height = |m: ModuleId| match m {
-            ModuleId::Conversation => conversation,
-            ModuleId::Compose => compose,
-            _ if self.expanded == Some(m) => COLLAPSED_ROWS + extra,
-            _ => COLLAPSED_ROWS,
-        };
-
-        let mut modules = [Rect::new(0, 0, 0, 0); 5];
-        let mut y = body.y;
-        for m in COLUMN {
-            let h = height(m);
-            modules[m.index()] = Rect {
-                y,
-                height: h,
-                ..body
-            };
-            y += h;
-        }
-
+        let children = COLUMN
+            .into_iter()
+            .map(|id| {
+                let pane = Node::pane(id);
+                match id {
+                    ModuleId::Conversation => pane.height(Size::fill(CHAT_MIN_ROWS)),
+                    ModuleId::Compose => pane
+                        .height(Size::bounded(COMPOSER_MIN_ROWS, compose, compose))
+                        .priority(2),
+                    _ if self.expanded == Some(id) => pane
+                        .height(Size::bounded(
+                            COLLAPSED_ROWS,
+                            COLLAPSED_ROWS.saturating_add(list_extra),
+                            COLLAPSED_ROWS.saturating_add(list_extra),
+                        ))
+                        .priority(1),
+                    _ => pane
+                        .visibility(Visibility::Collapsed)
+                        .compact(Size::fill(1), Size::fixed(COLLAPSED_ROWS)),
+                }
+            })
+            .collect();
+        let panes = Node::column(children)
+            .layout(body)
+            .expect("unique application pane IDs");
+        let modules = COLUMN.map(|id| panes.rect_of(id).unwrap_or_default());
+        self.focus.reconcile(&panes);
         self.last = Some(Regions {
             area,
             modules,
+            panes,
             status,
         });
         self.last.as_ref()
     }
 
     pub fn focus(&self) -> ModuleId {
-        self.focus
+        self.focus.active().unwrap_or(ModuleId::Servers)
+    }
+
+    pub fn focus_target(&self, forward: bool) -> ModuleId {
+        let mut focus = self.focus.clone();
+        let next = if let Some(last) = &self.last {
+            focus.step(&last.panes, forward)
+        } else {
+            focus.step_in(&COLUMN, forward)
+        };
+        next.unwrap_or(ModuleId::Servers)
     }
 
     pub fn expanded(&self) -> Option<ModuleId> {
@@ -221,7 +229,7 @@ impl LayoutState {
         if m.is_list() {
             self.expanded = Some(m);
         }
-        self.focus = m;
+        self.focus.request(m);
     }
 
     /// Fold the open list, landing focus on `land` if it was in it.
@@ -230,8 +238,8 @@ impl LayoutState {
     /// would be a fold that opens something, which is not a fold.
     pub fn collapse(&mut self, land: ModuleId) {
         if let Some(open) = self.expanded.take() {
-            if self.focus == open {
-                self.focus = land;
+            if self.focus() == open {
+                self.focus.request(land);
             }
         }
     }

@@ -5,6 +5,10 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Framework
+
+- Shared KIT pane allocation, collapse reasons and focus targets while retaining conversation/composer accordion policy.
+
 ### Added
 
 - **A click on a picture opens it where there is a screen** (`[media]
