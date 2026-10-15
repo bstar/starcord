@@ -241,3 +241,16 @@ Silicon archive (Nix remains available there too). Do not restore Debian, Arch
 or standalone Linux tarball build jobs. `scripts/build-dist.sh` accepts only
 `nix`, `appimage` and `macos`; branch release dispatches build artifacts without
 publishing, while version tags create a draft release.
+
+## KIT 0.9 candidate compatibility
+
+Development main pins an immutable KIT 0.9 candidate revision with a git-sourced
+lockfile, so ordinary builds need no sibling checkout. This is an unreleased
+testing candidate; use immutable version tags when making a framework release.
+Keep dependency updates in their own commit, with the manifest and lock together.
+
+`scripts/check-kit.sh` checks every target and feature against the sibling KIT
+checkout in a disposable tracked copy. `STAR_KIT_CHECKOUT` selects another
+candidate. No candidate path or path-patched lock is committed. Live canvases
+and embedded input are opt-in; ordinary application keys, media, SSH and
+presentation retain their current contracts.
