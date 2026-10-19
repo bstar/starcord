@@ -19,11 +19,18 @@ defaults. Editing one key never means writing the other six.
 
 | Key | Does |
 | --- | --- |
-| `[ui] theme` | a theme id, or `"system"` to follow the desktop. Default `"catppuccin-mocha"`. See [Theming](#theming) |
+| `[ui] theme` | a theme id, or `"system"` to follow the desktop. Default `"kanagawa"`. See [Theming](#theming) |
 | `[ui] graphics` | how pictures are drawn: `auto` asks the terminal, `kitty` insists on the kitty protocol, `blocks` (also spelled `halfblocks`) draws two pixels to a cell in any terminal at all, `off` draws no picture and leaves the chip that names the file. Default `auto` |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the whole layout, for a terminal whose window has none. Default `0` |
 
 ### The column
+
+The default build opens KIT's graphical frontend. Its Focus Signal treatment
+uses one quiet workspace pane recipe throughout, with an accent title and
+outline on the focused module. The content grid follows physical text metrics;
+the terminal's font size does not stretch compact labels across wide cells.
+`F9` switches the same running controller between graphics and cells.
+`starcord --cells` opens the original terminal interface directly.
 
 The window is one vertical column of modules — the servers, the channels, the
 conversation, the composer and the members, in the order you drill through

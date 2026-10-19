@@ -95,7 +95,7 @@ pub struct Ui {
 impl Default for Ui {
     fn default() -> Self {
         Self {
-            theme: "catppuccin-mocha".into(),
+            theme: "kanagawa".into(),
             padding_x: 0,
             padding_y: 0,
             graphics: "auto".into(),
@@ -446,7 +446,7 @@ const TEMPLATE: &str = r#"# STAR/CORD configuration.
 [ui]
 # "system" follows the desktop. Or name one of the sixteen built-in themes;
 # `t` and `T` cycle through them while it is running.
-theme = "catppuccin-mocha"
+theme = "kanagawa"
 # How pictures are drawn: auto, kitty, blocks, or off. "auto" asks the
 # terminal, which is right nearly everywhere; insist on kitty over ssh or
 # inside a multiplexer, where the question sometimes goes unanswered.

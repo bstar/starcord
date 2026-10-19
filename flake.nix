@@ -26,7 +26,7 @@
             };
             theme = lib.mkOption {
               type = lib.types.str;
-              default = "catppuccin-mocha";
+              default = "kanagawa";
               description = ''
                 A built-in theme id, or the id of a file in
                 ~/.local/starcord/themes. Ignored when stylix.enable is set.

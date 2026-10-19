@@ -3,6 +3,8 @@
 mod cli;
 mod config;
 mod discord;
+#[cfg(all(feature = "native", unix))]
+mod graphical;
 mod logging;
 mod paths;
 mod session;
@@ -26,12 +28,39 @@ use paths::PATHS;
 const RECORD_ENV: &str = "STARCORD_RECORD_GATEWAY";
 
 fn main() -> Result<()> {
+    #[cfg(all(feature = "native", unix))]
+    if graphical::internal_args() {
+        PATHS.init_private_dirs();
+        let _log = logging::init(&PATHS, false)?;
+        return graphical::run();
+    }
     let cli = cli::Cli::parse();
+    anyhow::ensure!(
+        cli.command.is_none() || (!cli.graphical && !cli.cells && cli.render.is_none()),
+        "Presentation options apply to the client, not probe"
+    );
 
     PATHS.init_private_dirs();
     // The guard must outlive everything that logs; dropping it early loses
     // whatever the writer thread had buffered.
     let _log = logging::init(&PATHS, cli.verbose)?;
+
+    if cli.graphical || cli.render.is_some() {
+        #[cfg(all(feature = "native", unix))]
+        {
+            return match cli.render {
+                Some(output) => graphical::render(cli.replay.as_ref().unwrap(), &output),
+                None => graphical::run(),
+            };
+        }
+        #[cfg(not(all(feature = "native", unix)))]
+        anyhow::bail!("Graphical presentation requires a Unix build with the native feature");
+    }
+
+    #[cfg(all(feature = "native", unix))]
+    if cli.command.is_none() && !cli.cells {
+        return graphical::run();
+    }
 
     match cli.command {
         Some(cli::Command::Probe(probe)) => run_probe(probe),
@@ -41,6 +70,19 @@ fn main() -> Result<()> {
 
 /// The client.
 fn run_tui(replay: Option<std::path::PathBuf>) -> Result<()> {
+    let (cfg, config_path) = load_config()?;
+
+    let core = match &replay {
+        Some(path) => ui::fake::replay(path).context("starting the replay core")?,
+        None => Handle::spawn(cfg.core(), PATHS).context("starting the Discord core")?,
+    };
+
+    // A replay must not touch the real session file.
+    let session = replay.is_none().then(|| PATHS.session_file()).transpose()?;
+    ui::app::App::run(core, cfg, config_path, session)
+}
+
+fn load_config() -> Result<(config::Config, std::path::PathBuf)> {
     let config_path = PATHS.config_file()?;
     // Written once, on a first run, so that there is something to edit and
     // something to read about what can be edited.
@@ -51,16 +93,7 @@ fn run_tui(replay: Option<std::path::PathBuf>) -> Result<()> {
     }
     let cfg = config::Config::load(&config_path)?;
 
-    let core = match &replay {
-        Some(path) => ui::fake::replay(path).context("starting the replay core")?,
-        None => Handle::spawn(cfg.core(), PATHS).context("starting the Discord core")?,
-    };
-
-    // A replay must not touch the real session file: restoring a channel from
-    // one account into a fixture from another would be confusing at best.
-    let session = replay.is_none().then(|| PATHS.session_file()).transpose()?;
-
-    ui::app::App::run(core, cfg, config_path, session)
+    Ok((cfg, config_path))
 }
 
 fn run_probe(options: cli::Probe) -> Result<()> {

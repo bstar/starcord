@@ -281,6 +281,8 @@ impl Chat {
 pub struct Theme {
     core: Core,
     pub chat: Chat,
+    stated: ChatColors,
+    base16: Option<starkit::theme::schema::Base16>,
 }
 
 impl Deref for Theme {
@@ -303,11 +305,38 @@ impl Resolve for Theme {
             ChatColors::default()
         });
         let chat = Chat::derive(&core, &stated, file.base16.as_ref());
-        Self { core, chat }
+        Self {
+            core,
+            chat,
+            stated,
+            base16: file.base16,
+        }
     }
 
     fn core(&self) -> &Core {
         &self.core
+    }
+}
+
+#[cfg(all(feature = "native", unix))]
+impl Theme {
+    /// Resolve semantic chat roles against KIT's actual native content surface.
+    /// Explicit user colors retain the same last-word rule as the cell theme.
+    pub(super) fn workspace(&self, style: &starkit::native_surface::style::Style) -> Self {
+        let mut out = self.clone();
+        let rgb = |s: &str| Rgb::parse_hex(s).expect("KIT palette color");
+        out.core.bg = Rgb::new(
+            style.palette.bg[0],
+            style.palette.bg[1],
+            style.palette.bg[2],
+        );
+        out.core.panel_bg = rgb(&style.workspace.well);
+        out.core.row_bg = out.core.panel_bg;
+        out.core.header_bg = rgb(&style.workspace.header);
+        out.core.border = rgb(&style.workspace.line);
+        out.core.border_focused = out.core.accent;
+        out.chat = Chat::derive(&out.core, &out.stated, out.base16.as_ref());
+        out
     }
 }
 

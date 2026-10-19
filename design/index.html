@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Ten STAR/CORD visual treatments using STAR/KIT's shared native design language.">
+  <title>STAR/CORD · Ten treatments</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23171820'/%3E%3Ctext x='6' y='24' fill='%237e9cd8' font-size='24' font-family='monospace'%3ES%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="treatments.css">
+  <script src="kit-palettes.js" defer></script>
+  <script src="treatments.js" defer></script>
+</head>
+<body>
+  <header class="review-bar"><a class="wordmark" href="#treatment-7">STAR<span>/</span>CORD</a><span class="edition">VISUAL STUDIES / 01</span><a href="#all-treatments">All 10 treatments ↓</a></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">ONE FAMILY. ONE PANE LANGUAGE.</p><h1>A better place<br>for the conversation.</h1><p class="lede">AMP’s craft. FOLD’s clarity. REEL’s restraint.<br>Ten directions for CORD, built from the same KIT vocabulary.</p></div><div class="brief"><span class="mini-label">THE CONSTANTS</span><p>Same conversation. Same accordion.<br>Same theme. Every content pane follows<br>one treatment, from servers to members.</p><span class="study-label">HTML studies · graphical presentation proposal</span></div></section>
+    <nav id="treatment-nav" class="treatment-nav" aria-label="Choose a treatment"></nav>
+    <section class="selection-heading"><div><span class="eyebrow" id="treatment-number"></span><h2 id="treatment-title"></h2><p id="treatment-summary"></p></div><button id="save-choice" class="review-button" aria-pressed="false">☆ Shortlist</button></section>
+    <div class="review-controls"><div class="control-group"><label for="theme">Theme</label><select id="theme"><option value="kanagawa" selected>Kanagawa</option><option value="classic">KIT Classic</option><option value="mocha">Catppuccin Mocha</option><option value="latte">Catppuccin Latte</option></select></div><div class="control-group"><label for="sample-state">Preview</label><select id="sample-state"><option value="conversation">Conversation</option><option value="unread">Unread &amp; mention</option><option value="reply">Reply &amp; attachment</option><option value="empty">Empty channel</option></select></div><button id="reader-toggle" class="review-button" aria-pressed="false">Reader view</button><span class="control-hint">Click a pane header to focus or fold it</span></div>
+    <div class="workspace-review"><div id="preview" aria-label="Selected treatment preview"></div><aside class="rationale"><p class="eyebrow">DESIGN NOTES</p><h3 id="direction"></h3><p id="rationale"></p><dl><dt>Pane construction</dt><dd id="construction"></dd><dt>Content treatment</dt><dd id="content-rule"></dd><dt>Consideration</dt><dd id="tradeoff"></dd></dl><div class="recommendation"><span class="mini-label">SELECTED DIRECTION</span><p><button id="recommended">07 / Focus signal ↗</button>Kanagawa throughout. Quiet workspace panes, with a clear accent outline and title fill on the active pane.</p><p><a href="focus-signal-native.png" target="_blank" rel="noopener">View the implemented native preview ↗</a></p></div></aside></div>
+    <section class="contract"><div><span class="eyebrow">THE SHARED CONTRACT</span><h2>Different emphasis.<br>Consistent construction.</h2></div><div><b>01 / Chrome belongs to KIT</b><p>Shared panel frames, wells, controls, palette roles and physical text. No independent CORD skin system.</p></div><div><b>02 / Content stays readable</b><p>Flat message rows, aligned authors, restrained status accents. Selection and keyboard focus remain separate.</p></div><div><b>03 / Behavior stays familiar</b><p>Servers → channels → conversation → compose → members. One expanded list. One set of pane rectangles.</p></div></section>
+    <section id="all-treatments" class="overview"><div class="overview-heading"><div><p class="eyebrow">COMPARE THE FAMILY</p><h2>Ten treatments. Same scene.</h2></div><label><input id="shortlist-only" type="checkbox"> Shortlisted only</label></div><p class="overview-help">Choose any preview to inspect it above. Your shortlist stays in this browser when storage is available.</p><div id="overview-grid" class="overview-grid"></div><p id="empty-shortlist" hidden>No shortlisted treatments yet. Use ☆ Shortlist on a treatment above.</p></section>
+    <footer class="review-footer"><span>STAR/CORD · A STAR/KIT visual study</span><span>Local sample data · no Discord connection</span><a href="README.md">Source mapping &amp; implementation notes ↗</a></footer>
+  </main>
+  <noscript><p class="no-script">Enable JavaScript to view and compare the ten treatments.</p></noscript>
+</body>
+</html>

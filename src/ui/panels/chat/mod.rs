@@ -720,6 +720,13 @@ impl ChatState {
             .map(|(_, hit)| hit.clone())
     }
 
+    /// The UI frontend uses the drawn hit geometry to reject stale pointer
+    /// events after a scroll, history update, or media-driven reflow.
+    #[cfg(all(feature = "native", unix))]
+    pub(crate) fn hit_regions(&self) -> &[(Rect, Hit)] {
+        &self.hits
+    }
+
     /// The message under the cursor, as text. For a test that wants to know
     /// where the view actually landed.
     pub fn text_at_cursor(&self) -> String {

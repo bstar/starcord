@@ -1,7 +1,8 @@
 # The command line
 
 ```
-starcord [--verbose]
+starcord [--verbose] [--graphical | --cells] [--replay FILE]
+starcord --replay FILE --render OUTPUT.png
 starcord probe [--qr [--qr-invert]] [--token-from-stdin]
                [--no-store] [--offline] [--timeout SECONDS]
                [--legacy-lazy-request]
@@ -19,8 +20,29 @@ may be reading. `STARCORD_LOG` overrides the filter entirely, with the syntax
 `tracing`'s `EnvFilter` uses — `STARCORD_LOG=starcord::discord::gateway=trace`,
 for instance.
 
-With no subcommand, `starcord` is the client. There is no client yet; it prints
-a line saying so and exits 0.
+With no subcommand, `starcord` opens KIT's graphical frontend where supported,
+with a cell fallback where native pixels are unavailable. `--graphical` makes
+that launch explicit. `F9` switches presentation without replacing the core,
+channel or draft. `--cells` uses the original direct terminal interface.
+Build with `--no-default-features` for the cell interface without the native
+renderer. No FFmpeg or audio-device libraries are added by graphical mode.
+
+`--sessions` lists retained KIT sessions; `--attach NAME` reconnects to one.
+Quitting from the application shuts down its core. Detaching a frontend retains
+the session; it stops read acknowledgements while detached. After terminal
+focus loss, an input event resumes the read timer.
+
+An offline graphical preview can be exported without an account or terminal:
+
+```sh
+starcord --replay testdata/gateway/session.json --render /tmp/starcord.png
+```
+
+It applies the first second of the fixture, opens a channel with fixture
+history, and writes KIT's native rasterization as a PNG. Credentials and the
+real session file are never opened by this command. `--replay FILE` without
+`--render` runs the interactive replay. Configured themes remain honored;
+Kanagawa is the default for new configurations.
 
 ## `starcord probe`
 

@@ -90,6 +90,9 @@ use crate::discord::handle::{
 use crate::discord::snowflake::{ChannelId, GuildId, MessageId};
 use crate::discord::{Command, Handle};
 
+#[cfg(all(feature = "native", unix))]
+pub mod native;
+
 /// One frame. Thirty per second is plenty for text and is what STAR/AMP
 /// settled on; it is also the ceiling on how long a keystroke waits.
 const FRAME: Duration = Duration::from_millis(33);
@@ -174,6 +177,8 @@ pub struct ViewData {
 }
 
 pub struct App {
+    #[cfg(all(feature = "native", unix))]
+    native_paint: Option<native::Paint>,
     core: Handle,
     cfg: Config,
     cfg_path: PathBuf,
@@ -249,6 +254,8 @@ impl App {
         let login = (!conn.is_ready()).then(LoginScreen::new);
 
         Self {
+            #[cfg(all(feature = "native", unix))]
+            native_paint: None,
             layout: LayoutState::new(cfg.ui.list_rows),
             look: Look {
                 theme,
@@ -2845,6 +2852,13 @@ impl App {
     // -- drawing -----------------------------------------------------------
 
     fn status_view(&self) -> status::View<'_> {
+        let graphics = self.look.graphics.name();
+        #[cfg(all(feature = "native", unix))]
+        let graphics = if self.native_paint.as_ref().is_some_and(|paint| paint.native) {
+            "native"
+        } else {
+            graphics
+        };
         status::View {
             theme: &self.look.theme,
             connection: &self.conn,
@@ -2852,7 +2866,7 @@ impl App {
             note: self.note.as_ref(),
             unread: self.view.unread,
             mentions: self.view.mentions,
-            graphics: self.look.graphics.name(),
+            graphics,
             mode: self.mode_word(),
             new_below: self.chat.new_below() as u32,
             now: self.last_frame,
@@ -3108,6 +3122,12 @@ impl App {
     }
 
     pub fn draw(&mut self, area: Rect, buf: &mut Buffer) {
+        #[cfg(all(feature = "native", unix))]
+        if let Some(paint) = &mut self.native_paint {
+            paint.base = None;
+            paint.pictures.clear();
+            paint.overlay_pictures.clear();
+        }
         self.caret = None;
         let bg = Style::default()
             .bg(rgb(self.look.theme.bg))
@@ -3220,6 +3240,16 @@ impl App {
         }
 
         status::render(regions.status, buf, &self.status_view());
+        #[cfg(all(feature = "native", unix))]
+        if self.native_paint.is_some() && self.over.open() {
+            // The pre-modal snapshot includes the underlying caret too. Its
+            // separate cell must not enlarge the native dialog's changed area.
+            self.draw_caret(area, buf);
+        }
+        #[cfg(all(feature = "native", unix))]
+        if let Some(paint) = &mut self.native_paint {
+            paint.base = Some(buf.clone());
+        }
         // The overlay's own pictures go after its chrome, and in a second
         // pass: a `Clear` wipes the cells a protocol image lives in, so the
         // panels' pictures have to be down before this and the overlay's after
@@ -3268,6 +3298,10 @@ impl App {
             &self.look.theme,
             buf,
         );
+        #[cfg(all(feature = "native", unix))]
+        if let Some(paint) = &mut self.native_paint {
+            paint.pictures = places;
+        }
         // What moved this frame is what may move next frame: the clock is fed
         // from the drawing pass and from nothing else, which is what keeps an
         // animation that has scrolled away from costing anything.
@@ -3300,6 +3334,10 @@ impl App {
             &self.look.theme,
             buf,
         );
+        #[cfg(all(feature = "native", unix))]
+        if let Some(paint) = &mut self.native_paint {
+            paint.overlay_pictures = places;
+        }
         drawn.extend(painted.drawn);
         // An overlay's animation is the only one that matters while it is up:
         // everything behind it is covered.

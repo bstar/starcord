@@ -34,6 +34,23 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub replay: Option<std::path::PathBuf>,
 
+    /// Open the shared KIT graphical frontend (F9 switches to cells).
+    #[arg(long)]
+    pub graphical: bool,
+
+    /// Use the original terminal cell interface for this launch.
+    #[arg(long, conflicts_with_all = ["graphical", "render"])]
+    pub cells: bool,
+
+    /// Render a replay to a PNG without signing in or taking over the terminal.
+    #[arg(
+        long,
+        value_name = "PNG",
+        requires = "replay",
+        conflicts_with = "graphical"
+    )]
+    pub render: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }

@@ -10,6 +10,11 @@ repository = "https://github.com/bstar/starcord"
 keywords = ["discord", "tui", "chat", "winamp", "terminal"]
 categories = ["command-line-utilities"]
 
+[features]
+default = ["native"]
+# KIT's graphics-only renderer; no FFmpeg, audio devices or system libraries.
+native = ["starkit/terminal-graphics"]
+
 [dependencies]
 # The shared terminal foundation: paths, logging, atomic and private file
 # writes, theming, the dock layout engine, text entry, wrapping and the image
@@ -286,3 +291,9 @@ strip = true
 # build, or nothing can be tested without a release compile.
 [profile.dev.package."*"]
 opt-level = 2
+
+# Crossterm 0.29.0 underflows on zero mouse/cursor coordinates. Use the
+# upstream parser fix, as STAR/AMP does, until it reaches a crates.io release.
+# Patch the registry so KIT and Ratatui continue sharing one Crossterm.
+[patch.crates-io]
+crossterm = { git = "https://github.com/crossterm-rs/crossterm", rev = "d4e9929f9a1c4adf91505d54f8527c817ae504cd" }

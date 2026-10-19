@@ -26,6 +26,8 @@ grouped by what you are trying to do.
 
 ## About the project
 
+- [Visual treatments](../design/index.html): ten HTML studies of shared
+  STAR/KIT pane styling for the graphical presentation.
 - [Status](status.md): what is done, what is in progress, and what is not
   started.
 - [Contributing](../CONTRIBUTING.md), [Security](../SECURITY.md),
