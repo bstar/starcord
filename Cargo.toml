@@ -40,7 +40,7 @@ native = ["starkit/terminal-graphics"]
 # The `version` is not redundant with the revision: cargo-deny counts a
 # dependency with no version requirement as a wildcard and `wildcards = "deny"`
 # refuses it, whether or not the source is a git URL pinned to a commit.
-starkit = { git = "https://github.com/bstar/starkit", rev = "183f298a143efbc6b90e30ce22013dcc8e5d2e69", version = "0.9", default-features = false, features = [
+starkit = { git = "https://github.com/bstar/starkit", rev = "a48b35761a0974cdaf18c58df8de7732756a03df", version = "0.13", default-features = false, features = [
     "image",
     "gif",
     "net",
