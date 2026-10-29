@@ -242,9 +242,9 @@ or standalone Linux tarball build jobs. `scripts/build-dist.sh` accepts only
 `nix`, `appimage` and `macos`; branch release dispatches build artifacts without
 publishing, while version tags create a draft release.
 
-## KIT 0.9 candidate compatibility
+## KIT 0.13 candidate compatibility
 
-Development main pins an immutable KIT 0.9 candidate revision with a git-sourced
+Development main pins an immutable KIT 0.13 candidate revision with a git-sourced
 lockfile, so ordinary builds need no sibling checkout. This is an unreleased
 testing candidate; use immutable version tags when making a framework release.
 Keep dependency updates in their own commit, with the manifest and lock together.
@@ -254,3 +254,7 @@ checkout in a disposable tracked copy. `STAR_KIT_CHECKOUT` selects another
 candidate. No candidate path or path-patched lock is committed. Live canvases
 and embedded input are opt-in; ordinary application keys, media, SSH and
 presentation retain their current contracts.
+
+The current pin aligns the shared engines and public UI candidate. It does not
+complete this application's migration to `ui::application::Host`; retain that
+migration and its behavioral/visual acceptance as separate work.
