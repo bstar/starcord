@@ -78,18 +78,7 @@ struct Geometry {
 }
 
 pub fn palette(theme: &starkit::theme::Theme) -> Palette {
-    let mut p = match theme.id.as_str() {
-        "winamp-classic" => Palette::default(),
-        "winamp-silver" => starkit::native_surface::style::SILVER_PALETTE,
-        _ => Palette::from_theme(theme),
-    };
-    // Same graphical Kanagawa interpretation as AMP and FOLD.
-    if theme.name == "Kanagawa" {
-        p.bg = [theme.header_bg.r, theme.header_bg.g, theme.header_bg.b];
-        let inset = theme.bg.mix(starkit::theme::BLACK, 0.12);
-        p.inset_bg = Some([inset.r, inset.g, inset.b]);
-    }
-    p
+    Palette::for_chrome(theme)
 }
 
 impl Native {
