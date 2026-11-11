@@ -933,7 +933,8 @@ mod tests {
             })
             .collect();
         assert_eq!(panels.len(), 5);
-        assert!(panels.iter().all(|p| p.ui_font));
+        // Fleet UI inherits the attaching terminal face, as STAR/FLUX does.
+        assert!(panels.iter().all(|p| !p.ui_font));
         let borders: Vec<_> = panels
             .iter()
             .map(|p| {
