@@ -105,4 +105,4 @@ unknown-git = "deny"
 # STAR/CORE is this project's other half and is pinned to a tag; it is not
 # published to crates.io because its API is whatever its two consumers need and
 # a version on a registry would suggest otherwise.
-allow-git = ["https://github.com/bstar/starcore"]
+allow-git = ["https://github.com/bstar/starcore", "https://github.com/crossterm-rs/crossterm"]
