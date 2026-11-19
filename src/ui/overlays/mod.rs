@@ -41,11 +41,11 @@ pub mod settings;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::keymap::HelpView;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::widgets::Widget;
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::keymap::HelpView;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::widgets::Widget;
 
 use self::attach::Attach;
 use self::confirm::{Confirm, Pending};

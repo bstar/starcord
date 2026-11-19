@@ -102,7 +102,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 # The one exception, named rather than allowed by loosening the rule above.
-# STAR/KIT is this project's other half and is pinned to a tag; it is not
+# STAR/CORE is this project's other half and is pinned to a tag; it is not
 # published to crates.io because its API is whatever its two consumers need and
 # a version on a registry would suggest otherwise.
-allow-git = ["https://github.com/bstar/starkit"]
+allow-git = ["https://github.com/bstar/starcore"]

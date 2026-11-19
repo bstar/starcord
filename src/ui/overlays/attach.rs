@@ -11,13 +11,13 @@
 
 use std::path::{Path, PathBuf};
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::input::{Edit, TextInput};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::input::{Edit, TextInput};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::ui::panels::{fit, rgb};
 use crate::ui::theme::Theme;
@@ -163,7 +163,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, attach: &mut Attach) 
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(rgb(t.border_focused)))
         .title(Span::styled(
-            format!("{}attach a file ", starkit::chrome::frame::TITLE_LEAD),
+            format!("{}attach a file ", starcore::chrome::frame::TITLE_LEAD),
             Style::default()
                 .fg(rgb(t.header_fg))
                 .add_modifier(Modifier::BOLD),

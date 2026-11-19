@@ -10,7 +10,7 @@
 //! A chat list grows at the end, so a scroll offset counted from the top moves
 //! under the reader every time somebody says something. The position is an
 //! anchor instead — stuck to the end, or "row `n` of item `i` at the top" —
-//! which is [`starkit::vlist::VirtualList`], and it is why scrolling back
+//! which is [`starcore::vlist::VirtualList`], and it is why scrolling back
 //! through history does not jump when a page of older messages is prepended
 //! above.
 //!
@@ -54,12 +54,12 @@ pub fn when(msg: &crate::discord::model::Message, tz: &jiff::tz::TimeZone) -> St
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::vlist::VirtualList;
-use starkit::wrap::width_of;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::Span;
+use starcore::vlist::VirtualList;
+use starcore::wrap::width_of;
 
 use self::anim::Animations;
 use self::layout::{Row, Shape};
@@ -1247,7 +1247,7 @@ fn divider(
     buf: &mut Buffer,
     theme: &Theme,
     label: &str,
-    colour: starkit::theme::color::Rgb,
+    colour: starcore::theme::color::Rgb,
 ) {
     let _ = theme;
     if area.width == 0 {

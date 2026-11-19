@@ -5,7 +5,7 @@
 //! read `?` never needs it; somebody who has not would otherwise have to guess
 //! that `r` replies.
 //!
-//! It is STAR/KIT's settings list rather than a menu widget of its own, for
+//! It is STAR/CORE's settings list rather than a menu widget of its own, for
 //! the same reason the panel settings are: the rows, the cursor, the scroll and
 //! the hit test are already written, and a second list that looked almost the
 //! same would be a second place for them to drift.
@@ -14,11 +14,11 @@
 //! not greyed out, absent. A row that cannot do anything is a row that has to
 //! explain itself.
 
-use starkit::chrome::settings::{self, SettingsView};
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::settings::{self, SettingsView};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::widgets::Widget;
 
 use crate::discord::snowflake::MessageId;
 use crate::ui::theme::Theme;

@@ -1,6 +1,6 @@
 //! Where STAR/CORD keeps its files.
 //!
-//! A name for [`starkit::paths::Paths`], and nothing else. The shared type
+//! A name for [`starcore::paths::Paths`], and nothing else. The shared type
 //! grew `session_file()` and `media_cache_dir()` in 0.2, which were the two
 //! reasons this file used to hold a second copy of the layout rather than a
 //! name for the shared one.
@@ -9,7 +9,7 @@
 //! through `discord/`, and [`PATHS`] is the one place the three strings that
 //! identify this application are written down.
 //!
-//! The layout itself is STAR/KIT's and is documented there: everything under
+//! The layout itself is STAR/CORE's and is documented there: everything under
 //! one directory — `~/.local/starcord` by default — rather than scattered
 //! across the three XDG roots, so that the whole of a setup can be backed up,
 //! moved between machines, or deleted by moving one folder. The directories
@@ -17,7 +17,7 @@
 //! a list of every guild and channel the account is in, and a log that names
 //! them.
 
-pub use starkit::paths::{own_dir, Paths};
+pub use starcore::paths::{own_dir, Paths};
 
 /// This application's directories.
 ///
@@ -29,7 +29,7 @@ pub const PATHS: Paths = Paths::new("starcord", "STARCORD_DIR", "STARCORD_CONFIG
 mod tests {
     use super::*;
 
-    /// STAR/KIT's tests cover the layout. What is worth asserting here is that
+    /// STAR/CORE's tests cover the layout. What is worth asserting here is that
     /// this application's own three strings reach it: an environment variable
     /// spelled for another program would send a token somewhere nobody meant.
     #[test]

@@ -18,5 +18,5 @@
 *.swp
 *~
 
-# The local starkit checkout override, documented in AGENTS.md. Never committed.
+# The local starcore checkout override, documented in AGENTS.md. Never committed.
 /.cargo/config.toml

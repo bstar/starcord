@@ -1,7 +1,7 @@
 //! File-based logging.
 //!
-//! **Temporary.** This is `starkit::logging` with one app's name baked in, and
-//! it exists only until that crate lands. The signature is the one STAR/KIT will
+//! **Temporary.** This is `starcore::logging` with one app's name baked in, and
+//! it exists only until that crate lands. The signature is the one STAR/CORE will
 //! publish, so the swap is deleting this file and changing an import.
 //!
 //! Never stdout. A TUI that scribbles on its own alternate screen when

@@ -117,12 +117,12 @@
             version = cargoToml.package.version;
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
-            # STAR/KIT comes from a git tag rather than from crates.io, and
+            # STAR/CORE comes from a git tag rather than from crates.io, and
             # `cargoLock.lockFile` alone cannot fetch it: nix wants a hash for
             # every source it downloads. Two ways to give it one.
             #
             # `outputHashes` is the reproducible one, and it means a new hash
-            # to compute and commit on every STAR/KIT tag -- a second place the
+            # to compute and commit on every STAR/CORE tag -- a second place the
             # version lives, which is exactly the kind of copy that goes stale
             # between the bump and the person who notices.
             #

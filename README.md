@@ -8,7 +8,7 @@ A terminal client for Discord that feels like Winamp. Real-time chat with your
 friends and servers; the account, the servers and the settings stay in
 Discord's own app.
 
-The graphical interface uses STAR/KIT's shared native workspace styling:
+The graphical interface uses STAR/CORE's shared native workspace styling:
 consistent content panes, Kanagawa by default, and a clear accent on keyboard
 focus. `F9` switches to cells; `starcord --cells` opens the direct terminal UI.
 

@@ -1,7 +1,7 @@
 //! Writing a message.
 //!
 //! A text field, a mode, a draft per channel and three autocomplete popups.
-//! The field itself is STAR/KIT's [`TextInput`]; what is here is everything
+//! The field itself is STAR/CORE's [`TextInput`]; what is here is everything
 //! that makes it a message composer rather than a box of letters.
 //!
 //! ## The raw-key line
@@ -32,11 +32,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::input::{Edit, TextInput};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::input::{Edit, TextInput};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::{fit, rgb};
 use crate::config::{Compose, SendKey};
@@ -703,7 +703,7 @@ impl Composer {
             let mut x = body.x;
             for (index, pending) in self.attachments.iter().enumerate() {
                 let chip = pending.chip();
-                let w = starkit::wrap::width_of(&chip);
+                let w = starcore::wrap::width_of(&chip);
                 if x + w > body.x + body.width {
                     break;
                 }

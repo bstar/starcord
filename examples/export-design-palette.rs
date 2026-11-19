@@ -1,7 +1,7 @@
-//! Export the HTML study's colors from the pinned KIT dependency.
+//! Export the HTML study's colors from the pinned CORE dependency.
 //! Run: nix develop -c cargo run --quiet --example export-design-palette
-use starkit::native_surface::style::{hex, Palette, Style};
-use starkit::theme::{Theme, ThemeFile, BUILTINS};
+use starcore::native_surface::style::{hex, Palette, Style};
+use starcore::theme::{Theme, ThemeFile, BUILTINS};
 
 fn main() {
     let mut themes = serde_json::Map::new();
@@ -23,7 +23,7 @@ fn main() {
         // with the original theme background retained for darker inset wells.
         if name == "kanagawa" {
             palette.bg = [theme.header_bg.r, theme.header_bg.g, theme.header_bg.b];
-            let inset = theme.bg.mix(starkit::theme::BLACK, 0.12);
+            let inset = theme.bg.mix(starcore::theme::BLACK, 0.12);
             palette.inset_bg = Some([inset.r, inset.g, inset.b]);
         }
         let s = Style::new(palette);
@@ -43,9 +43,9 @@ fn main() {
             }),
         );
     }
-    println!("// Generated from pinned STAR/KIT by examples/export-design-palette.rs.");
+    println!("// Generated from pinned STAR/CORE by examples/export-design-palette.rs.");
     println!(
-        "const KIT_PALETTES = {};",
+        "const CORE_PALETTES = {};",
         serde_json::to_string_pretty(&themes).unwrap()
     );
 }

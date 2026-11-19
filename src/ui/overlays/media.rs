@@ -21,7 +21,7 @@
 //! sit in the middle of it at whatever size it happened to be -- which is most
 //! of what a conversation carries, and is the one thing somebody who opened the
 //! viewer was asking for. So the rectangle is measured in *pixels*, through
-//! [`Graphics::cell_size`](starkit::graphics::Graphics::cell_size): the core is
+//! [`Graphics::cell_size`](starcore::graphics::Graphics::cell_size): the core is
 //! asked for the picture at that many rather than at a cell-count estimate, and
 //! the paint pass grows whatever is smaller than the rectangle to fill it --
 //! see [`fill_up`]. The meta line says `×2.4` when it did. A terminal that
@@ -38,12 +38,12 @@
 
 use std::path::PathBuf;
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::media::{Decoded, MediaKey};
 use crate::discord::snowflake::MessageId;
@@ -299,7 +299,7 @@ pub fn render(
         .title(Span::styled(
             format!(
                 "{}{} \u{b7} {counter} ",
-                starkit::chrome::frame::TITLE_LEAD,
+                starcore::chrome::frame::TITLE_LEAD,
                 item.filename
             ),
             Style::default()

@@ -29,13 +29,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use starkit::graphics::{self, Graphics, ImageId, Mode};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
-use starkit::ratatui_image::Image;
-use starkit::theme::color::Rgb;
+use starcore::graphics::{self, Graphics, ImageId, Mode};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
+use starcore::ratatui_image::Image;
+use starcore::theme::color::Rgb;
 
 use super::anim::Animations;
 use crate::discord::media::{Decoded, MediaError, MediaKey, MediaPriority, MediaRequest, Want};
@@ -166,7 +166,7 @@ struct Grown {
 /// How much bigger a picture has to be made to fill a box of pixels, and the
 /// size to make it. `None` when it already fills the box or overflows it.
 ///
-/// [`starkit::ratatui_image::Resize::Fit`] never upsizes -- its own
+/// [`starcore::ratatui_image::Resize::Fit`] never upsizes -- its own
 /// documentation says so -- so a picture smaller than the rectangle it was
 /// given sits in the middle of it at whatever size it happens to be, and
 /// growing it is this application's own work: scale the pixels to exactly

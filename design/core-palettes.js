@@ -1,5 +1,5 @@
-// Generated from pinned STAR/KIT by examples/export-design-palette.rs.
-const KIT_PALETTES = {
+// Generated from pinned STAR/CORE by examples/export-design-palette.rs.
+const CORE_PALETTES = {
   "classic": {
     "accent": "#a4d791",
     "bg": "#171820",

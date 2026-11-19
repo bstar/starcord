@@ -28,9 +28,9 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::wrap::{clusters, width_of};
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::wrap::{clusters, width_of};
 
 use crate::discord::handle::ExternalKind;
 
@@ -42,7 +42,7 @@ use crate::discord::model::{Attachment, Embed, EmbedKind, Message, PartialEmoji}
 use crate::discord::snowflake::{ChannelId, MessageId, RoleId, UserId};
 use crate::ui::panels::rgb;
 use crate::ui::theme::Theme;
-use starkit::theme::color::Rgb;
+use starcore::theme::color::Rgb;
 
 /// The bar down the left of a code block.
 const CODE_BAR: &str = "\u{258f}";
@@ -1130,7 +1130,7 @@ impl<'a> Writer<'a> {
             card(self, vec![Span::styled(cut(title, room), style)]);
         }
         if let Some(description) = &embed.description {
-            for row in starkit::wrap::wrap(description, room) {
+            for row in starcore::wrap::wrap(description, room) {
                 card(
                     self,
                     vec![Span::styled(

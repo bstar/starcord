@@ -28,16 +28,16 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::graphics::{Graphics, ImageId};
-use starkit::input::{Edit, TextInput};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
-use starkit::ratatui_image::Image;
-use starkit::theme::color::Rgb;
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::graphics::{Graphics, ImageId};
+use starcore::input::{Edit, TextInput};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::Span;
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::ratatui_image::Image;
+use starcore::theme::color::Rgb;
 
 use super::panels::rgb;
 use super::theme::Theme;
@@ -397,7 +397,7 @@ impl LoginScreen {
             .title(Span::styled(
                 format!(
                     "{}{} ",
-                    starkit::chrome::frame::TITLE_LEAD,
+                    starcore::chrome::frame::TITLE_LEAD,
                     super::panels::HEADING
                 ),
                 Style::default()
@@ -453,7 +453,7 @@ impl LoginScreen {
                 // shortening it to "login failed" throws it away.
                 // In the body colour: it is the one thing on the screen that
                 // has to be read, and dim is for what can be skipped.
-                for line in starkit::wrap::wrap(reason, inner.width) {
+                for line in starcore::wrap::wrap(reason, inner.width) {
                     put(buf, &mut y, line.drawn(reason), body);
                 }
                 put(buf, &mut y, "", dim);
@@ -555,7 +555,7 @@ impl LoginScreen {
                 );
                 put(buf, &mut y, "", dim);
                 put(buf, &mut y, "if no browser appeared, open this:", dim);
-                for line in starkit::wrap::wrap(url, inner.width) {
+                for line in starcore::wrap::wrap(url, inner.width) {
                     put(buf, &mut y, line.drawn(url), body);
                 }
                 put(buf, &mut y, "", dim);
@@ -582,7 +582,7 @@ impl LoginScreen {
             // Wrapped, and the last rows of the panel: it is about why the
             // screen is here, not about what is on it, so it sits under
             // everything else.
-            let lines: Vec<String> = starkit::wrap::wrap(notice, inner.width)
+            let lines: Vec<String> = starcore::wrap::wrap(notice, inner.width)
                 .into_iter()
                 .map(|l| l.drawn(notice).to_string())
                 .collect();
@@ -725,7 +725,7 @@ mod tests {
     /// path is for and what a snapshot can see.
     fn blocks() -> Graphics {
         let mut g = Graphics::disabled();
-        g.set_mode(starkit::graphics::Mode::Blocks);
+        g.set_mode(starcore::graphics::Mode::Blocks);
         g
     }
 

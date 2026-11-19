@@ -3984,7 +3984,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "smallvec",
- "starkit",
+ "starcore",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -4001,9 +4001,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "starkit"
-version = "0.24.0"
-source = "git+https://github.com/bstar/starkit?tag=v0.24.0#ccaf9207bacc6e6e2aaac69d16137fccbcc60650"
+name = "starcore"
+version = "0.25.0"
+source = "git+https://github.com/bstar/starcore?tag=v0.25.0#8c72e94fc0d74a71371b5da640dd4ae8e0bf86f7"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

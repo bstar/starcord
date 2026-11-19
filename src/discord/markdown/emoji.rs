@@ -7,7 +7,7 @@
 //! panel measures a width per code point and draws a ruined line.
 //!
 //! **This is a hand-written approximation of grapheme clustering, not UAX #29.**
-//! STAR/KIT has the real thing in `wrap::clusters`, and this module goes away
+//! STAR/CORE has the real thing in `wrap::clusters`, and this module goes away
 //! when that dependency is switched on — the crate is a path dependency that
 //! the flake cannot build yet, which is recorded in `AGENTS.md`. Until then the
 //! rule here is: build the longest sequence that *could* be one emoji, then ask

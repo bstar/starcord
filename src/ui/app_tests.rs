@@ -49,7 +49,7 @@ fn click(a: &mut App, x: u16, y: u16, w: u16, h: u16) {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: x,
             row: y,
-            modifiers: starkit::crossterm::event::KeyModifiers::NONE,
+            modifiers: starcore::crossterm::event::KeyModifiers::NONE,
         },
         Rect::new(0, 0, w, h),
     );
@@ -145,7 +145,7 @@ fn quitting_with_a_draft_asks_first() {
     assert!(!a.quit, "it quit without asking");
     assert!(a.over.confirm.is_some());
 
-    a.key(KeyEvent::from(starkit::crossterm::event::KeyCode::Char(
+    a.key(KeyEvent::from(starcore::crossterm::event::KeyCode::Char(
         'y',
     )));
     assert!(a.quit);
@@ -161,7 +161,7 @@ fn an_open_overlay_takes_the_keys_and_the_clicks() {
 
     // A key that would otherwise cycle the theme.
     let before = a.look.theme.id.clone();
-    a.key(KeyEvent::from(starkit::crossterm::event::KeyCode::Char(
+    a.key(KeyEvent::from(starcore::crossterm::event::KeyCode::Char(
         't',
     )));
     assert_eq!(a.look.theme.id, before, "the overlay let a key through");
@@ -173,7 +173,7 @@ fn an_open_overlay_takes_the_keys_and_the_clicks() {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 2,
             row: 2,
-            modifiers: starkit::crossterm::event::KeyModifiers::NONE,
+            modifiers: starcore::crossterm::event::KeyModifiers::NONE,
         },
         Rect::new(0, 0, 120, 30),
     );
@@ -396,7 +396,7 @@ fn tab_walks_the_column() {
 /// command. The keymap asserts the rule; this asserts that `App` obeys it.
 #[test]
 fn letters_reach_the_composer_and_alt_keys_do_not() {
-    use starkit::crossterm::event::{KeyCode, KeyModifiers};
+    use starcore::crossterm::event::{KeyCode, KeyModifiers};
     let mut a = app();
     a.login = None;
     a.nav.channel = Some(ChannelId(1));
@@ -469,7 +469,7 @@ fn text_emotes_reach_the_core_as_renderable_text() {
 /// column one module at a time, then fold and come back to the composer.
 #[test]
 fn escape_walks_back_out_of_the_composer() {
-    use starkit::crossterm::event::KeyCode;
+    use starcore::crossterm::event::KeyCode;
     let (mut a, _idle) = loaded();
     a.open_channel(CHANNEL);
     a.tick();

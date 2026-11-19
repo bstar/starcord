@@ -9,9 +9,9 @@
 //! the first, what they said on the second, so a screenful can be read in
 //! one pass rather than opened one at a time.
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::dms::{presence_colour, presence_glyph};
 use super::{empty, fit, rgb};

@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='cord-native-',dir='/tmp') as temporary:
         'WAYLAND_DISPLAY': str(Path(original_runtime) / os.environ.get('WAYLAND_DISPLAY', 'wayland-1')),
         'STARCORD_DIR': str(private / 'data'), 'STARCORD_CONFIG_DIR': str(private / 'config'),
         'STAR_GRAPHICS_SYSTEM_FONTS': '0',
-        'STARCORD_LOG': 'starcord=debug,starkit=debug',
+        'STARCORD_LOG': 'starcord=debug,starcore=debug',
         'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/nonexistent/starcord-native-test-bus',
     }
     fault = private / 'discard_images.py'

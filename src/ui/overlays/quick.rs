@@ -12,13 +12,13 @@
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::input::{Edit, TextInput};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::input::{Edit, TextInput};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::snowflake::{ChannelId, GuildId, UserId};
 use crate::ui::panels::{fit, rgb};
@@ -231,7 +231,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, quick: &mut Quick) {
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(rgb(t.border_focused)))
         .title(Span::styled(
-            format!("{}jump to ", starkit::chrome::frame::TITLE_LEAD),
+            format!("{}jump to ", starcore::chrome::frame::TITLE_LEAD),
             Style::default()
                 .fg(rgb(t.header_fg))
                 .add_modifier(Modifier::BOLD),
@@ -295,7 +295,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, quick: &mut Quick) {
         let hint_w = if item.hint.is_empty() {
             0
         } else {
-            (starkit::wrap::width_of(&item.hint) + 2).min(inner.width / 2)
+            (starcore::wrap::width_of(&item.hint) + 2).min(inner.width / 2)
         };
         let label_w = inner.width.saturating_sub(hint_w);
         buf.set_string(inner.x, y, fit(&item.label, label_w), style);

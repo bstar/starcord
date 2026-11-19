@@ -11,12 +11,12 @@
 //! because a dialogue whose default is "yes" is a dialogue that deletes
 //! somebody's message when they pressed return on the message below.
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::snowflake::{ChannelId, MessageId};
 use crate::ui::panels::{fit, rgb, width_of};
@@ -146,7 +146,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, confirm: &Confirm) {
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(rgb(t.border_focused)))
         .title(Span::styled(
-            format!("{}{} ", starkit::chrome::frame::TITLE_LEAD, confirm.title),
+            format!("{}{} ", starcore::chrome::frame::TITLE_LEAD, confirm.title),
             Style::default()
                 .fg(rgb(t.header_fg))
                 .add_modifier(Modifier::BOLD),

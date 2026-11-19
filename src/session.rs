@@ -180,7 +180,7 @@ impl SessionStore {
 /// intact, and the mode set again on the destination because a rename does not
 /// carry it on every filesystem.
 ///
-/// STAR/KIT has this as `fs::write_private`; it lives here until that
+/// STAR/CORE has this as `fs::write_private`; it lives here until that
 /// dependency is switched on. See `AGENTS.md`.
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write as _;

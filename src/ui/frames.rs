@@ -21,9 +21,9 @@
 
 use std::path::PathBuf;
 
-use starkit::graphics::{Graphics, Mode};
-use starkit::ratatui::backend::TestBackend;
-use starkit::ratatui::Terminal;
+use starcore::graphics::{Graphics, Mode};
+use starcore::ratatui::backend::TestBackend;
+use starcore::ratatui::Terminal;
 
 use super::app::App;
 use super::fake;
@@ -334,8 +334,8 @@ fn the_composer_replying() {
         .select(crate::discord::snowflake::MessageId(500000000000000105));
     app.handle(Action::Reply);
     for c in "and a reply to it".chars() {
-        app.key(starkit::crossterm::event::KeyEvent::from(
-            starkit::crossterm::event::KeyCode::Char(c),
+        app.key(starcore::crossterm::event::KeyEvent::from(
+            starcore::crossterm::event::KeyCode::Char(c),
         ));
     }
     insta::assert_snapshot!("composer-reply-terminal-100x30", render(&mut app, 100, 30));
@@ -347,8 +347,8 @@ fn the_composer_completing_a_name() {
     let (mut app, _idle) = in_general("terminal");
     app.handle(Action::FocusCompose);
     for c in "hello @al".chars() {
-        app.key(starkit::crossterm::event::KeyEvent::from(
-            starkit::crossterm::event::KeyCode::Char(c),
+        app.key(starcore::crossterm::event::KeyEvent::from(
+            starcore::crossterm::event::KeyCode::Char(c),
         ));
     }
     insta::assert_snapshot!(
@@ -362,8 +362,8 @@ fn the_quick_switcher() {
     let (mut app, _idle) = in_general("terminal");
     app.handle(Action::QuickSwitch);
     for c in "gen".chars() {
-        app.key(starkit::crossterm::event::KeyEvent::from(
-            starkit::crossterm::event::KeyCode::Char(c),
+        app.key(starcore::crossterm::event::KeyEvent::from(
+            starcore::crossterm::event::KeyCode::Char(c),
         ));
     }
     insta::assert_snapshot!("quick-terminal-100x30", render(&mut app, 100, 30));
@@ -428,8 +428,8 @@ fn the_emoji_picker() {
     app.handle(Action::FocusCompose);
     app.handle(Action::EmojiPicker);
     for c in "pe".chars() {
-        app.key(starkit::crossterm::event::KeyEvent::from(
-            starkit::crossterm::event::KeyCode::Char(c),
+        app.key(starcore::crossterm::event::KeyEvent::from(
+            starcore::crossterm::event::KeyCode::Char(c),
         ));
     }
     insta::assert_snapshot!("picker-emoji-terminal-100x30", render(&mut app, 100, 30));
@@ -479,12 +479,12 @@ fn the_search_overlay() {
     app.handle(Action::FocusConversation);
     app.handle(Action::Search);
     for c in "the".chars() {
-        app.key(starkit::crossterm::event::KeyEvent::from(
-            starkit::crossterm::event::KeyCode::Char(c),
+        app.key(starcore::crossterm::event::KeyEvent::from(
+            starcore::crossterm::event::KeyCode::Char(c),
         ));
     }
-    app.key(starkit::crossterm::event::KeyEvent::from(
-        starkit::crossterm::event::KeyCode::Enter,
+    app.key(starcore::crossterm::event::KeyEvent::from(
+        starcore::crossterm::event::KeyCode::Enter,
     ));
     app.tick();
     idle.pump();
@@ -552,13 +552,13 @@ fn a_search_result_is_jumped_to_and_g_comes_back() {
     app.handle(Action::FocusConversation);
     app.handle(Action::Search);
     for c in "older".chars() {
-        app.key(starkit::crossterm::event::KeyEvent::from(
-            starkit::crossterm::event::KeyCode::Char(c),
+        app.key(starcore::crossterm::event::KeyEvent::from(
+            starcore::crossterm::event::KeyCode::Char(c),
         ));
     }
     // Run it, and let the replay answer.
-    app.key(starkit::crossterm::event::KeyEvent::from(
-        starkit::crossterm::event::KeyCode::Enter,
+    app.key(starcore::crossterm::event::KeyEvent::from(
+        starcore::crossterm::event::KeyCode::Enter,
     ));
     app.tick();
     idle.pump();
@@ -573,8 +573,8 @@ fn a_search_result_is_jumped_to_and_g_comes_back() {
     assert!(hits > 0, "the search found nothing to jump to");
 
     // And open the one the cursor is on.
-    app.key(starkit::crossterm::event::KeyEvent::from(
-        starkit::crossterm::event::KeyCode::Enter,
+    app.key(starcore::crossterm::event::KeyEvent::from(
+        starcore::crossterm::event::KeyCode::Enter,
     ));
     assert!(app.over.search.is_none(), "it stayed open");
     for _ in 0..4 {

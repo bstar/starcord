@@ -39,13 +39,13 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::input::{Edit, TextInput};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::input::{Edit, TextInput};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::handle::{EmojiRef, RequestId};
 use crate::discord::media::MediaKey;
@@ -771,7 +771,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, picker: &mut Picker) 
         .title(Span::styled(
             format!(
                 "{}{} ",
-                starkit::chrome::frame::TITLE_LEAD,
+                starcore::chrome::frame::TITLE_LEAD,
                 title(picker.kind)
             ),
             Style::default()

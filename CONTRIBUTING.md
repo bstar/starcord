@@ -82,28 +82,28 @@ Apple Silicon archive. `scripts/build-dist.sh nix` builds the Nix package;
 old-glibc build directory; `./scripts/build-dist.sh macos` runs on a Mac.
 Debian, Arch and standalone Linux tarballs are no longer release targets.
 
-## Taking a new STAR/KIT
+## Taking a new STAR/CORE
 
-Its own commit, "Take STAR/KIT 0.Y", and nothing else in it:
+Its own commit, "Take STAR/CORE 0.Y", and nothing else in it:
 
 1. Change the `rev` (or the `tag`, where the version was tagged) and the
-   `version` requirement on the `starkit` dependency in `Cargo.toml`.
-2. `cargo update -p starkit` so `Cargo.lock` records the new revision.
-3. Run the checks above. STAR/KIT's own CI has a job that builds both of its
+   `version` requirement on the `starcore` dependency in `Cargo.toml`.
+2. `cargo update -p starcore` so `Cargo.lock` records the new revision.
+3. Run the checks above. STAR/CORE's own CI has a job that builds both of its
    consumers against the tip of the library, so a break should have been caught
    there first, but the version this repository actually pins is the one that
    matters.
 
 Keeping it separate is the point: what arrived with the new version is then one
-diff to read rather than a line buried in a feature commit. STAR/KIT is 0.x, so
+diff to read rather than a line buried in a feature commit. STAR/CORE is 0.x, so
 a minor bump may change an API and a patch bump may not.
 
-To work on STAR/KIT and this at the same time, check it out beside this
+To work on STAR/CORE and this at the same time, check it out beside this
 repository and point the build at it with an untracked `.cargo/config.toml`:
 
 ```toml
-[patch."https://github.com/bstar/starkit"]
-starkit = { path = "../starkit" }
+[patch."https://github.com/bstar/starcore"]
+starcore = { path = "../starcore" }
 ```
 
 It is in `.gitignore`, because a committed one points CI at a path that does

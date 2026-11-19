@@ -19,7 +19,7 @@
 //! ```
 //!
 //! Every module is always there, in the order you drill through them, and the
-//! application supplies accordion and composer preferences; KIT's shared
+//! application supplies accordion and composer preferences; CORE's shared
 //! pane tree allocates the stack, records collapse reasons and supplies the
 //! same rectangles to painting, hit testing and focus.
 //!
@@ -40,9 +40,9 @@
 //! up to `[ui] list_rows`, then to the composer, and the conversation keeps
 //! its minimum throughout.
 
-use starkit::chrome::header;
-use starkit::panes::{self, Focus, Node, Size, Visibility};
-use starkit::ratatui::layout::Rect;
+use starcore::chrome::header;
+use starcore::panes::{self, Focus, Node, Size, Visibility};
+use starcore::ratatui::layout::Rect;
 
 use super::panels::{ModuleId, COLUMN};
 

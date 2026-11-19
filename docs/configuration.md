@@ -25,7 +25,7 @@ defaults. Editing one key never means writing the other six.
 
 ### The column
 
-The default build opens KIT's graphical frontend. Its Focus Signal treatment
+The default build opens CORE's graphical frontend. Its Focus Signal treatment
 uses one quiet workspace pane recipe throughout, with an accent title and
 outline on the focused module. The content grid follows physical text metrics;
 the terminal's font size does not stretch compact labels across wide cells.
@@ -136,7 +136,7 @@ Sixteen themes ship built in, and `alt+t` and `alt+shift+t` cycle them live:
 `matte-black` · `terminal`
 
 They are the same sixteen files STAR/AMP uses, because both programs take their
-theme engine from [STAR/KIT](https://github.com/bstar/starkit). A theme set in
+theme engine from [STAR/CORE](https://github.com/bstar/starcore). A theme set in
 one looks like the theme set in the other.
 
 Your own themes go in `~/.local/starcord/themes/` as `<id>.toml`, and a file

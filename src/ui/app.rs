@@ -28,7 +28,7 @@
 //!
 //! The probe writes a capability query and reads the answer off stdin. Once raw
 //! mode is on, that answer arrives interleaved with whatever is being typed. So
-//! it happens in [`App::run`], before `term::init`, and STAR/KIT asserts the
+//! it happens in [`App::run`], before `term::init`, and STAR/CORE asserts the
 //! ordering.
 //!
 //! It is `probe_if_tty` rather than `probe`, and not only because output that
@@ -53,16 +53,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use starkit::crossterm::event::{
+use starcore::crossterm::event::{
     self, Event as TermEvent, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
-use starkit::graphics::{Graphics, Mode};
-use starkit::list::clamp_scroll;
-use starkit::mouse::ClickTracker;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::term;
+use starcore::graphics::{Graphics, Mode};
+use starcore::list::clamp_scroll;
+use starcore::mouse::ClickTracker;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::term;
 
 use super::keymap::{self, Action, PrefixKey};
 use super::layout::{Drag, LayoutState, Regions};
@@ -1249,14 +1249,14 @@ impl App {
     fn write_config(&mut self, keys: &[(&str, &str, String)]) {
         for (section, key, value) in keys {
             let value = match value.parse::<i64>() {
-                Ok(n) => starkit::config::edit::Value::Int(n),
+                Ok(n) => starcore::config::edit::Value::Int(n),
                 Err(_) => match value.as_str() {
-                    "true" => starkit::config::edit::Value::Bool(true),
-                    "false" => starkit::config::edit::Value::Bool(false),
-                    text => starkit::config::edit::Value::Str(text.to_string()),
+                    "true" => starcore::config::edit::Value::Bool(true),
+                    "false" => starcore::config::edit::Value::Bool(false),
+                    text => starcore::config::edit::Value::Str(text.to_string()),
                 },
             };
-            if let Err(e) = starkit::config::edit::set(&self.cfg_path, section, key, &value) {
+            if let Err(e) = starcore::config::edit::set(&self.cfg_path, section, key, &value) {
                 tracing::warn!("could not write [{section}] {key}: {e}");
                 self.note_at(format!("could not save {key}"), NoteLevel::Warning);
                 return;
@@ -1339,7 +1339,7 @@ impl App {
         self.layout
             .last
             .as_ref()
-            .map(|r| starkit::chrome::header::body(r.rect_of(id)).height)
+            .map(|r| starcore::chrome::header::body(r.rect_of(id)).height)
             .unwrap_or(0)
     }
 
@@ -2608,7 +2608,7 @@ impl App {
         // A header word first: it is drawn over the module's own first row, and
         // the hit box comes from the same function the renderer used.
         let words = panels::words(module);
-        if let Some(word) = starkit::chrome::header::hit(rect, &words, x, y) {
+        if let Some(word) = starcore::chrome::header::hit(rect, &words, x, y) {
             self.word_click(module, word);
             return;
         }
@@ -3139,7 +3139,7 @@ impl App {
             return;
         }
 
-        let mut drawn: std::collections::HashSet<starkit::graphics::ImageId> =
+        let mut drawn: std::collections::HashSet<starcore::graphics::ImageId> =
             std::collections::HashSet::new();
         // The composer says how tall it wants to be before anything has been
         // laid out, so it is measured against the width every module has
@@ -3271,7 +3271,7 @@ impl App {
         &mut self,
         icons: Vec<(guilds::Icon, Rect)>,
         buf: &mut Buffer,
-    ) -> std::collections::HashSet<starkit::graphics::ImageId> {
+    ) -> std::collections::HashSet<starcore::graphics::ImageId> {
         let mut places = self.chat.take_slots();
         places.extend(
             icons
@@ -3314,7 +3314,7 @@ impl App {
         &mut self,
         places: Vec<chat::media::Placement>,
         buf: &mut Buffer,
-        drawn: &mut std::collections::HashSet<starkit::graphics::ImageId>,
+        drawn: &mut std::collections::HashSet<starcore::graphics::ImageId>,
     ) {
         if places.is_empty() {
             return;

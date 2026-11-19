@@ -34,7 +34,7 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub replay: Option<std::path::PathBuf>,
 
-    /// Open the shared KIT graphical frontend (F9 switches to cells).
+    /// Open the shared CORE graphical frontend (F9 switches to cells).
     #[arg(long)]
     pub graphical: bool,
 

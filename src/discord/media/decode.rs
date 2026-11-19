@@ -32,7 +32,7 @@ use super::{Decoded, MediaError};
 
 /// The largest picture worth decoding, on a side.
 ///
-/// The same number STAR/KIT uses: far above anything Discord will serve, and
+/// The same number STAR/CORE uses: far above anything Discord will serve, and
 /// far enough above a phone photograph that nothing legitimate is refused.
 pub const MAX_DIMENSION: u32 = 8192;
 

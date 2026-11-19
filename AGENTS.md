@@ -26,27 +26,27 @@ and nothing in the tree runs bindgen. A change that adds a `-sys` crate has to
 add the library to `flake.nix` and the apt line to `.github/workflows/ci.yml`
 in the same commit.
 
-## STAR/KIT
+## STAR/CORE
 
 The shared foundation — paths, logging, private file writes, themes, the dock
-layout engine, text entry, wrapping, terminal images — lives in `starkit`, the
+layout engine, text entry, wrapping, terminal images — lives in `starcore`, the
 crate STAR/AMP uses too. It is a git dependency pinned to a revision -- a tag
 where there is one to point at -- and the flake takes it from the revision
 `Cargo.lock` names through `cargoLock.allowBuiltinFetchGit`.
 
 It is also the one copy of `ratatui`, `crossterm`, `ratatui-image` and `image`
-in the tree. Everything under `src/ui/` reaches them through `starkit::`, and
+in the tree. Everything under `src/ui/` reaches them through `starcore::`, and
 none of the four is a direct dependency: a widget built against a second copy
 of ratatui does not satisfy a signature expecting the first, and the compiler
 reports that as two versions carrying the same number.
 
-`src/paths.rs` is a name for `starkit::paths::Paths` and nothing else, since
+`src/paths.rs` is a name for `starcore::paths::Paths` and nothing else, since
 0.2 gave the shared type the `session_file()` and `media_cache_dir()` it was
 missing. Keep the name: the core takes `crate::paths::Paths` by value
 throughout, and `PATHS` is the one place this application's three identifying
 strings are written down. `src/logging.rs` stays local.
 
-`image` is a direct dependency as well as STAR/KIT's re-export: the media core
+`image` is a direct dependency as well as STAR/CORE's re-export: the media core
 decodes with it and needs the four formats Discord serves. Cargo unifies the
 two requirements onto one version, and `cargo tree -d` must keep saying so,
 because an `RgbaImage` from one copy is not an `RgbaImage` to the other.
@@ -54,19 +54,19 @@ because an `RgbaImage` from one copy is not an `RgbaImage` to the other.
 A local checkout is used through an uncommitted `.cargo/config.toml`:
 
 ```toml
-[patch."https://github.com/bstar/starkit"]
-starkit = { path = "../starkit" }
+[patch."https://github.com/bstar/starcore"]
+starcore = { path = "../starcore" }
 ```
 
 `.gitignore` already covers it, and it has to be taken away again before
-anything is committed: with the patch in place `cargo` rewrites the `starkit`
+anything is committed: with the patch in place `cargo` rewrites the `starcore`
 entry in `Cargo.lock` to the path, and a lock file with no git source in it is
-one the flake cannot build. Every public `starkit` item has four consumers; check
+one the flake cannot build. Every public `starcore` item has four consumers; check
 STAR/AMP, STAR/FOLD and STAR/WIRE before changing a signature.
 
 ## Shared panes
 
-`ui/layout.rs` supplies application sizing/opening policy to KIT's `panes`
+`ui/layout.rs` supplies application sizing/opening policy to CORE's `panes`
 engine. Solved rectangles drive rendering, hit testing and focus. User collapse
 and viewport fallback have separate reasons. Keep the core model independent
 of presentation and preserve the application's accordion/reader behavior.
@@ -242,15 +242,15 @@ or standalone Linux tarball build jobs. `scripts/build-dist.sh` accepts only
 `nix`, `appimage` and `macos`; branch release dispatches build artifacts without
 publishing, while version tags create a draft release.
 
-## KIT 0.13 candidate compatibility
+## CORE 0.13 candidate compatibility
 
-Development main pins an immutable KIT 0.13 candidate revision with a git-sourced
+Development main pins an immutable CORE 0.13 candidate revision with a git-sourced
 lockfile, so ordinary builds need no sibling checkout. This is an unreleased
 testing candidate; use immutable version tags when making a framework release.
 Keep dependency updates in their own commit, with the manifest and lock together.
 
-`scripts/check-kit.sh` checks every target and feature against the sibling KIT
-checkout in a disposable tracked copy. `STAR_KIT_CHECKOUT` selects another
+`scripts/check-core.sh` checks every target and feature against the sibling CORE
+checkout in a disposable tracked copy. `STAR_CORE_CHECKOUT` selects another
 candidate. No candidate path or path-patched lock is committed. Live canvases
 and embedded input are opt-in; ordinary application keys, media, SSH and
 presentation retain their current contracts.

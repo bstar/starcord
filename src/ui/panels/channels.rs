@@ -8,9 +8,9 @@
 
 use std::collections::HashSet;
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::{empty, fit, rgb};
 use crate::discord::model::ChannelKind;

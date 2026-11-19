@@ -6,9 +6,9 @@
 //! `Home` is the chosen server, in the place the channel list otherwise has,
 //! and it is a flat vector of rows for the same reason the channel list is.
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::{empty, fit, rgb};
 use crate::discord::model::PresenceStatus;
@@ -56,7 +56,7 @@ pub fn presence_glyph(status: PresenceStatus) -> char {
     }
 }
 
-pub fn presence_colour(theme: &Theme, status: PresenceStatus) -> starkit::theme::color::Rgb {
+pub fn presence_colour(theme: &Theme, status: PresenceStatus) -> starcore::theme::color::Rgb {
     match status {
         PresenceStatus::Online => theme.chat.presence_online,
         PresenceStatus::Idle => theme.chat.presence_idle,
@@ -178,7 +178,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
     }
 }
 
-fn sel_fg(t: &Theme, focused: bool) -> starkit::theme::color::Rgb {
+fn sel_fg(t: &Theme, focused: bool) -> starcore::theme::color::Rgb {
     if focused {
         t.row_selected_fg
     } else {
@@ -186,7 +186,7 @@ fn sel_fg(t: &Theme, focused: bool) -> starkit::theme::color::Rgb {
     }
 }
 
-fn sel_bg(t: &Theme, focused: bool) -> starkit::theme::color::Rgb {
+fn sel_bg(t: &Theme, focused: bool) -> starcore::theme::color::Rgb {
     if focused {
         t.row_selected_bg
     } else {

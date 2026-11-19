@@ -12,9 +12,9 @@
 //! that sorted them differently would show a different list from the one the
 //! reader knows.
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::{empty, fit, rgb, width_of};
 use crate::discord::model::PresenceStatus;
@@ -98,7 +98,7 @@ pub fn row_at(body: Rect, v: &View<'_>, y: u16) -> Option<usize> {
     (index < v.rows.len()).then_some(index)
 }
 
-pub fn presence_colour(theme: &Theme, presence: PresenceStatus) -> starkit::theme::color::Rgb {
+pub fn presence_colour(theme: &Theme, presence: PresenceStatus) -> starcore::theme::color::Rgb {
     match presence {
         PresenceStatus::Online => theme.chat.presence_online,
         PresenceStatus::Idle => theme.chat.presence_idle,
@@ -150,7 +150,7 @@ pub fn render(body: Rect, buf: &mut Buffer, v: &View<'_>) {
 
                 let name_style = Style::default().fg(match *colour {
                     0 => rgb(t.row_fg),
-                    packed => starkit::ratatui::style::Color::Rgb(
+                    packed => starcore::ratatui::style::Color::Rgb(
                         ((packed >> 16) & 0xff) as u8,
                         ((packed >> 8) & 0xff) as u8,
                         (packed & 0xff) as u8,

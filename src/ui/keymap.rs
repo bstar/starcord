@@ -40,8 +40,8 @@
 
 use std::sync::LazyLock;
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::keymap::{Binding as KitBinding, Keymap, MouseHelp};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::keymap::{Binding as KitBinding, Keymap, MouseHelp};
 
 pub type Binding = KitBinding<Action>;
 
@@ -984,7 +984,7 @@ pub fn document() -> String {
         out.push_str(&format!(
             "| {keys:<width$} | {} |\n",
             b.label,
-            width = starkit::keymap::KEYS_COLUMN
+            width = starcore::keymap::KEYS_COLUMN
         ));
     }
 
@@ -995,7 +995,7 @@ pub fn document() -> String {
             m.group,
             m.gesture,
             m.label,
-            width = starkit::keymap::GESTURE_COLUMN
+            width = starcore::keymap::GESTURE_COLUMN
         ));
     }
     out
@@ -1017,7 +1017,7 @@ fn module_name(m: Module) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starkit::keymap::KeySpec;
+    use starcore::keymap::KeySpec;
 
     fn plain(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
@@ -1033,7 +1033,7 @@ mod tests {
 
     /// Every key string in the table, parsed.
     fn specs(b: &Binding) -> Vec<KeySpec> {
-        starkit::keymap::alternatives(b.keys)
+        starcore::keymap::alternatives(b.keys)
             .filter_map(KeySpec::parse)
             .collect()
     }
@@ -1160,7 +1160,7 @@ mod tests {
             .iter()
             .find(|b| b.action == Action::Search)
             .expect("search is in the table");
-        let spellings: Vec<&str> = starkit::keymap::alternatives(search.keys).collect();
+        let spellings: Vec<&str> = starcore::keymap::alternatives(search.keys).collect();
         assert_eq!(
             spellings,
             vec!["ctrl+f", "/"],

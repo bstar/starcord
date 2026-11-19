@@ -9,16 +9,16 @@
 //! opening the file.
 //!
 //! Changing a row does two things — it changes the running program, and it
-//! writes the key through [`starkit::config::edit`], which rewrites one line
+//! writes the key through [`starcore::config::edit`], which rewrites one line
 //! of `config.toml` and leaves every comment in the file alone. A settings
 //! overlay that serialised the whole struct back would silently delete the
 //! commentary the template was written to carry.
 
-use starkit::chrome::settings::{self, SettingsView};
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::settings::{self, SettingsView};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::widgets::Widget;
 
 use crate::config::Config;
 use crate::ui::panels::ModuleId;
@@ -162,7 +162,7 @@ impl Settings {
 
     /// What a click landed on.
     ///
-    /// Through STAR/KIT's own hit test, which measures the list the same way
+    /// Through STAR/CORE's own hit test, which measures the list the same way
     /// the widget draws it: a row that scrolled out of sight is not a row
     /// anything can click, and the two answers cannot drift because there is
     /// only one of them.
@@ -224,7 +224,7 @@ mod tests {
     }
 
     /// A click on a row is the same as `enter` on it, and one outside the
-    /// list closes. Both answers come from STAR/KIT's hit test, so they cannot
+    /// list closes. Both answers come from STAR/CORE's hit test, so they cannot
     /// disagree with where the widget drew the rows.
     #[test]
     fn a_click_steps_the_row_it_landed_on() {

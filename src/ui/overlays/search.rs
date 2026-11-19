@@ -24,13 +24,13 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use starkit::input::{Edit, TextInput};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::input::{Edit, TextInput};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::text::{Line, Span};
+use starcore::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::discord::handle::{RequestId, SearchPage, SearchQuery, SearchScope};
 use crate::discord::model::Message;
@@ -351,7 +351,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
         .title(Span::styled(
             format!(
                 "{}search {} ",
-                starkit::chrome::frame::TITLE_LEAD,
+                starcore::chrome::frame::TITLE_LEAD,
                 search.where_
             ),
             Style::default()
@@ -433,7 +433,7 @@ pub fn render(area: Rect, buf: &mut Buffer, theme: &Theme, search: &mut Search) 
             Style::default().fg(rgb(t.row_fg))
         };
         let head = format!("{}  {}  ", hit.author, hit.when);
-        let head_w = starkit::wrap::width_of(&head).min(list.width);
+        let head_w = starcore::wrap::width_of(&head).min(list.width);
         buf.set_string(
             list.x,
             y,

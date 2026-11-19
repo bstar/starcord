@@ -1,21 +1,21 @@
-//! Focus Signal: one shared KIT workspace recipe for all five CORD panes.
+//! Focus Signal: one shared CORE workspace recipe for all five CORD panes.
 //!
 //! Existing widgets measure content and record hits in the pane engine's cells.
-//! Native surfaces retain that grid for content, while KIT owns physical chrome,
+//! Native surfaces retain that grid for content, while CORE owns physical chrome,
 //! controls, fonts, rasterization and frontend recovery. No second message model.
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use starkit::chrome::header::Word as _;
-use starkit::crossterm::event::{
+use starcore::chrome::header::Word as _;
+use starcore::crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use starkit::native_surface::{
+use starcore::native_surface::{
     style::{hex, Palette, Style as Visual},
     PixelRect as R, Primitive, Surface,
 };
-use starkit::ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
-use starkit::terminal_graphics::{
+use starcore::ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
+use starcore::terminal_graphics::{
     assets::Thumbnailer,
     capabilities::Capabilities,
     placement::Placement as PixelPlacement,
@@ -77,7 +77,7 @@ struct Geometry {
     chat: Vec<(Rect, crate::ui::panels::chat::Hit)>,
 }
 
-pub fn palette(theme: &starkit::theme::Theme) -> Palette {
+pub fn palette(theme: &starcore::theme::Theme) -> Palette {
     Palette::for_chrome(theme)
 }
 
@@ -232,7 +232,7 @@ impl Native {
             0,
         );
         if active {
-            // KIT supplies the focus shape; the second inset makes the chosen
+            // CORE supplies the focus shape; the second inset makes the chosen
             // two-pixel Focus Signal outline without application RGB constants.
             visual.focus(&mut panel, R::new(0, 0, target.width, target.height - gap));
             if target.width > 2 && target.height > gap + 2 {
@@ -244,7 +244,7 @@ impl Native {
         }
         visual
             .mount(scene, panel, target.x, target.y)
-            .expect("bounded pane from KIT layout");
+            .expect("bounded pane from CORE layout");
         if let Some(Component::Surface { rect: source, .. }) = scene.components.last_mut() {
             *source = rect.into();
         }
@@ -296,7 +296,7 @@ impl Native {
             visible.insert(place.key.clone());
             let id = format!(
                 "cord-{:x}",
-                starkit::graphics::ImageId::of(&(
+                starcore::graphics::ImageId::of(&(
                     &place.key,
                     frame,
                     image.as_ptr() as usize,
@@ -401,14 +401,14 @@ impl Controller for Native {
     }
 
     fn scene(&mut self, viewport: Viewport) -> Scene {
-        // KIT's frontend owns the actual image protocol in both presentations.
+        // CORE's frontend owns the actual image protocol in both presentations.
         // The controller's cell paint is only its bounded media fallback.
-        let fallback = if starkit::graphics::Mode::parse(&self.app.cfg.ui.graphics)
-            == starkit::graphics::Mode::Off
+        let fallback = if starcore::graphics::Mode::parse(&self.app.cfg.ui.graphics)
+            == starcore::graphics::Mode::Off
         {
-            starkit::graphics::Mode::Off
+            starcore::graphics::Mode::Off
         } else {
-            starkit::graphics::Mode::Blocks
+            starcore::graphics::Mode::Blocks
         };
         if self.app.look.graphics.mode() != fallback {
             self.app.look.graphics.set_mode(fallback);
@@ -418,7 +418,7 @@ impl Controller for Native {
         if self.style.palette != palette {
             self.style = Visual::new(palette);
         }
-        // KIT's native text uses physical pixels rather than terminal font
+        // CORE's native text uses physical pixels rather than terminal font
         // metrics. Reuse the same pane solver on a matching content grid.
         let viewport = if self.cells {
             viewport
@@ -482,7 +482,7 @@ impl Controller for Native {
         scene.interaction = self.interaction;
         // The scroll target remains the same module during ordinary animation.
         scene.scroll_interaction = Some(
-            starkit::graphics::ImageId::of(&(
+            starcore::graphics::ImageId::of(&(
                 viewport.generation,
                 self.app.nav.channel,
                 self.app.layout.expanded(),
@@ -562,7 +562,7 @@ impl Controller for Native {
             self.media(&mut scene, &overlay_pictures, &mut visible, &mut budget);
         }
         self.recycle_images(&visible);
-        // Exactly one KIT placement per pane, plus status and the active modal.
+        // Exactly one CORE placement per pane, plus status and the active modal.
         // Content, images and pointer projection share these solved rectangles.
         self.placements = scene.placements.clone();
         scene
@@ -666,7 +666,7 @@ impl Controller for Native {
             }
             Input::CancelPointer => {
                 self.app.layout.drag = None;
-                // KIT emits this on focus loss. Resume read acknowledgements only
+                // CORE emits this on focus loss. Resume read acknowledgements only
                 // after real input, never while a detached/background app waits.
                 self.app.set_terminal_focus(false);
             }
@@ -698,7 +698,7 @@ fn pixels(rect: Rect, v: Viewport) -> R {
 fn native_viewport(terminal: Viewport) -> Viewport {
     let mut columns = (terminal.width / 8).max(1);
     let mut rows = (terminal.height / 18).max(1);
-    while columns * rows > starkit::terminal_graphics::protocol::MAX_CELLS as u32 {
+    while columns * rows > starcore::terminal_graphics::protocol::MAX_CELLS as u32 {
         columns = columns.div_ceil(2);
         rows = rows.div_ceil(2);
     }
@@ -741,7 +741,7 @@ fn mount_buffer(
         while x < rect.right() {
             let mut width = 512.min(rect.right() - x);
             if x + width < rect.right()
-                && starkit::wrap::width_of(buffer[(x + width - 1, y)].symbol()) > 1
+                && starcore::wrap::width_of(buffer[(x + width - 1, y)].symbol()) > 1
             {
                 width -= 1;
             }
@@ -776,8 +776,8 @@ fn append_span(
     let mut text = String::new();
     let mut start = None;
     let mut end = 0;
-    for (_, cluster) in starkit::wrap::clusters(&span.text) {
-        let width = starkit::wrap::width_of(cluster);
+    for (_, cluster) in starcore::wrap::clusters(&span.text) {
+        let width = starcore::wrap::width_of(cluster);
         if x >= row.x && x.saturating_add(width) <= row.right() {
             start.get_or_insert(x);
             text.push_str(cluster);
@@ -880,7 +880,7 @@ mod tests {
     use super::*;
     use crate::{config::Config, discord::snowflake::ChannelId, ui::fake};
     use proptest::prelude::*;
-    use starkit::graphics::Graphics;
+    use starcore::graphics::Graphics;
 
     fn loaded() -> (Native, fake::Idle) {
         let path =
@@ -914,7 +914,7 @@ mod tests {
         }
         assert!(
             serde_json::to_vec(scene).unwrap().len()
-                < starkit::terminal_graphics::protocol::MAX_MESSAGE
+                < starcore::terminal_graphics::protocol::MAX_MESSAGE
         );
     }
 
@@ -948,8 +948,8 @@ mod tests {
         assert!(panels
             .iter()
             .all(|p| p.background == native.visual().workspace.panel));
-        // Exercise the actual KIT rasterizer, beyond serialized geometry.
-        let image = starkit::terminal_graphics::renderer::render_reference(&scene).unwrap();
+        // Exercise the actual CORE rasterizer, beyond serialized geometry.
+        let image = starcore::terminal_graphics::renderer::render_reference(&scene).unwrap();
         assert_eq!(image.dimensions(), (1200, 800));
         let focus = pixels(
             native
@@ -1090,7 +1090,7 @@ mod tests {
             modifiers: 0,
         });
         assert_eq!(native.app.layout.focus(), focus);
-        starkit::terminal_graphics::renderer::render_reference(&scene).unwrap();
+        starcore::terminal_graphics::renderer::render_reference(&scene).unwrap();
     }
 
     #[test]
@@ -1140,7 +1140,7 @@ mod tests {
 
     #[test]
     fn workspace_derivation_honors_explicit_chat_colors() {
-        use starkit::theme::{Resolve, ThemeFile, BUILTINS};
+        use starcore::theme::{Resolve, ThemeFile, BUILTINS};
         let text = BUILTINS
             .iter()
             .find(|b| b.id == "kanagawa")

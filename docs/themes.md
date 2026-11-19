@@ -1,8 +1,8 @@
 # Themes
 
 A theme is one TOML file. The format belongs to
-[STAR/KIT](https://github.com/bstar/starkit), the crate STAR/AMP and STAR/CORD
-share, and its [`docs/themes.md`](https://github.com/bstar/starkit/blob/main/docs/themes.md)
+[STAR/CORE](https://github.com/bstar/starcore), the crate STAR/AMP and STAR/CORD
+share, and its [`docs/themes.md`](https://github.com/bstar/starcore/blob/main/docs/themes.md)
 is the reference: what the file holds, how a palette is derived from eight
 colours, and how a base16 scheme becomes a theme.
 

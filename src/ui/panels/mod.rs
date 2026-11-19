@@ -17,10 +17,10 @@ pub mod members;
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
-use starkit::chrome::{frame as chrome_frame, header};
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::Style;
+use starcore::chrome::{frame as chrome_frame, header};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::Style;
 
 use super::keymap::Module;
 use super::theme::Theme;
@@ -172,9 +172,9 @@ pub struct Frame<'a> {
     pub words: &'a [Word],
 }
 
-/// Draw a module with STAR/KIT's shared frame and hand back its body.
+/// Draw a module with STAR/CORE's shared frame and hand back its body.
 ///
-/// The module supplies its title and words; STAR/KIT owns every border cell
+/// The module supplies its title and words; STAR/CORE owns every border cell
 /// and its colour. Content gets one blank column on either side.
 pub fn frame(area: Rect, buf: &mut Buffer, f: &Frame<'_>) -> Rect {
     let body = chrome_frame::frame(
@@ -216,13 +216,13 @@ fn pad_body(body: Rect) -> Rect {
 
 /// A ratatui colour from a theme one. Every module wants it; it is here so that
 /// none of them writes it again.
-pub fn rgb(c: starkit::theme::color::Rgb) -> starkit::ratatui::style::Color {
-    starkit::ratatui::style::Color::Rgb(c.r, c.g, c.b)
+pub fn rgb(c: starcore::theme::color::Rgb) -> starcore::ratatui::style::Color {
+    starcore::ratatui::style::Color::Rgb(c.r, c.g, c.b)
 }
 
 /// Columns a string takes on screen.
 pub fn width_of(text: &str) -> u16 {
-    starkit::wrap::width_of(text)
+    starcore::wrap::width_of(text)
 }
 
 /// Cut and pad a row to exactly `width` columns.
@@ -236,7 +236,7 @@ pub fn width_of(text: &str) -> u16 {
 pub fn fit(text: &str, width: u16) -> String {
     let mut out = String::with_capacity(usize::from(width) + 4);
     let mut used = 0u16;
-    for (_, cluster) in starkit::wrap::clusters(text) {
+    for (_, cluster) in starcore::wrap::clusters(text) {
         let w = width_of(cluster);
         if used + w > width {
             break;

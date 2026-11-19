@@ -12,8 +12,8 @@ categories = ["command-line-utilities"]
 
 [features]
 default = ["native"]
-# KIT's graphics-only renderer; no FFmpeg, audio devices or system libraries.
-native = ["starkit/terminal-graphics"]
+# CORE's graphics-only renderer; no FFmpeg, audio devices or system libraries.
+native = ["starcore/terminal-graphics"]
 
 [dependencies]
 # The shared terminal foundation: paths, logging, atomic and private file
@@ -24,13 +24,13 @@ native = ["starkit/terminal-graphics"]
 #
 # It is also the one copy of `ratatui`, `crossterm`, `ratatui-image` and
 # `image` in the tree. Everything under `src/ui/` reaches them through
-# `starkit::`, and none of the four is a direct dependency here: a widget built
+# `starcore::`, and none of the four is a direct dependency here: a widget built
 # against a second copy of ratatui does not satisfy a signature expecting the
 # first, and the compiler reports that as two versions carrying the same
 # number.
 #
 # `src/paths.rs` stays local rather than becoming a wrapper over
-# `starkit::paths::Paths`: the shared type has no `session_file()` or
+# `starcore::paths::Paths`: the shared type has no `session_file()` or
 # `media_cache_dir()`, and the core takes `crate::paths::Paths` by value
 # throughout.
 #
@@ -40,7 +40,7 @@ native = ["starkit/terminal-graphics"]
 # The `version` is not redundant with the revision: cargo-deny counts a
 # dependency with no version requirement as a wildcard and `wildcards = "deny"`
 # refuses it, whether or not the source is a git URL pinned to a commit.
-starkit = { git = "https://github.com/bstar/starkit", tag = "v0.24.0", version = "0.24", default-features = false, features = [
+starcore = { git = "https://github.com/bstar/starcore", tag = "v0.25.0", version = "0.25", default-features = false, features = [
     "image",
     "gif",
     "net",
@@ -188,7 +188,7 @@ emojis = "0.9"
 # bytes somebody else produced, so the formats are named explicitly rather than
 # taken as a default: png, jpeg, webp and gif are what Discord serves, and every
 # other decoder in the crate is one more parser reading hostile input for no
-# reason. This becomes STAR/KIT's re-export when that dependency lands, so that
+# reason. This becomes STAR/CORE's re-export when that dependency lands, so that
 # the core and the terminal image pipeline cannot end up on two versions.
 image = { version = "0.25", default-features = false, features = [
     "png",
@@ -294,6 +294,6 @@ opt-level = 2
 
 # Crossterm 0.29.0 underflows on zero mouse/cursor coordinates. Use the
 # upstream parser fix, as STAR/AMP does, until it reaches a crates.io release.
-# Patch the registry so KIT and Ratatui continue sharing one Crossterm.
+# Patch the registry so CORE and Ratatui continue sharing one Crossterm.
 [patch.crates-io]
 crossterm = { git = "https://github.com/crossterm-rs/crossterm", rev = "d4e9929f9a1c4adf91505d54f8527c817ae504cd" }

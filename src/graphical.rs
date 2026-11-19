@@ -1,11 +1,11 @@
-//! KIT owns the frontend/session transport; CORD owns its controller and data.
+//! CORE owns the frontend/session transport; CORD owns its controller and data.
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use starkit::graphics::{Graphics, Mode};
-use starkit::terminal_graphics::{
+use starcore::graphics::{Graphics, Mode};
+use starcore::terminal_graphics::{
     client::{self, Launch, PresentationOptions, PresentationPreference},
     protocol::{Input, Viewport},
     session::{self, Controller},
@@ -51,8 +51,8 @@ pub fn run() -> Result<()> {
                 .and_then(|socket| session::relay(&socket));
             if let Err(error) = result {
                 use std::io::Write;
-                starkit::terminal_graphics::protocol::write_message(
-                    &starkit::terminal_graphics::protocol::ServerMessage::Error {
+                starcore::terminal_graphics::protocol::write_message(
+                    &starcore::terminal_graphics::protocol::ServerMessage::Error {
                         message: format!("{error:#}"),
                     },
                     &mut std::io::stdout().lock(),
@@ -89,7 +89,7 @@ pub fn run() -> Result<()> {
                 .as_millis();
             let name = format!("cord-{:x}-{stamp:x}", std::process::id());
             let context = context_path(&root, &name)?;
-            starkit::fs::write_private(&context, &serde_json::to_vec(&LaunchContext { replay })?)?;
+            starcore::fs::write_private(&context, &serde_json::to_vec(&LaunchContext { replay })?)?;
             let result = frontend(&root, &name, false, options.graphical);
             if !session::socket_path(&root, &name)?.exists() {
                 let _ = std::fs::remove_file(context);
@@ -119,7 +119,7 @@ fn frontend(root: &Path, name: &str, attach: bool, graphical: bool) -> Result<()
             .as_ref()
             .and_then(|p| p.get("ui")?.get("presentation")?.as_str())
             == Some("cells");
-    if let Some(bridge) = starkit::terminal_graphics::terminal_bridge::probe()? {
+    if let Some(bridge) = starcore::terminal_graphics::terminal_bridge::probe()? {
         return bridge.relay_with_presentation(
             &ensure(root, name, attach)?,
             None,
@@ -149,8 +149,8 @@ fn frontend(root: &Path, name: &str, attach: bool, graphical: bool) -> Result<()
     )
 }
 
-fn terminal_event(event: &starkit::crossterm::event::Event) -> Option<Input> {
-    matches!(event, starkit::crossterm::event::Event::FocusGained).then(|| Input::Notice {
+fn terminal_event(event: &starcore::crossterm::event::Event) -> Option<Input> {
+    matches!(event, starcore::crossterm::event::Event::FocusGained).then(|| Input::Notice {
         message: "starcord:focus-gained".into(),
     })
 }
@@ -243,7 +243,7 @@ pub fn render(replay: &Path, output: &Path) -> Result<()> {
     app.tick();
     // Walk the fixture through the ordinary server/channel navigation. This
     // happens only in the offline export, never in an account session.
-    use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     app.key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT));
     app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -263,6 +263,6 @@ pub fn render(replay: &Path, output: &Path) -> Result<()> {
         native.tick();
     }
     let scene = native.scene(Viewport::default());
-    starkit::terminal_graphics::renderer::render_reference(&scene)?.save(output)?;
+    starcore::terminal_graphics::renderer::render_reference(&scene)?.save(output)?;
     Ok(())
 }

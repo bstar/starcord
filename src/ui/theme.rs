@@ -1,6 +1,6 @@
 //! STAR/CORD's theme: the shared one, plus the roles a chat window needs.
 //!
-//! The sixteen built-in theme files are STAR/KIT's and are shared with
+//! The sixteen built-in theme files are STAR/CORE's and are shared with
 //! STAR/AMP. None of them says anything about a message list, and they should
 //! not have to: a theme is eight colours and a base16 scheme, and everything
 //! else is derived from those. So `[chat]` is derived here, out of the same
@@ -15,8 +15,8 @@
 use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
-use starkit::theme::color::Rgb;
-use starkit::theme::{pick, Registry, Resolve, Theme as Core, ThemeFile};
+use starcore::theme::color::Rgb;
+use starcore::theme::{pick, Registry, Resolve, Theme as Core, ThemeFile};
 
 /// The `[chat]` table, as a theme file may state it.
 ///
@@ -99,7 +99,7 @@ fn stated_or(stated: Option<Rgb>, derived: Rgb, against: Rgb, target: f64) -> Rg
 }
 
 impl Chat {
-    fn derive(core: &Core, f: &ChatColors, b16: Option<&starkit::theme::schema::Base16>) -> Self {
+    fn derive(core: &Core, f: &ChatColors, b16: Option<&starcore::theme::schema::Base16>) -> Self {
         let bg = core.panel_bg;
 
         // Every role names the base16 slot it comes from, because that is the
@@ -275,14 +275,14 @@ impl Chat {
 /// The theme STAR/CORD draws with: the shared one, plus `[chat]`.
 ///
 /// `Deref` rather than a hundred delegating accessors, so `theme.accent` and
-/// `theme.chat.link_fg` read the same way and every STAR/KIT widget takes
+/// `theme.chat.link_fg` read the same way and every STAR/CORE widget takes
 /// `&*theme`.
 #[derive(Debug, Clone)]
 pub struct Theme {
     core: Core,
     pub chat: Chat,
     stated: ChatColors,
-    base16: Option<starkit::theme::schema::Base16>,
+    base16: Option<starcore::theme::schema::Base16>,
 }
 
 impl Deref for Theme {
@@ -320,11 +320,11 @@ impl Resolve for Theme {
 
 #[cfg(all(feature = "native", unix))]
 impl Theme {
-    /// Resolve semantic chat roles against KIT's actual native content surface.
+    /// Resolve semantic chat roles against CORE's actual native content surface.
     /// Explicit user colors retain the same last-word rule as the cell theme.
-    pub(super) fn workspace(&self, style: &starkit::native_surface::style::Style) -> Self {
+    pub(super) fn workspace(&self, style: &starcore::native_surface::style::Style) -> Self {
         let mut out = self.clone();
-        let rgb = |s: &str| Rgb::parse_hex(s).expect("KIT palette color");
+        let rgb = |s: &str| Rgb::parse_hex(s).expect("CORE palette color");
         out.core.bg = Rgb::new(
             style.palette.bg[0],
             style.palette.bg[1],
@@ -343,9 +343,9 @@ impl Theme {
 /// Where the themes come from.
 ///
 /// The same directory names as the rest of STAR/CORD's files, spelled here
-/// with STAR/KIT's `Paths` because that is what [`Registry`] takes.
-pub const THEME_PATHS: starkit::paths::Paths =
-    starkit::paths::Paths::new("starcord", "STARCORD_DIR", "STARCORD_CONFIG_DIR");
+/// with STAR/CORE's `Paths` because that is what [`Registry`] takes.
+pub const THEME_PATHS: starcore::paths::Paths =
+    starcore::paths::Paths::new("starcord", "STARCORD_DIR", "STARCORD_CONFIG_DIR");
 
 pub fn registry() -> Registry<Theme> {
     Registry::new(THEME_PATHS)
@@ -358,7 +358,7 @@ pub mod tests_support {
     use super::{Resolve as _, Theme, ThemeFile};
 
     pub fn theme(id: &str) -> Theme {
-        let b = starkit::theme::BUILTINS
+        let b = starcore::theme::BUILTINS
             .iter()
             .find(|b| b.id == id)
             .unwrap_or_else(|| panic!("no built-in {id}"));
@@ -370,7 +370,7 @@ pub mod tests_support {
 mod tests {
     use super::tests_support::theme;
     use super::*;
-    use starkit::theme::BUILTINS;
+    use starcore::theme::BUILTINS;
 
     /// The test the whole derivation exists to pass.
     ///
@@ -391,7 +391,7 @@ mod tests {
         // Skipped rather than faked where no desktop theme is set, because a
         // synthesised one would be a seventeenth builtin with a misleading
         // name.
-        if let Some((file, _)) = starkit::theme::system::theme() {
+        if let Some((file, _)) = starcore::theme::system::theme() {
             assert_legible("system", &Theme::resolve(&file));
         }
     }

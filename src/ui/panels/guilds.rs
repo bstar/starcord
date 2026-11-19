@@ -11,9 +11,9 @@
 //! scroll and the mouse all go through [`row_rows`] and [`row_at`], so a list
 //! with pictures and a list without behave the same way.
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::{empty, fit, rgb, width_of};
 use crate::discord::media::MediaKey;

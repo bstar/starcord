@@ -12,9 +12,9 @@
 
 use std::time::{Duration, Instant};
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use super::panels::{rgb, width_of};
 use super::theme::Theme;

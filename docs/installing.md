@@ -105,7 +105,7 @@ You need a Rust toolchain, 1.90 or newer, and nothing else.
 nix develop -c cargo build --release   # or supply the toolchain yourself
 ```
 
-The build fetches [STAR/KIT](https://github.com/bstar/starkit) from git — this
+The build fetches [STAR/CORE](https://github.com/bstar/starcore) from git — this
 project's own shared foundation, pinned to a tag rather than published to
 crates.io — so a first build needs network. `nix build` needs it too; the flake
 sets `cargoLock.allowBuiltinFetchGit` for that reason, which
