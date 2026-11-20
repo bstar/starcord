@@ -4050,8 +4050,8 @@ dependencies = [
 
 [[package]]
 name = "starcore"
-version = "0.25.0"
-source = "git+https://github.com/bstar/starcore?tag=v0.25.0#8c72e94fc0d74a71371b5da640dd4ae8e0bf86f7"
+version = "0.25.1"
+source = "git+https://github.com/bstar/starcore?tag=v0.25.1#13c0d21cfcdc093e6b670a65c47541e5bef7a256"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

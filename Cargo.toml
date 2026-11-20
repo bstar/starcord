@@ -40,7 +40,7 @@ native = ["starcore/terminal-graphics"]
 # The `version` is not redundant with the revision: cargo-deny counts a
 # dependency with no version requirement as a wildcard and `wildcards = "deny"`
 # refuses it, whether or not the source is a git URL pinned to a commit.
-starcore = { git = "https://github.com/bstar/starcore", tag = "v0.25.0", version = "0.25", default-features = false, features = [
+starcore = { git = "https://github.com/bstar/starcore", tag = "v0.25.1", version = "0.25", default-features = false, features = [
     "image",
     "gif",
     "net",
